@@ -1,6 +1,6 @@
 //#include "../server/main.h"
 #include "tftp_packet.h"
-#include <string>
+#include <cstring>
 #include <iostream>
 
 using namespace std;
@@ -15,7 +15,7 @@ void TFTP_Packet::clear()	{
 
 	current_packet_size = 0;
 	
-	memset(data, current_packet_size, TFTP_PACKET_MAX_SIZE);
+	std::memset(data, current_packet_size, TFTP_PACKET_MAX_SIZE);
 
 }
 
@@ -30,7 +30,7 @@ int TFTP_Packet::copyData(int offset, char* dest, int length) {
 	if (offset > this->getSize()) return -1;
 	if (length < (this->getSize() - offset)) return -1; //- out of bounds
 
-	memcpy(dest, &(data[offset]), (this->getSize()-offset));
+	std::memcpy(dest, &(data[offset]), (this->getSize()-offset));
 
 	return (this->getSize() - offset);
 }
@@ -76,7 +76,7 @@ bool TFTP_Packet::addWord(WORD w) {
 
 bool TFTP_Packet::addString(const char* str) {
 
-	int n = strlen(str);
+	int n = std::strlen(str);
 
 	for (int i=0; i < n; i++) {
 
@@ -100,7 +100,7 @@ bool TFTP_Packet::addMemory(const char* buffer, int len) {
 	}
 
 	if (len > 0) {
-		memcpy(&(data[current_packet_size]), buffer, len);
+		std::memcpy(&(data[current_packet_size]), buffer, len);
 		current_packet_size += len;
 	}
 
@@ -142,7 +142,7 @@ bool TFTP_Packet::getString(int offset, char* buffer, int len) {
 	if (offset > current_packet_size) return false;
 	if (len < current_packet_size - offset) return false;
 
-	memcpy(buffer, &(data[offset]), current_packet_size - offset);
+	std::memcpy(buffer, &(data[offset]), current_packet_size - offset);
 
 	return true;
 

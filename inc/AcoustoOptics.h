@@ -183,7 +183,7 @@ namespace iMS
 		/// \param[in] GeomConstant A constant based on the device geometry (electrode dimensions).  This is specified in Isomet datasheets.
 		/// \param[in] Centre the designed centre frequency.
 		/// \param[in] Bandwidth The sweep range of the device
-		AODevice(Crystal& xtal = Crystal(), double GeomConstant = 4.0, MHz Centre = 100.0, MHz Bandwidth = 60.0);
+		AODevice(Crystal& xtal, double GeomConstant = 4.0, MHz Centre = 100.0, MHz Bandwidth = 60.0);
 		/// \brief Model Constructor
 		/// Creates a AODevice based on a given Isomet model number passed as a string. Either enter model number directly or select from AODeviceList
 		AODevice(const std::string& Model);

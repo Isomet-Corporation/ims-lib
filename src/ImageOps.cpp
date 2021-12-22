@@ -3049,7 +3049,7 @@ namespace iMS
 		if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 21) return false;
 		else {
 			int value = 0;
-			auto& d = Resp.Payload<std::vector<uint8_t>>();
+			auto d = Resp.Payload<std::vector<uint8_t>>();
 			value |= ((int)d[1]);
 			value |= ((int)d[2] << 8);
 			value |= ((int)d[3] << 16);

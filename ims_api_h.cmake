@@ -1,0 +1,58 @@
+# Copyright 2016 Isomet(UK) Ltd. All rights reserved.
+
+set(ims_api_header_files
+    ${api_include_dir}/AcoustoOptics.h
+    ${api_include_dir}/Auxiliary.h
+    ${api_include_dir}/Compensation.h
+    ${api_include_dir}/CM_Common.h
+    ${api_include_dir}/CM_CYUSB.h
+    ${api_include_dir}/CM_ENET.h
+    ${api_include_dir}/tftp_client.h
+    ${api_include_dir}/tftp_packet.h
+    ${api_include_dir}/CM_FTDI.h
+    ${api_include_dir}/CM_RS422.h
+    ${api_include_dir}/IConnectionSettings.h
+    ${api_include_dir}/CS_ETH.h
+    ${api_include_dir}/CS_RS422.h
+    ${api_include_dir}/ConnectionList.h
+    ${api_include_dir}/IConnectionManager.h
+    ${api_include_dir}/IMSSystem.h
+    ${api_include_dir}/Diagnostics.h
+    ${api_include_dir}/IEventHandler.h
+    ${api_include_dir}/IEventTrigger.h
+    ${api_include_dir}/MessageEvent.h
+    ${api_include_dir}/FileSystem.h
+    ${api_include_dir}/FileSystem_p.h
+    ${api_include_dir}/Image.h
+    ${api_include_dir}/Image_p.h
+    ${api_include_dir}/ImageOps.h
+    ${api_include_dir}/ImageProject.h
+    ${api_include_dir}/DeviceReport.h
+    ${api_include_dir}/HostReport.h
+    ${api_include_dir}/IOReport.h
+    ${api_include_dir}/Message.h
+    ${api_include_dir}/ReportManipulation.h
+    ${api_include_dir}/BulkVerifier.h
+    ${api_include_dir}/Containers.h
+    ${api_include_dir}/EEPROM.h
+    ${api_include_dir}/IBulkTransfer.h
+    ${api_include_dir}/IMSConstants.h
+    ${api_include_dir}/IMSTypeDefs.h
+    ${api_include_dir}/LibVersion.h
+    ${api_include_dir}/PrivateUtil.h
+    ${api_include_dir}/FirmwareUpgrade.h
+    ${api_include_dir}/SignalPath.h
+    ${api_include_dir}/WaveShaping.h
+    ${api_include_dir}/SystemFunc.h
+    ${api_include_dir}/ToneBuffer.h
+    ${api_lib_dir}/sqlite3/sqlite3.h
+)
+
+if (WIN32)
+set(ims_api_header_files
+    ${ims_api_header_files}
+    ${api_lib_dir}/enumser/enumser.h
+    ${api_lib_dir}/FTDI-Driver/ftd2xx.h
+    ${api_resource_dir}/resource.h
+)
+endif()

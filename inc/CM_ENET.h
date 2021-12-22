@@ -24,7 +24,7 @@
 #ifndef IMS_CM_ENET_H__
 #define IMS_CM_ENET_H__
 
-#if defined(_WIN32) || defined(__QNXNTO__)
+#if defined(_WIN32) || defined(__QNXNTO__) || defined(__linux__)
 
 #include "CM_Common.h"
 

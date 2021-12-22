@@ -28,7 +28,7 @@
 #include "CM_CYUSB.h"
 #include "CM_RS422.h"
 #endif
-#if defined (_WIN32) || defined (__QNXNTO__)
+#if defined (_WIN32) || defined (__QNXNTO__) || defined (__linux__)
 #include "CM_ENET.h"
 #endif
 
@@ -97,7 +97,6 @@ static void init_logging()
 	{
 		settings_path = wszPath;
 	}
-#endif
 	if (!boost::filesystem::exists(settings_path += L"\\Isomet")) {
 		boost::filesystem::create_directory(settings_path);
 	}
@@ -112,9 +111,9 @@ static void init_logging()
 	}
 	
 	// Changed this as of SDK v1.8.4 so any new installs will pick up the new settings (with asynchronous = true, auto flush = false)
-	if (!boost::filesystem::exists(settings_path += L"\\logging.ini")) {
+	if (!boost::filesystem::exists(settings_path += L"\\logging.ini")) 
+	{
 			// Write a default configuration file
-#ifdef _WIN32
 		HMODULE hModule = reinterpret_cast<HMODULE>(&__ImageBase);
 
 		HRSRC hr = ::FindResource(hModule, MAKEINTRESOURCE(IDR_SETTINGS1), L"SETTINGS");
@@ -125,23 +124,32 @@ static void init_logging()
 
 			if (hg)
 			{
-				LPVOID pLockedResource = LockResource(hg);
+				LPVOID pBuffer = LockResource(hg);
 
 				if (pLockedResource)
 				{
 					DWORD dwSize = ::SizeofResource(hModule, hr);
+#else
+	if (!boost::filesystem::exists(settings_path += "~/.config")) {
+		boost::filesystem::create_directory(settings_path);
+	}
+	if (!boost::filesystem::exists(settings_path += "/ims")) {
+		boost::filesystem::create_directory(settings_path);
+	}
+
+	if (!boost::filesystem::exists(settings_path += "/logging")) 
+	{
+		{
+			{
+				{
+					void * pBuffer = (void *)settings_ini;
+					unsigned int dwSize = settings_ini_len;
+#endif
 					if (0 != dwSize)
 					{
 						std::ofstream ofs(settings_path.string(), std::ios::binary);
-						ofs.write((const char *)pLockedResource, dwSize);
+						ofs.write((const char *)pBuffer, dwSize);
 					}
-#else
-				{
-					{
-
-						pBuffer = (void *)imshw_db;
-						unsigned int dwSize = imshw_db_len;
-#endif
 				}
 			}
 		}
@@ -293,7 +301,7 @@ namespace iMS
 			BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initilise CM_RS422 Module" << std::endl;
 		}
 #endif
-#if defined (_WIN32) || defined (__QNXNTO__)
+#if defined (_WIN32) || defined (__QNXNTO__) || defined (__linux__)
 		try {
 			module = new CM_ENET();
 			pImpl->connList->push_back(module);

@@ -70,9 +70,6 @@ namespace iMS {
 	template std::vector<std::uint8_t> VarToBytes<std::uint32_t>(const std::uint32_t& data);
 	template std::vector<std::uint8_t> VarToBytes<std::int8_t>(const std::int8_t& data);
 	template std::vector<std::uint8_t> VarToBytes<std::int16_t>(const std::int16_t& data);
-#if !defined(__QNXNTO__)
-	template std::vector<std::uint8_t> VarToBytes<std::int32_t>(const std::int32_t& data);
-#endif
 	template std::vector<std::uint8_t> VarToBytes<int>(const int& data);
 	template std::vector<std::uint8_t> VarToBytes<double>(const double& data);
 	template std::vector<std::uint8_t> VarToBytes<float>(const float& data);
@@ -99,9 +96,6 @@ namespace iMS {
 	template std::uint32_t BytesToVar<std::uint32_t>(const std::vector<std::uint8_t> &input_bytes);
 	template std::int8_t BytesToVar<std::int8_t>(const std::vector<std::uint8_t> &input_bytes);
 	template std::int16_t BytesToVar<std::int16_t>(const std::vector<std::uint8_t> &input_bytes);
-#if !defined(__QNXNTO__)
-	template std::int32_t BytesToVar<std::int32_t>(const std::vector<std::uint8_t> &input_bytes);
-#endif
 	template int BytesToVar<int>(const std::vector<std::uint8_t> &input_bytes);
 	template double BytesToVar<double>(const std::vector<std::uint8_t> &input_bytes);
 	template float BytesToVar<float>(const std::vector<std::uint8_t> &input_bytes);

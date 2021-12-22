@@ -21,10 +21,12 @@
 /
 /----------------------------------------------------------------------------*/
 
-#if defined(_WIN32) || defined(__QNXNTO__)
+#if defined(_WIN32) || defined(__QNXNTO__) || defined(__linux__)
 
 #include "CS_ETH.h"
 #include "boost/asio/ip/address.hpp"
+
+#include <algorithm>
 
 namespace iMS {
 

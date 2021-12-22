@@ -318,7 +318,14 @@ namespace iMS
 
 	class AODevice::Impl {
 	public:
-		Impl(Crystal& xtal = Crystal(), double GeomConstant = 0.1, MHz Centre = 100.0, MHz Bandwidth = 60.0)
+		Impl()
+			: m_geomConstant(0.1),
+			m_centre(100.0),
+			m_bandwidth(60.0),
+			m_wavelength(1.0),
+			m_model("Custom") {}
+
+		Impl(Crystal& xtal, double GeomConstant = 0.1, MHz Centre = 100.0, MHz Bandwidth = 60.0)
 			: m_xtal(xtal),
 			m_geomConstant(GeomConstant),
 			m_centre(Centre),

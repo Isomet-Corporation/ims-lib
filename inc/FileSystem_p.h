@@ -57,6 +57,8 @@ namespace iMS {
 		bool FindFreeSpace(std::uint32_t& Addr, std::uint32_t Size) const;
 		void UpdateEntryCount();
 		FileSystemIndex GetIndexFromName(const std::string& name) const;
+
+		FileSystemTableEntry NullFSTE;
 	private:
 		bool valid;
 		std::uint8_t nEntries;

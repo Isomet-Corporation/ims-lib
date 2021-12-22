@@ -21,7 +21,7 @@
 /
 /----------------------------------------------------------------------------*/
 
-#if defined(_WIN32) || defined(__QNXNTO__)
+#if defined(_WIN32) || defined(__QNXNTO__) || defined(__linux__)
 
 #include "CS_RS422.h"
 

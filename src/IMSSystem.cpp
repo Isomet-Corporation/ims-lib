@@ -93,7 +93,7 @@ namespace iMS
 			CS_RS422 cs_rs422;
 			m_settings.emplace(cs_rs422.Ident(), DeviceInterfaceSettings(true, 16, 4));
 #endif
-#if defined (_WIN32) || defined (__QNXNTO__)
+#if defined (_WIN32) || defined (__QNXNTO__) || defined(__linux__)
 			CS_ETH cs_eth;
 			m_settings.emplace(cs_eth.Ident(), DeviceInterfaceSettings(true, 32, 13));
 #endif
@@ -655,7 +655,7 @@ namespace iMS
 			CS_RS422 cs_rs422;
 			m_settingsNames.push_back(cs_rs422.Ident());
 #endif
-#if defined (_WIN32) || defined (__QNXNTO__)
+#if defined (_WIN32) || defined (__QNXNTO__) || defined(__linux__)
 			CS_ETH cs_eth;
 			m_settingsNames.push_back(cs_eth.Ident());
 #endif

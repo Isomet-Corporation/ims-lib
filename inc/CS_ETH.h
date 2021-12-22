@@ -34,7 +34,7 @@
 #ifndef CS_ETH_H__
 #define CS_ETH_H__
 
-#if defined(_WIN32) || defined(__QNXNTO__)
+#if defined(_WIN32) || defined(__QNXNTO__) || defined(__linux__)
 
 #include "IConnectionSettings.h"
 #include <vector>

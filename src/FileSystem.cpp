@@ -243,13 +243,13 @@ namespace iMS
 
 	const FileSystemTableEntry& FileSystemTable::operator[] (std::size_t idx) const
 	{
-		if (idx > m_FSTEArray->size()) return FileSystemTableEntry();
+		if (idx > m_FSTEArray->size()) return NullFSTE;
 		return (m_FSTEArray->at(idx));
 	}
 
 	FileSystemTableEntry& FileSystemTable::operator[] (std::size_t idx)
 	{
-		if (idx > m_FSTEArray->size()) return FileSystemTableEntry();
+		if (idx > m_FSTEArray->size()) return NullFSTE;
 		return (m_FSTEArray->at(idx));
 	}
 

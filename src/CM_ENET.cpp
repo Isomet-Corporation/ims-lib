@@ -21,7 +21,7 @@
 /
 /----------------------------------------------------------------------------*/
 
-#if defined(_WIN32) || defined(__QNXNTO__)
+#if defined(_WIN32) || defined(__QNXNTO__) || defined(__linux__)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -637,7 +637,7 @@ typedef struct _INTERFACE_INFO  {
 			int listenResult = listen(InterruptSock, SOMAXCONN);
 			if (INVALID_SOCKET == listenResult) {
 #if defined(_DEBUG)
-				printf("interrupt socket failed to listen: %ld\n", listenResult);
+				printf("interrupt socket failed to listen: %d\n", listenResult);
 #endif
 #ifdef WIN32
 				closesocket(mImpl->msgSock);

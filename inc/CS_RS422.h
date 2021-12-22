@@ -35,7 +35,7 @@
 #ifndef CS_RS422_H__
 #define CS_RS422_H__
 
-#if defined(_WIN32) || defined(__QNXNTO__)
+#if defined(_WIN32) || defined(__QNXNTO__) || defined(__linux__)
 
 #include "IConnectionSettings.h"
 #include <vector>

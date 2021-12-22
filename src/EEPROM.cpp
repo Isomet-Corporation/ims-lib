@@ -433,10 +433,6 @@ namespace iMS {
 	 template void EEPROM::EEPROMData<std::uint32_t>(const std::uint32_t& t);
 	 template void EEPROM::EEPROMData<std::int8_t>(const std::int8_t& t);
 	 template void EEPROM::EEPROMData<std::int16_t>(const std::int16_t& t);
-#if !defined(__QNXNTO__)
-	// In QNX Neutrino, std::int32_t is typedef'ed to int
-	 template void EEPROM::EEPROMData<std::int32_t>(const std::int32_t& t);
-#endif
 	 template void EEPROM::EEPROMData<int>(const int& t);
 	 template void EEPROM::EEPROMData<double>(const double& t);
 	 template void EEPROM::EEPROMData<float>(const float& t);
@@ -447,9 +443,6 @@ namespace iMS {
 	 template void EEPROM::EEPROMData<std::vector<std::uint32_t>>(const std::vector< std::uint32_t>& t);
 	 template void EEPROM::EEPROMData<std::vector<std::int8_t>>(const std::vector< std::int8_t>& t);
 	 template void EEPROM::EEPROMData<std::vector<std::int16_t>>(const std::vector< std::int16_t>& t);
-#if !defined(__QNXNTO__)
-	 template void EEPROM::EEPROMData<std::vector<std::int32_t>>(const std::vector< std::int32_t>& t);
-#endif
 	 template void EEPROM::EEPROMData<std::vector<int>>(const std::vector< int>& t);
 	 template void EEPROM::EEPROMData<std::vector<double>>(const std::vector< double>& t);
 	 template void EEPROM::EEPROMData<std::vector<float>>(const std::vector< float>& t);
@@ -462,9 +455,6 @@ namespace iMS {
 	 template std::uint32_t EEPROM::EEPROMData<std::uint32_t>() const;
 	 template std::int8_t EEPROM::EEPROMData<std::int8_t>() const;
 	 template std::int16_t EEPROM::EEPROMData<std::int16_t>() const;
-#if !defined(__QNXNTO__)
-	 template std::int32_t EEPROM::EEPROMData<std::int32_t>() const;
-#endif
 	 template int EEPROM::EEPROMData<int>() const;
 	 template double EEPROM::EEPROMData<double>() const;
 	 template float EEPROM::EEPROMData<float>() const;
@@ -475,9 +465,6 @@ namespace iMS {
 	 template std::vector< std::uint32_t> EEPROM::EEPROMData<std::vector<std::uint32_t>>() const;
 	 template std::vector< std::int8_t> EEPROM::EEPROMData<std::vector<std::int8_t>>() const;
 	 template std::vector< std::int16_t> EEPROM::EEPROMData<std::vector<std::int16_t>>() const;
-#if !defined(__QNXNTO__)
-	 template std::vector< std::int32_t> EEPROM::EEPROMData<std::vector<std::int32_t>>() const;
-#endif
 	 template std::vector< int> EEPROM::EEPROMData<std::vector<int>>() const;
 	 template std::vector< double> EEPROM::EEPROMData<std::vector<double>>() const;
 	 template std::vector< float> EEPROM::EEPROMData<std::vector<float>>() const;
