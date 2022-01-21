@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.14)
 project(libims VERSION 1.8.5 DESCRIPTION "Isomet iMS Synthesiser Library")
 
 # Min C++14
@@ -67,6 +67,23 @@ endif()
 ## Get BOOST
 ##
 add_subdirectory(modules/boost-cmake)
+set_property(
+    TARGET 
+        Boost_regex 
+        Boost_log_setup
+        Boost_log
+        Boost_filesystem
+        Boost_atomic
+        Boost_date_time
+        Boost_thread
+        Boost_chrono    
+    PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+# Missing compile definition in boost-cmake.  If not included, compilation of init_from_settings.cpp fails with 
+# "Error: boost::condition_variable has no member 'timed_wait'
+target_compile_definitions(Boost_log_setup PRIVATE
+    BOOST_THREAD_USES_DATETIME
+)
 
 set(api_source_dir  	${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(api_include_dir 	${CMAKE_CURRENT_SOURCE_DIR}/inc)
@@ -150,7 +167,11 @@ target_include_directories(${LIBRARY_NAME}
 
 target_link_libraries(${LIBRARY_NAME} 
     PRIVATE 
-        Boost::regex
+        -Wl,--whole-archive
+            Boost::regex
+            Boost::log_setup
+            Boost::log
+        -Wl,--no-whole-archive        
         ${LIBXML2_LIBRARIES}
 )
 
@@ -196,7 +217,7 @@ if (NOT ${BUILD_SHARED_LIBS})
 # If building a static library, we must export Boost::regex and the user must link to it
 # Otherwise we get a configuration error where Boost::regex is not part of the export set
 install(
-    TARGETS Boost_regex
+    TARGETS Boost_regex Boost_log_setup Boost_log Boost_atomic Boost_date_time Boost_filesystem Boost_thread Boost_chrono
     EXPORT "${LIBRARY_NAME}Targets"
 )
 endif()
