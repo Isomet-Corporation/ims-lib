@@ -78,7 +78,7 @@ namespace iMS {
 #define TIMEVAL struct timeval
 #define SD_BOTH 2
 //#define INVALID_SOCKET -1
-#define _DEBUG
+//#define _DEBUG
 
 typedef struct _INTERFACE_INFO  {
 	  unsigned int    iiFlags;
@@ -88,6 +88,31 @@ typedef struct _INTERFACE_INFO  {
 	} INTERFACE_INFO;
 
 #endif
+
+	static std::string logErrorString() {
+		static char msgbuf [ 256 ] ;
+
+		memset(msgbuf, '\0', 256 * sizeof (char));
+
+#ifdef WIN32
+		err = WSAGetLastError ();
+
+		FormatMessage (FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,   // flags
+        		       	NULL,                // lpsource
+               			err,                 // message id
+               			MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT),    // languageid
+               			msgbuf,              // output buffer
+               			sizeof (msgbuf),     // size of msgbuf, bytes
+               			NULL);               // va_list of arguments
+		if (! *msgbuf) {
+  			 sprintf (msgbuf, "%d", err);  // provide error # if no string available
+		}
+#else
+		strncpy(msgbuf, strerror(errno), sizeof(msgbuf) );
+#endif
+		return std::string(msgbuf);
+	}
+
 
 	class CM_ENET::MsgContext
 	{
@@ -119,7 +144,7 @@ typedef struct _INTERFACE_INFO  {
 		// Create an event handle and setup the overlapped structure.
 		this->OvLap.hEvent = WSACreateEvent();
 		if (this->OvLap.hEvent == NULL) {
-			printf("WSACreateEvent failed with error: %d\n", WSAGetLastError());
+			BOOST_LOG_SEV(lg::get(), sev::error) << "WSACreateEvent failed with error:: " << WSAGetLastError() << std::endl;
 		}
 #endif
 		this->Buffer = new std::vector<uint8_t>(MsgContext::MaxPacketSize, 0);
@@ -210,6 +235,7 @@ typedef struct _INTERFACE_INFO  {
 		std::thread interruptThread;
 		std::shared_ptr<std::vector<uint8_t>> interruptData;
 
+		std::string conn_string;
 	private:
 		IConnectionManager * m_parent;
 	};
@@ -234,7 +260,7 @@ typedef struct _INTERFACE_INFO  {
 		// Initialize Winsock
 		iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 		if (iResult != 0) {
-			printf("WSAStartup failed: %d\n", iResult);
+			BOOST_LOG_SEV(lg::get(), sev::error) << "WSAStartup failed: " << iResult << std::endl;
 		}
 #endif
 	}
@@ -271,12 +297,16 @@ typedef struct _INTERFACE_INFO  {
 		// Create a new socket to query interfaces with
 		AnnounceSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
-		if (AnnounceSocket == INVALID_SOCKET) return std::vector<IMSSystem>();
+		if (AnnounceSocket == INVALID_SOCKET) {
+			BOOST_LOG_SEV(lg::get(), sev::error) << "announce: unable to create socket: " << WSAGetLastError() << std::endl;
+			return std::vector<IMSSystem>();
+		}
 
 		unsigned long nBytesReturned;
 		if (WSAIoctl(AnnounceSocket, SIO_GET_INTERFACE_LIST, 0, 0, &InterfaceList,
 				sizeof(InterfaceList), &nBytesReturned, 0, 0) == SOCKET_ERROR) {
 
+			BOOST_LOG_SEV(lg::get(), sev::error) << "announce: get interface list error: " << WSAGetLastError() << std::endl;
 			//std::cout << "Failed calling WSAIoctl: error " << WSAGetLastError() << std::endl;
 			return std::vector<IMSSystem>();
 		}
@@ -288,7 +318,7 @@ typedef struct _INTERFACE_INFO  {
 		struct ifaddrs *ifaddr, *ifa;
 		int n;
 		if (getifaddrs(&ifaddr) == -1) {
-			perror("getifaddrs");
+			BOOST_LOG_SEV(lg::get(), sev::error) << "getifaddrs error: " << strerror(errno) << std::endl;
 			return std::vector<IMSSystem>();
 		}
 
@@ -347,7 +377,10 @@ typedef struct _INTERFACE_INFO  {
 #endif
 			// Create a new socket to send "who is out there" message
 			AnnounceSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
+			if (INVALID_SOCKET == AnnounceSocket) {
+				BOOST_LOG_SEV(lg::get(), sev::error) << "announce socket error: " << logErrorString() << std::endl;
+				return std::vector<IMSSystem>();
+			}
 			// Set socket to non-blocking
 #ifdef WIN32
 			u_long iMode = 1;
@@ -356,99 +389,113 @@ typedef struct _INTERFACE_INFO  {
 			fcntl(AnnounceSocket, F_SETFL, O_NONBLOCK);
 #endif
 
-			if (AnnounceSocket != INVALID_SOCKET) {
-				int on = 1;
-				// Clean out any old fragments of socket connections hanging around
-				if (setsockopt(AnnounceSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on)) == -1)
-					return std::vector<IMSSystem>();
-				// Enable Broadcast Transmission
-				if (setsockopt(AnnounceSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&on, sizeof(on)) == -1)
-					return std::vector<IMSSystem>();
-
-				// Copy source IP address
-				sockaddr_in *pAddress;
-				pAddress = (sockaddr_in *)& (InterfaceList[i].iiAddress);
-				memcpy(&AnnounceSrcAddr.sin_addr, (const void *)&pAddress->sin_addr, sizeof(IN_ADDR));
-
-				// Bind Broadcast Socket to Port
-				if (bind(AnnounceSocket, (SOCKADDR *)&AnnounceSrcAddr, sizeof(AnnounceSrcAddr)) == SOCKET_ERROR) {
-					continue;
-				}
-
-				// Get local subnet broadcast address
-				memset(&AnnounceDestAddr, '\0', sizeof(struct sockaddr_in));
-				AnnounceDestAddr.sin_family = AF_INET;
-				AnnounceDestAddr.sin_port = htons(ANNOUNCE_DEST_PORT);
-				pAddress = (sockaddr_in *)& (InterfaceList[i].iiBroadcastAddress);
-				memcpy(&AnnounceDestAddr.sin_addr, (const void *)&pAddress->sin_addr, sizeof(IN_ADDR));
-
-				memset(mess, '\0', sizeof(mess));
-				strncpy(mess, "Discovery: Who is out there?\n", sizeof(mess));
-
-				// Send the discovery packet
-				/*int TotalByteSent = */sendto(AnnounceSocket, mess, (int)strlen(mess), 0,
-						(SOCKADDR *)&AnnounceDestAddr, sizeof(AnnounceDestAddr));
-
-				// Wait for responses to arrive
-				std::this_thread::sleep_for(std::chrono::milliseconds(ANNOUNCE_WAIT));
-
-				do {
-					recvAddrLen = sizeof(recvAddr);
-					memset(&recvBuf, '\0', sizeof(recvBuf));
-					if ((numBytes = recvfrom(AnnounceSocket, recvBuf, sizeof(recvBuf), 0, (SOCKADDR *)&recvAddr, &recvAddrLen)) == -1) {
-#ifdef WIN32
-						if (WSAGetLastError() != WSAEWOULDBLOCK) {
-#else
-							if (errno != EWOULDBLOCK) {
-#endif
-								return std::vector<IMSSystem>();
-							}
-						}
-						if (numBytes > 0) {
-							char RemoteAddr[INET_ADDRSTRLEN], *eol, *rxPtr;
-							InterfaceConnectionDetail detail;
-							// Save some info from the sender side
-							//getpeername(AnnounceSocket, (SOCKADDR *)&recvAddr, &recvAddrLen);
-							inet_ntop(AF_INET, (void *)&recvAddr.sin_addr, RemoteAddr, INET_ADDRSTRLEN);
-							detail.RemoteIPAddr = std::string(RemoteAddr);
-							//std::cout << "Sending IP Address : " << szHwAddr << " and port# : " << htons(recvAddr.sin_port) << std::endl;
-							rxPtr = recvBuf;
-							while ((eol = strchr(rxPtr, '\n')) != NULL)
-							{
-								if (!strncmp(rxPtr, "SNO: ", 5))
-								{
-									// Get Serial Number
-									*(eol - 1) = '\0';
-									detail.serialNo = std::string(&rxPtr[5]);
-								}
-								else if (!strncmp(rxPtr, "MAC: ", 5))
-								{
-									// Get MAC Address
-									for (int i = 0; i < 6; i++)
-									{
-										detail.MACAddress[i] = (unsigned char)strtoul(rxPtr + 5 + 3 * i, NULL, 16);
-									}
-								}
-								else if (!strncmp(rxPtr, "ReqIP: ", 7))
-								{
-									// Get Requestor IP
-									*(eol - 1) = '\0';
-									detail.HostIPAddr = std::string(&rxPtr[7]);
-								}
-								rxPtr = eol + 1;
-							}
-							intf_detail->push_back(detail);
-						}
-					} while (numBytes > 0);
-
-					// Close socket
-#ifdef WIN32
-					closesocket(AnnounceSocket);
-#else
-					close(AnnounceSocket);
-#endif
-				}
+			int on = 1;
+			// Clean out any old fragments of socket connections hanging around
+			if (setsockopt(AnnounceSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on)) == -1) {
+				BOOST_LOG_SEV(lg::get(), sev::error) << "announce: setsockopt (SO_REUSEADDR) " << logErrorString() << std::endl;
+				return std::vector<IMSSystem>();
 			}
+			// Enable Broadcast Transmission
+			if (setsockopt(AnnounceSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&on, sizeof(on)) == -1) {
+				BOOST_LOG_SEV(lg::get(), sev::error) << "announce: setsockopt (SO_REUSEADDR) " << logErrorString() << std::endl;
+				return std::vector<IMSSystem>();
+			}
+
+			// Copy source IP address
+			sockaddr_in *pAddress;
+			pAddress = (sockaddr_in *)& (InterfaceList[i].iiAddress);
+			memcpy(&AnnounceSrcAddr.sin_addr, (const void *)&pAddress->sin_addr, sizeof(IN_ADDR));
+
+			// Bind Broadcast Socket to Port
+			if (bind(AnnounceSocket, (SOCKADDR *)&AnnounceSrcAddr, sizeof(AnnounceSrcAddr)) == SOCKET_ERROR) {
+				continue;
+			}
+
+			// Get local subnet broadcast address
+			memset(&AnnounceDestAddr, '\0', sizeof(struct sockaddr_in));
+			AnnounceDestAddr.sin_family = AF_INET;
+			AnnounceDestAddr.sin_port = htons(ANNOUNCE_DEST_PORT);
+			pAddress = (sockaddr_in *)& (InterfaceList[i].iiBroadcastAddress);
+			memcpy(&AnnounceDestAddr.sin_addr, (const void *)&pAddress->sin_addr, sizeof(IN_ADDR));
+
+			memset(mess, '\0', sizeof(mess));
+			strncpy(mess, "Discovery: Who is out there?\n", sizeof(mess));
+
+			{
+				char BroadcastAddr[INET_ADDRSTRLEN];
+				inet_ntop(AF_INET, (void *)&AnnounceDestAddr.sin_addr, BroadcastAddr, INET_ADDRSTRLEN);
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Sending Discovery packet: " << BroadcastAddr << " port " << ANNOUNCE_SRC_PORT << std::endl;
+			}
+			// Send the discovery packet
+			/*int TotalByteSent = */sendto(AnnounceSocket, mess, (int)strlen(mess), 0,
+					(SOCKADDR *)&AnnounceDestAddr, sizeof(AnnounceDestAddr));
+
+			// Wait for responses to arrive
+			std::this_thread::sleep_for(std::chrono::milliseconds(ANNOUNCE_WAIT));
+
+			do {
+				recvAddrLen = sizeof(recvAddr);
+				memset(&recvBuf, '\0', sizeof(recvBuf));
+				if ((numBytes = recvfrom(AnnounceSocket, recvBuf, sizeof(recvBuf), 0, (SOCKADDR *)&recvAddr, &recvAddrLen)) == -1) {
+#ifdef WIN32
+					if (WSAGetLastError() != WSAEWOULDBLOCK) {
+#else
+					if (errno != EWOULDBLOCK) {
+#endif
+						BOOST_LOG_SEV(lg::get(), sev::error) << "announce: recvfrom error" << logErrorString() << std::endl;
+
+						return std::vector<IMSSystem>();
+					}
+				}
+				if (numBytes > 0) {
+					char RemoteAddr[INET_ADDRSTRLEN], *eol, *rxPtr;
+					InterfaceConnectionDetail detail;
+					// Save some info from the sender side
+					//getpeername(AnnounceSocket, (SOCKADDR *)&recvAddr, &recvAddrLen);
+					inet_ntop(AF_INET, (void *)&recvAddr.sin_addr, RemoteAddr, INET_ADDRSTRLEN);
+					detail.RemoteIPAddr = std::string(RemoteAddr);
+					//std::cout << "Sending IP Address : " << szHwAddr << " and port# : " << htons(recvAddr.sin_port) << std::endl;
+					rxPtr = recvBuf;
+					while ((eol = strchr(rxPtr, '\n')) != NULL)
+					{
+						if (!strncmp(rxPtr, "SNO: ", 5))
+						{
+							// Get Serial Number
+							*(eol - 1) = '\0';
+							detail.serialNo = std::string(&rxPtr[5]);
+						}
+						else if (!strncmp(rxPtr, "MAC: ", 5))
+						{
+							// Get MAC Address
+							for (int i = 0; i < 6; i++)
+							{
+								detail.MACAddress[i] = (unsigned char)strtoul(rxPtr + 5 + 3 * i, NULL, 16);
+							}
+						}
+						else if (!strncmp(rxPtr, "ReqIP: ", 7))
+						{
+							// Get Requestor IP
+							*(eol - 1) = '\0';
+							detail.HostIPAddr = std::string(&rxPtr[7]);
+						}
+						rxPtr = eol + 1;
+					}
+					BOOST_LOG_SEV(lg::get(), sev::info) << "Response received from " << detail.serialNo << " at " << RemoteAddr << std::endl;
+					intf_detail->push_back(detail);
+				}
+			} while (numBytes > 0);
+
+			// Close socket
+#ifdef WIN32
+			closesocket(AnnounceSocket);
+#else
+			close(AnnounceSocket);
+#endif
+		}
+
+		if (intf_detail->empty()) {
+				BOOST_LOG_SEV(lg::get(), sev::info) << "announce: No valid responses received" << std::endl;
+		}
 
 		std::vector<IMSSystem> IMSList;
 		for (std::list<InterfaceConnectionDetail>::iterator it = intf_detail->begin(); it != intf_detail->end(); ++it)
@@ -525,13 +572,8 @@ typedef struct _INTERFACE_INFO  {
 #endif
 			if ((mImpl->msgSock == INVALID_SOCKET) || (InterruptSock == INVALID_SOCKET))
 			{
-#if defined(_DEBUG)
-#ifdef WIN32
-				printf("Client: socket() failed! Error code: %ld\n", WSAGetLastError());
-#else
-				perror("client");
-#endif
-#endif
+				BOOST_LOG_SEV(lg::get(), sev::error) << "client socket error: " << logErrorString() << std::endl;
+
 				// Exit 
 				return;
 			}
@@ -541,6 +583,7 @@ typedef struct _INTERFACE_INFO  {
 			// Port no.
 			ServerAddr.sin_port = htons(mImpl->IMSMSG_PORT);
 
+			// Just in case we've been passed a port connection (serial:ipaddr) instead of just a serial number
 			std::string serial_ = serial.substr(0,serial.find_first_of(":"));
 
 			// The IP address
@@ -563,13 +606,11 @@ typedef struct _INTERFACE_INFO  {
 			if (setsockopt(InterruptSock, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on)) == -1) {
 #ifdef WIN32
 				int err = WSAGetLastError();
-#if defined(_DEBUG)
-				printf("failed to set SO_REUSEADDR: %ld\n", err);
-#endif
+				BOOST_LOG_SEV(lg::get(), sev::error) << "setsockopt (SO_REUSEADDR): " << err << std::endl;
 				closesocket(mImpl->msgSock);
 				closesocket(InterruptSock);
 #else
-				perror("setsockopt");
+				BOOST_LOG_SEV(lg::get(), sev::error) << "setsockopt (SO_REUSEADDR): " << strerror(errno) << std::endl;
 				close(mImpl->msgSock);
 				close(InterruptSock);
 #endif
@@ -581,13 +622,11 @@ typedef struct _INTERFACE_INFO  {
 			if (INVALID_SOCKET == bindResult) {
 #ifdef WIN32
 				int err = WSAGetLastError();
-#if defined(_DEBUG)
-				printf("interrupt socket failed to bind: %ld\n", err);
-#endif
+				BOOST_LOG_SEV(lg::get(), sev::error) << "interrupt socket failed to bind: " << err << std::endl;
 				closesocket(mImpl->msgSock);
 				closesocket(InterruptSock);
 #else
-				perror("bind");
+				BOOST_LOG_SEV(lg::get(), sev::error) << "bind error: " << strerror(errno) << std::endl;
 				close(mImpl->msgSock);
 				close(InterruptSock);
 #endif
@@ -601,9 +640,7 @@ typedef struct _INTERFACE_INFO  {
 			iResult |= ioctlsocket(InterruptSock, FIONBIO, &iMode);
 			if (iResult != NO_ERROR)
 			{
-#if defined(_DEBUG)
-				printf("ioctlsocket failed with error: %ld\n", iResult);
-#endif
+				BOOST_LOG_SEV(lg::get(), sev::error) << "ioctlsocket (FIONBIO) failed with error: " << iResult << std::endl;
 				return;
 			}
 
@@ -625,10 +662,8 @@ typedef struct _INTERFACE_INFO  {
 				                        (void *) &flag,  /* the cast is historical cruft */
 				                        sizeof(int));    /* length of option value */
 				 if (result < 0) {
-#if defined(_DEBUG)
-					 perror("setsockopt");
-#endif
-					 return;
+					BOOST_LOG_SEV(lg::get(), sev::error) << "setsockopt (TCP_NODELAY): " << strerror(errno) << std::endl;
+					return;
 				 }
 			}
 #endif
@@ -636,9 +671,7 @@ typedef struct _INTERFACE_INFO  {
 			// And start listening
 			int listenResult = listen(InterruptSock, SOMAXCONN);
 			if (INVALID_SOCKET == listenResult) {
-#if defined(_DEBUG)
-				printf("interrupt socket failed to listen: %d\n", listenResult);
-#endif
+				BOOST_LOG_SEV(lg::get(), sev::error) << "interrupt socket failed to listen: " << listenResult << std::endl;
 #ifdef WIN32
 				closesocket(mImpl->msgSock);
 				closesocket(InterruptSock);
@@ -661,17 +694,13 @@ typedef struct _INTERFACE_INFO  {
 #ifdef WIN32
 				int err = WSAGetLastError();
 				if (err != WSAEWOULDBLOCK) {
-#if defined(_DEBUG)
-					printf("Client: connect() failed! Error code: %ld\n", err);
-#endif
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() failed! " << err << std::endl;
 					// Close the socket
 					closesocket(mImpl->msgSock);
 					closesocket(InterruptSock);
 #else
 				if ((errno != EWOULDBLOCK) && (errno != EINPROGRESS)) {
-#if defined(_DEBUG)
-					perror("client");
-#endif
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() failed! " << strerror(errno) << std::endl;
 					// Close the socket
 					close(mImpl->msgSock);
 					close(InterruptSock);
@@ -694,14 +723,12 @@ typedef struct _INTERFACE_INFO  {
 					}
 					else {
 #ifdef WIN32
-#if defined(_DEBUG)
-						printf("Client: connect() timed out! Error code: %ld\n", err);
-#endif
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() timed out! " << err << std::endl;
 						// Close the socket
 						closesocket(mImpl->msgSock);
 						closesocket(InterruptSock);
 #else
-						perror("connect");
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() timed out! " << strerror(errno) << std::endl;
 						close(mImpl->msgSock);
 						close(InterruptSock);
 #endif
@@ -746,24 +773,17 @@ typedef struct _INTERFACE_INFO  {
 					{
 						mImpl->intrSock = accept(InterruptSock, NULL, NULL);
 						if (INVALID_SOCKET == mImpl->intrSock) {
-#ifdef WIN32
-#if defined(_DEBUG)
-							printf("Client: accept() failed! Continuing without interrupts\n");
-#endif
-#else
-							perror("accept");
-#endif
+							BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: accept() failed! Continuing without interrupts " << logErrorString() << std::endl;
+						} else {
+							// v1.8.5 (Linux)
+							// intrSock does not inherit the flags of InterruptSock, unlike in BSD and Windows
+							// https://stackoverflow.com/questions/8053294/is-sockets-accept-return-descriptor-blocking-or-non-blocking/8053432
+							fcntl(mImpl->intrSock, F_SETFL, O_NONBLOCK);
 						}
 					}
 					else {
 						mImpl->intrSock = INVALID_SOCKET;
-#ifdef WIN32
-#if defined(_DEBUG)
-						printf("Client: accept() timed out! Continuing without interrupts\n");
-#endif
-#else
-						perror("accept");
-#endif
+							BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: accept() timed out! Continuing without interrupts " << logErrorString() << std::endl;
 					}
 #ifdef WIN32
 					// No longer need server socket
@@ -777,6 +797,7 @@ typedef struct _INTERFACE_INFO  {
 
 
 			DeviceIsOpen = true;
+			mImpl->conn_string = serial;
 
 			// Save the IP address of the connected server
 			mImpl->ConnectedServer = *((SOCKADDR*)&ServerAddr);
@@ -801,13 +822,18 @@ typedef struct _INTERFACE_INFO  {
 
 			// Start Interrupt receiving thread
 			mImpl->interruptThread = std::thread(&CM_ENET::InterruptReceiver, this);
+
+			BOOST_LOG_SEV(lg::get(), sev::info) << "iMS System " << serial << " connected." << std::endl;
 		}
 	}
 	void CM_ENET::Disconnect()
 	{
 		if (DeviceIsOpen)
 		{
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Disconnecting from iMS System " << mImpl->conn_string << " ..." << std::endl;
+	
 			// Disable Interrupts
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Disabling interrupts." << std::endl;
 			HostReport *iorpt;
 			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
 			iorpt->Payload<int>(0);
@@ -817,6 +843,7 @@ typedef struct _INTERFACE_INFO  {
 			this->SendMsg(*iorpt);
 			delete iorpt;
 
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Waiting for pending messages in the send queue" << std::endl;
 			bool msg_pending{ true };
 			while (msg_pending)
 			{
@@ -826,6 +853,7 @@ typedef struct _INTERFACE_INFO  {
 			}
 
 			// wait for all messages to have been processed
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Waiting for all messages to complete processing" << std::endl;
 			bool msg_waiting{ false };
 			do
 			{
@@ -851,38 +879,40 @@ typedef struct _INTERFACE_INFO  {
 			} while (1);
 
 			// Stop Threads
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Stopping threads" << std::endl;
 			DeviceIsOpen = false;  // must set this to cancel threads
 			senderThread.join();
+			BOOST_LOG_SEV(lg::get(), sev::debug) << "sender thread joined" << std::endl;
 			receiverThread.join();
+			BOOST_LOG_SEV(lg::get(), sev::debug) << "receiver thread joined" << std::endl;
 			parserThread.join();
+			BOOST_LOG_SEV(lg::get(), sev::debug) << "parser thread joined" << std::endl;
 			mImpl->memoryTransferThread.join();  // TODO: need to abort in-flight transfers
+			BOOST_LOG_SEV(lg::get(), sev::debug) << "memory transfer thread joined" << std::endl;
 			mImpl->interruptThread.join();
+			BOOST_LOG_SEV(lg::get(), sev::debug) << "interrupt thread joined" << std::endl;
 			
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Closing sockets" << std::endl;
 			//shutdown(mImpl->msgSock, SD_BOTH);
 			//shutdown(mImpl->intrSock, SD_BOTH);
 #ifdef WIN32
 			if (closesocket(mImpl->msgSock) != 0) {
-#if defined(_DEBUG)
-				printf("Client: Cannot close \"SendingSocket\" socket. Error code: %ld\n", WSAGetLastError());
-#endif
+				BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"SendingSocket\" socket.  Err: " <<  logErrorString() << std::endl;
 			}
 			if (mImpl->intrSock != INVALID_SOCKET) {
 				if (closesocket(mImpl->intrSock) != 0) {
-#if defined(_DEBUG)
-					printf("Client: Cannot close \"InterruptSocket\" socket. Error code: %ld\n", WSAGetLastError());
-#endif
+					BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"InterruptSocket\" socket.  Err: " <<  logErrorString() << std::endl;
 				}
 			}
 #else
 			if (close(mImpl->msgSock) != 0)
-				perror("close send socket");
+				BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"SendingSocket\" socket.  Err: " <<  logErrorString() << std::endl;
 			if (mImpl->intrSock != INVALID_SOCKET) {
 				if (close(mImpl->intrSock) != 0)
-					perror("close interrupt socket");
+					BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"InterruptSocket\" socket.  Err: " <<  logErrorString() << std::endl;
 			}
 #endif
-			//else
-				//printf("Client: Closing \"SendingSocket\" socket...\n");
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Disconnected." << std::endl;
 		}
 
 	}
@@ -987,7 +1017,7 @@ typedef struct _INTERFACE_INFO  {
 
 					if (-1 == (ret = poll(&fds, 1, sendTimeout.count())))
 					{
-						perror("poll");
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Send Error (poll): " <<  logErrorString() << std::endl;
 						m->setStatus(Message::Status::SEND_ERROR);
 						break;
 					}
@@ -1011,6 +1041,7 @@ typedef struct _INTERFACE_INFO  {
 							if (0 > ret) {
 								if ((err != EWOULDBLOCK) && (err != EAGAIN)) {
 									// Handle Error
+									BOOST_LOG_SEV(lg::get(), sev::error) << "Send Error (send): " << logErrorString() << std::endl;
 									m->setStatus(Message::Status::SEND_ERROR);
 									break;
 
@@ -1076,6 +1107,7 @@ typedef struct _INTERFACE_INFO  {
 #endif
 				{
 					// Handle Error
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Receive Error (recv): " <<  logErrorString() << std::endl;
 				}
 				else if (ret > 0) {
 					std::unique_lock<std::mutex> rxlck{ m_rxmutex };
@@ -1222,11 +1254,9 @@ typedef struct _INTERFACE_INFO  {
 #endif
 				{
 					// Handle Error
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Interrupt Receive Error (recv): " << logErrorString() << std::endl;
 				}
 				else if (ret > 0) {
-#if defined(_DEBUG)
-					//std::cout << "Received an interrupt with " << ret << " bytes" << std::endl;
-#endif
 					std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
 					m->MarkSendTime();
 					m->setStatus(Message::Status::INTERRUPT);

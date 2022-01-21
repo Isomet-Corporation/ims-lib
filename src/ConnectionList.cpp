@@ -130,7 +130,14 @@ static void init_logging()
 				{
 					DWORD dwSize = ::SizeofResource(hModule, hr);
 #else
-	if (!boost::filesystem::exists(settings_path += "~/.config")) {
+	auto home = boost::filesystem::path(getenv("HOME"));
+	if (home.size() < 1) {
+		// strange there is no home folder, but we have to go somewhere so we'll put it in tmp 
+		home = "/tmp";
+	}
+	settings_path += home;
+
+	if (!boost::filesystem::exists(settings_path += "/.config")) {
 		boost::filesystem::create_directory(settings_path);
 	}
 	if (!boost::filesystem::exists(settings_path += "/ims")) {
@@ -345,10 +352,14 @@ namespace iMS
 			IConnectionManager *object = *iter;
 
 			if ((*pImpl->config_map)[object->Ident()].IncludeInScan) {
+				BOOST_LOG_SEV(lg::get(), sev::info) << "scan(" << object->Ident() << ") start" << std::endl;
 				std::vector<IMSSystem> newiMSList = object->Discover((*pImpl->config_map)[object->Ident()].PortMask);
 
 				// Add newly found iMS's to the full list of iMS's
 				fulliMSList.insert(fulliMSList.end(), newiMSList.begin(), newiMSList.end());
+				BOOST_LOG_SEV(lg::get(), sev::info) << "scan(" << object->Ident() << ") finish: found " << newiMSList.size() << std::endl;
+			} else {
+				BOOST_LOG_SEV(lg::get(), sev::info) << "scan(" << object->Ident() << ") disabled" << std::endl;
 			}
 		}
 		return fulliMSList;

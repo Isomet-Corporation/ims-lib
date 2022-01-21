@@ -263,6 +263,7 @@ namespace iMS
 				}
 
 				system->Ctlr(IMSController(model, desc, cap, ver, ImageTable()));
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Added Controller " << model << std::endl;
 			}
 			else if (std::string(argv[0]) == "Synthesiser")
 			{
@@ -379,9 +380,13 @@ namespace iMS
 				}
 
 				system->Synth(IMSSynthesiser(model, desc, cap, ver, FileSystemTable(), nullptr));
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Added Synthesiser " << model << std::endl;
 			}
 		}
-		else return -1;
+		else {
+			BOOST_LOG_SEV(lg::get(), sev::warning) << "Unknown category " << azColName[0] << std::endl;			
+			return -1;
+		}
 		return 0;
  	}
 
@@ -391,14 +396,17 @@ namespace iMS
 		int rc;
 
 		imshw = get_db();
-		if (imshw == nullptr)
+		if (imshw == nullptr) {
+			BOOST_LOG_SEV(lg::get(), sev::error) << "imshw db = null" << std::endl;
 			return false;
+		}
 
 		std::string getType("SELECT Type, * FROM hwlist WHERE Magic = ");
 		getType += std::to_string(magicID);
 		rc = sqlite3_exec(imshw, getType.c_str(), hwlist_callback, (void *)m_parent, nullptr);
 		if (rc != SQLITE_OK) {
 			sqlite3_close(imshw);
+			BOOST_LOG_SEV(lg::get(), sev::error) << "imshw db err: " << rc << std::endl;
 			return false;
 		}
 
@@ -435,7 +443,7 @@ namespace iMS
 						ImageTable()));
 
 					if (!p_Impl->AddDevice(ctrlr_magic)) {
-						//std::cout << "DB Error" << std::endl;
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Unable to access database" << std::endl;
 						delete iorpt;
 						return false;
 					} 
@@ -483,11 +491,12 @@ namespace iMS
 					}
 					if (!ret)
 					{
-						//std::cout << "DB Error" << std::endl;
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Unable to access database" << std::endl;
 						delete iorpt;
 						return false;
 					}
 					else {
+						BOOST_LOG_SEV(lg::get(), sev::info) << "IMSSystem: reading back FST" << std::endl;
 						FileSystemTableReader fstr(*this);
 						FileSystemTable synth_fst = fstr.Readback();
 						const IMSSynthesiser& s = this->Synth();
@@ -533,6 +542,7 @@ namespace iMS
 			}
 			delete iorpt;
 		}
+		BOOST_LOG_SEV(lg::get(), sev::info) << "IMSSystem::Initialise() Complete" << std::endl;
 		return true;
 	}
 
