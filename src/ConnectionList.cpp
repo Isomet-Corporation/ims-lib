@@ -33,6 +33,7 @@
 #endif
 
 #include "PrivateUtil.h"  // for logging
+#include "LibVersion.h"
 
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/ini_parser.hpp>
@@ -126,7 +127,7 @@ static void init_logging()
 			{
 				LPVOID pBuffer = LockResource(hg);
 
-				if (pLockedResource)
+				if (pBuffer)
 				{
 					DWORD dwSize = ::SizeofResource(hModule, hr);
 #else
@@ -192,6 +193,9 @@ static void init_logging()
 			//logging::init_from_stream(file);
 
 			BOOST_LOG_SEV(iMS::lg::get(), sev::info) << std::string(" << Start Logging >>");
+			std::stringstream ss;
+			ss << " << Using iMS Library Version " << iMS::LibVersion::GetVersion() << " >>";
+			BOOST_LOG_SEV(iMS::lg::get(), sev::info) << ss.str();
 		}
 		catch (std::exception&)
 		{

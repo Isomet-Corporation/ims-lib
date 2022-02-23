@@ -557,7 +557,13 @@ namespace iMS
     /// ImagePlayerEvent::IMAGE_STARTED event will be raised which the application can register to receive
     /// \return true if the Play Image request was sent to the Controller successfully.
     /// \since 1.0
-		bool Play(ImageTrigger start_trig = ImageTrigger::CONTINUOUS);
+		bool Play(ImageTrigger start_trig);
+	/// \brief Starts Image Playback
+	///
+	/// Default Start function, using the same start trigger that is used by subsequent image repeats.
+	/// Identical to \c Play(cfg.trig);
+	/// \since 1.8.5
+		inline bool Play() { return this->Play(this->cfg.trig); }
     /// \brief Requests current Point Progress
     ///
     /// This function call will request from the Controller the current ImagePoint position within the
