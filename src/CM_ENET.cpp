@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2020-11-20 16:06:38 +0000 (Fri, 20 Nov 2020) $
+/ Last update: $Date: 2022-09-09 00:22:40 +0100 (Fri, 09 Sep 2022) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 475 $
+/ Revision   : $Rev: 528 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -78,7 +78,6 @@ namespace iMS {
 #define TIMEVAL struct timeval
 #define SD_BOTH 2
 //#define INVALID_SOCKET -1
-//#define _DEBUG
 
 typedef struct _INTERFACE_INFO  {
 	  unsigned int    iiFlags;
@@ -89,26 +88,32 @@ typedef struct _INTERFACE_INFO  {
 
 #endif
 
-	static std::string logErrorString() {
-		static char msgbuf [ 256 ] ;
+static std::string logErrorString(int err = INT_MAX) {
+	static char msgbuf[256];
 
-		memset(msgbuf, '\0', 256 * sizeof (char));
+	memset(msgbuf, '\0', 256 * sizeof(char));
 
 #ifdef WIN32
-		err = WSAGetLastError ();
+	DWORD werr = err;
+	if (err == INT_MAX) {
+		werr = WSAGetLastError();
+	}
 
-		FormatMessage (FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,   // flags
-        		       	NULL,                // lpsource
-               			err,                 // message id
-               			MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT),    // languageid
-               			msgbuf,              // output buffer
-               			sizeof (msgbuf),     // size of msgbuf, bytes
-               			NULL);               // va_list of arguments
-		if (! *msgbuf) {
-  			 sprintf (msgbuf, "%d", err);  // provide error # if no string available
-		}
+	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,   // flags
+		NULL,                // lpsource
+		werr,                 // message id
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),    // languageid
+		msgbuf,              // output buffer
+		sizeof(msgbuf),     // size of msgbuf, bytes
+		NULL);               // va_list of arguments
+	if (!*msgbuf) {
+		sprintf(msgbuf, "%d", werr);  // provide error # if no string available
+	}
 #else
-		strncpy(msgbuf, strerror(errno), sizeof(msgbuf) );
+	if (err == INT_MAX) {
+		err = errno;	
+	}
+	strncpy(msgbuf, strerror(err), sizeof(msgbuf) );
 #endif
 		return std::string(msgbuf);
 	}
@@ -389,113 +394,113 @@ typedef struct _INTERFACE_INFO  {
 			fcntl(AnnounceSocket, F_SETFL, O_NONBLOCK);
 #endif
 
-			int on = 1;
-			// Clean out any old fragments of socket connections hanging around
+				int on = 1;
+				// Clean out any old fragments of socket connections hanging around
 			if (setsockopt(AnnounceSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on)) == -1) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "announce: setsockopt (SO_REUSEADDR) " << logErrorString() << std::endl;
-				return std::vector<IMSSystem>();
+					return std::vector<IMSSystem>();
 			}
-			// Enable Broadcast Transmission
+				// Enable Broadcast Transmission
 			if (setsockopt(AnnounceSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&on, sizeof(on)) == -1) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "announce: setsockopt (SO_REUSEADDR) " << logErrorString() << std::endl;
-				return std::vector<IMSSystem>();
+					return std::vector<IMSSystem>();
 			}
 
-			// Copy source IP address
-			sockaddr_in *pAddress;
-			pAddress = (sockaddr_in *)& (InterfaceList[i].iiAddress);
-			memcpy(&AnnounceSrcAddr.sin_addr, (const void *)&pAddress->sin_addr, sizeof(IN_ADDR));
+				// Copy source IP address
+				sockaddr_in *pAddress;
+				pAddress = (sockaddr_in *)& (InterfaceList[i].iiAddress);
+				memcpy(&AnnounceSrcAddr.sin_addr, (const void *)&pAddress->sin_addr, sizeof(IN_ADDR));
 
-			// Bind Broadcast Socket to Port
-			if (bind(AnnounceSocket, (SOCKADDR *)&AnnounceSrcAddr, sizeof(AnnounceSrcAddr)) == SOCKET_ERROR) {
-				continue;
-			}
+				// Bind Broadcast Socket to Port
+				if (bind(AnnounceSocket, (SOCKADDR *)&AnnounceSrcAddr, sizeof(AnnounceSrcAddr)) == SOCKET_ERROR) {
+					continue;
+				}
 
-			// Get local subnet broadcast address
-			memset(&AnnounceDestAddr, '\0', sizeof(struct sockaddr_in));
-			AnnounceDestAddr.sin_family = AF_INET;
-			AnnounceDestAddr.sin_port = htons(ANNOUNCE_DEST_PORT);
-			pAddress = (sockaddr_in *)& (InterfaceList[i].iiBroadcastAddress);
-			memcpy(&AnnounceDestAddr.sin_addr, (const void *)&pAddress->sin_addr, sizeof(IN_ADDR));
+				// Get local subnet broadcast address
+				memset(&AnnounceDestAddr, '\0', sizeof(struct sockaddr_in));
+				AnnounceDestAddr.sin_family = AF_INET;
+				AnnounceDestAddr.sin_port = htons(ANNOUNCE_DEST_PORT);
+				pAddress = (sockaddr_in *)& (InterfaceList[i].iiBroadcastAddress);
+				memcpy(&AnnounceDestAddr.sin_addr, (const void *)&pAddress->sin_addr, sizeof(IN_ADDR));
 
-			memset(mess, '\0', sizeof(mess));
-			strncpy(mess, "Discovery: Who is out there?\n", sizeof(mess));
+				memset(mess, '\0', sizeof(mess));
+				strncpy(mess, "Discovery: Who is out there?\n", sizeof(mess));
 
 			{
 				char BroadcastAddr[INET_ADDRSTRLEN];
 				inet_ntop(AF_INET, (void *)&AnnounceDestAddr.sin_addr, BroadcastAddr, INET_ADDRSTRLEN);
 				BOOST_LOG_SEV(lg::get(), sev::info) << "Sending Discovery packet: " << BroadcastAddr << " port " << ANNOUNCE_SRC_PORT << std::endl;
 			}
-			// Send the discovery packet
-			/*int TotalByteSent = */sendto(AnnounceSocket, mess, (int)strlen(mess), 0,
-					(SOCKADDR *)&AnnounceDestAddr, sizeof(AnnounceDestAddr));
+				// Send the discovery packet
+				/*int TotalByteSent = */sendto(AnnounceSocket, mess, (int)strlen(mess), 0,
+						(SOCKADDR *)&AnnounceDestAddr, sizeof(AnnounceDestAddr));
 
-			// Wait for responses to arrive
-			std::this_thread::sleep_for(std::chrono::milliseconds(ANNOUNCE_WAIT));
+				// Wait for responses to arrive
+				std::this_thread::sleep_for(std::chrono::milliseconds(ANNOUNCE_WAIT));
 
-			do {
-				recvAddrLen = sizeof(recvAddr);
-				memset(&recvBuf, '\0', sizeof(recvBuf));
-				if ((numBytes = recvfrom(AnnounceSocket, recvBuf, sizeof(recvBuf), 0, (SOCKADDR *)&recvAddr, &recvAddrLen)) == -1) {
+				do {
+					recvAddrLen = sizeof(recvAddr);
+					memset(&recvBuf, '\0', sizeof(recvBuf));
+					if ((numBytes = recvfrom(AnnounceSocket, recvBuf, sizeof(recvBuf), 0, (SOCKADDR *)&recvAddr, &recvAddrLen)) == -1) {
 #ifdef WIN32
-					if (WSAGetLastError() != WSAEWOULDBLOCK) {
+						if (WSAGetLastError() != WSAEWOULDBLOCK) {
 #else
-					if (errno != EWOULDBLOCK) {
+							if (errno != EWOULDBLOCK) {
 #endif
 						BOOST_LOG_SEV(lg::get(), sev::error) << "announce: recvfrom error" << logErrorString() << std::endl;
 
-						return std::vector<IMSSystem>();
-					}
-				}
-				if (numBytes > 0) {
-					char RemoteAddr[INET_ADDRSTRLEN], *eol, *rxPtr;
-					InterfaceConnectionDetail detail;
-					// Save some info from the sender side
-					//getpeername(AnnounceSocket, (SOCKADDR *)&recvAddr, &recvAddrLen);
-					inet_ntop(AF_INET, (void *)&recvAddr.sin_addr, RemoteAddr, INET_ADDRSTRLEN);
-					detail.RemoteIPAddr = std::string(RemoteAddr);
-					//std::cout << "Sending IP Address : " << szHwAddr << " and port# : " << htons(recvAddr.sin_port) << std::endl;
-					rxPtr = recvBuf;
-					while ((eol = strchr(rxPtr, '\n')) != NULL)
-					{
-						if (!strncmp(rxPtr, "SNO: ", 5))
-						{
-							// Get Serial Number
-							*(eol - 1) = '\0';
-							detail.serialNo = std::string(&rxPtr[5]);
-						}
-						else if (!strncmp(rxPtr, "MAC: ", 5))
-						{
-							// Get MAC Address
-							for (int i = 0; i < 6; i++)
-							{
-								detail.MACAddress[i] = (unsigned char)strtoul(rxPtr + 5 + 3 * i, NULL, 16);
+								return std::vector<IMSSystem>();
 							}
 						}
-						else if (!strncmp(rxPtr, "ReqIP: ", 7))
-						{
-							// Get Requestor IP
-							*(eol - 1) = '\0';
-							detail.HostIPAddr = std::string(&rxPtr[7]);
-						}
-						rxPtr = eol + 1;
-					}
+						if (numBytes > 0) {
+							char RemoteAddr[INET_ADDRSTRLEN], *eol, *rxPtr;
+							InterfaceConnectionDetail detail;
+							// Save some info from the sender side
+							//getpeername(AnnounceSocket, (SOCKADDR *)&recvAddr, &recvAddrLen);
+							inet_ntop(AF_INET, (void *)&recvAddr.sin_addr, RemoteAddr, INET_ADDRSTRLEN);
+							detail.RemoteIPAddr = std::string(RemoteAddr);
+							//std::cout << "Sending IP Address : " << szHwAddr << " and port# : " << htons(recvAddr.sin_port) << std::endl;
+							rxPtr = recvBuf;
+							while ((eol = strchr(rxPtr, '\n')) != NULL)
+							{
+								if (!strncmp(rxPtr, "SNO: ", 5))
+								{
+									// Get Serial Number
+									*(eol - 1) = '\0';
+									detail.serialNo = std::string(&rxPtr[5]);
+								}
+								else if (!strncmp(rxPtr, "MAC: ", 5))
+								{
+									// Get MAC Address
+									for (int i = 0; i < 6; i++)
+									{
+										detail.MACAddress[i] = (unsigned char)strtoul(rxPtr + 5 + 3 * i, NULL, 16);
+									}
+								}
+								else if (!strncmp(rxPtr, "ReqIP: ", 7))
+								{
+									// Get Requestor IP
+									*(eol - 1) = '\0';
+									detail.HostIPAddr = std::string(&rxPtr[7]);
+								}
+								rxPtr = eol + 1;
+							}
 					BOOST_LOG_SEV(lg::get(), sev::info) << "Response received from " << detail.serialNo << " at " << RemoteAddr << std::endl;
-					intf_detail->push_back(detail);
-				}
-			} while (numBytes > 0);
+							intf_detail->push_back(detail);
+						}
+					} while (numBytes > 0);
 
-			// Close socket
+					// Close socket
 #ifdef WIN32
-			closesocket(AnnounceSocket);
+					closesocket(AnnounceSocket);
 #else
-			close(AnnounceSocket);
+					close(AnnounceSocket);
 #endif
-		}
+				}
 
 		if (intf_detail->empty()) {
 				BOOST_LOG_SEV(lg::get(), sev::info) << "announce: No valid responses received" << std::endl;
-		}
+			}
 
 		std::vector<IMSSystem> IMSList;
 		for (std::list<InterfaceConnectionDetail>::iterator it = intf_detail->begin(); it != intf_detail->end(); ++it)
@@ -663,7 +668,7 @@ typedef struct _INTERFACE_INFO  {
 				                        sizeof(int));    /* length of option value */
 				 if (result < 0) {
 					BOOST_LOG_SEV(lg::get(), sev::error) << "setsockopt (TCP_NODELAY): " << strerror(errno) << std::endl;
-					return;
+					 return;
 				 }
 			}
 #endif
@@ -717,7 +722,7 @@ typedef struct _INTERFACE_INFO  {
 					FD_SET(mImpl->msgSock, &Err);
 
 					// check if the socket is ready
-					select(0, NULL, &Write, &Err, &Timeout);
+					select(mImpl->msgSock+1, NULL, &Write, &Err, &Timeout);
 					if (FD_ISSET(mImpl->msgSock, &Write))
 					{
 					}
@@ -742,43 +747,23 @@ typedef struct _INTERFACE_INFO  {
 
 			// Finally, we are expecting the device to try to connect to our interrupt socket, but not all
 			// firmware versions support this, so allow a timeout to continue
-			/*mImpl->intrSock = accept(InterruptSock, NULL, NULL);
-			if (INVALID_SOCKET == mImpl->intrSock) {
-#ifdef WIN32
-				int err = WSAGetLastError();
-				if (err != WSAEWOULDBLOCK) {
-
-#if defined(_DEBUG)
-					printf("accept failed with error: %d\n", WSAGetLastError());
-#endif
-					// Close the socket
-					closesocket(mImpl->msgSock);
-					closesocket(InterruptSock);
-#else
-				if ((errno != EWOULDBLOCK) && (errno != EINPROGRESS)) {
-					perror("accept");
-					close(mImpl->msgSock);
-					close(InterruptSock);
-#endif
-					// Exit 
-					return;
-				}
-				else*/
 				{
 					fd_set Read;
 					FD_ZERO(&Read);
 					FD_SET(InterruptSock, &Read);
-					select(0, &Read, NULL, NULL, &Timeout);
+					select(InterruptSock+1, &Read, NULL, NULL, &Timeout);
 					if (FD_ISSET(InterruptSock, &Read))
 					{
 						mImpl->intrSock = accept(InterruptSock, NULL, NULL);
 						if (INVALID_SOCKET == mImpl->intrSock) {
 							BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: accept() failed! Continuing without interrupts " << logErrorString() << std::endl;
 						} else {
+#ifdef __linux__
 							// v1.8.5 (Linux)
 							// intrSock does not inherit the flags of InterruptSock, unlike in BSD and Windows
 							// https://stackoverflow.com/questions/8053294/is-sockets-accept-return-descriptor-blocking-or-non-blocking/8053432
 							fcntl(mImpl->intrSock, F_SETFL, O_NONBLOCK);
+#endif
 						}
 					}
 					else {
@@ -793,7 +778,6 @@ typedef struct _INTERFACE_INFO  {
 #endif
 
 				}
-			//}
 
 
 			DeviceIsOpen = true;
@@ -919,6 +903,7 @@ typedef struct _INTERFACE_INFO  {
 
 	void CM_ENET::MessageSender()
 	{
+		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_ENET::MessageSender Thread started" << std::endl;
 		while (DeviceIsOpen == true)
 		{
 			std::unique_lock<std::mutex> lck{ m_txmutex };
@@ -941,7 +926,7 @@ typedef struct _INTERFACE_INFO  {
 				outContext->handle = m->getMessageHandle();
 				// Get HostReport bytes and send to device
 				*outContext->Buffer = m->SerialStream();
-				outContext->bufLen = outContext->Buffer->size();
+				outContext->bufLen = (LONG)outContext->Buffer->size();
 
 				int err;
 				m->setStatus(Message::Status::UNSENT);
@@ -1085,11 +1070,12 @@ typedef struct _INTERFACE_INFO  {
 		Timeout.tv_sec = 0;
 		Timeout.tv_usec = 250000;
 
+		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_ENET::ResponseReceiver Thread started" << std::endl;
 		while (DeviceIsOpen == true)
 		{
 			FD_ZERO(&Read);
 			FD_SET(mImpl->msgSock, &Read);
-			select(0, &Read, NULL, NULL, &Timeout);
+			select(mImpl->msgSock+1, &Read, NULL, NULL, &Timeout);
 			if (FD_ISSET(mImpl->msgSock, &Read)) {
 				// Receive any bytes present in socket
 				//{
@@ -1107,7 +1093,7 @@ typedef struct _INTERFACE_INFO  {
 #endif
 				{
 					// Handle Error
-					BOOST_LOG_SEV(lg::get(), sev::error) << "Receive Error (recv): " <<  logErrorString() << std::endl;
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Receive Error (recv): " <<  logErrorString() << " (" << err << ")";
 				}
 				else if (ret > 0) {
 					std::unique_lock<std::mutex> rxlck{ m_rxmutex };
@@ -1133,7 +1119,7 @@ typedef struct _INTERFACE_INFO  {
 			return false;
 		}
 		// Setup transfer
-		int length = arr.size();
+		int length = (int)arr.size();
 		length = (((length - 1) / FastTransfer::TRANSFER_GRANULARITY) + 1) * FastTransfer::TRANSFER_GRANULARITY;
 		arr.resize(length);  // Increase the buffer size to the transfer granularity
 		{
@@ -1171,6 +1157,7 @@ typedef struct _INTERFACE_INFO  {
 
 	void CM_ENET::MemoryTransfer()
 	{
+		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_ENET::MemoryTransfer Thread started" << std::endl;
 		while (DeviceIsOpen == true)
 		{
 			{
@@ -1218,7 +1205,7 @@ typedef struct _INTERFACE_INFO  {
 				}
 				delete client;
 
-				int bytesTransferred = mImpl->fti->m_data.size();
+				int bytesTransferred = (int)mImpl->fti->m_data.size();
 				delete mImpl->fti;
 				mImpl->fti = nullptr;
 
@@ -1230,6 +1217,8 @@ typedef struct _INTERFACE_INFO  {
 
 	void CM_ENET::InterruptReceiver()
 	{
+		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_ENET::InterruptReceiver Thread started" << std::endl;
+		bool errorLogged = false;
 		while (DeviceIsOpen == true)
 		{
 			std::vector<uint8_t> interruptData(64, 0);
@@ -1241,36 +1230,59 @@ typedef struct _INTERFACE_INFO  {
 			fd_set Read;
 			FD_ZERO(&Read);
 			FD_SET(mImpl->intrSock, &Read);
-			select(0, &Read, NULL, NULL, &Timeout);
-			if (FD_ISSET(mImpl->intrSock, &Read)) {
-				// Receive any bytes present in socket
-				int ret = recv(mImpl->intrSock, (char*)&interruptData[0], 64, 0);
+			int rc = select(mImpl->intrSock + 1, &Read, NULL, NULL, &Timeout);
+			if (rc < 0) {
+				// Error
 #ifdef WIN32
 				int err = WSAGetLastError();
-				if ((ret == SOCKET_ERROR) && (WSAEWOULDBLOCK != err))
 #else
 				int err = errno;
-				if ((ret == -1) && (EWOULDBLOCK != err))
 #endif
-				{
-					// Handle Error
-					BOOST_LOG_SEV(lg::get(), sev::error) << "Interrupt Receive Error (recv): " << logErrorString() << std::endl;
+				if (!errorLogged) {
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Interrupt Select Error (recv): " << logErrorString(err) << std::endl;
+					errorLogged = true;
 				}
-				else if (ret > 0) {
-					std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
-					m->MarkSendTime();
-					m->setStatus(Message::Status::INTERRUPT);
-					interruptData.resize(ret);
-					m->AddBuffer(interruptData);
+			}
+			else if (rc == 0) {
+				// Timeout
+			}
+			else {
 
-					// Place in list for processing by receive thread
+				if (FD_ISSET(mImpl->intrSock, &Read)) {
+					// Receive any bytes present in socket
+					int ret = recv(mImpl->intrSock, (char*)&interruptData[0], 64, 0);
+#ifdef WIN32
+					int err = WSAGetLastError();
+					if ((ret == SOCKET_ERROR) && (WSAEWOULDBLOCK != err))
+#else
+					int err = errno;
+					if ((ret == -1) && (EWOULDBLOCK != err))
+#endif
 					{
-						std::unique_lock<std::mutex> list_lck{ m_listmutex };
-						m_list.push_back(m);
-						list_lck.unlock();
+						// Handle Error
+						if (!errorLogged) {
+							BOOST_LOG_SEV(lg::get(), sev::error) << "Interrupt Receive Error (recv): " << logErrorString(err) << " (" << err << ")" << std::endl;
+							errorLogged = true;
+						}
 					}
-					// Signal Parser thread
-					m_rxcond.notify_one();
+					else if (ret > 0) {
+						std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
+						m->MarkSendTime();
+						m->setStatus(Message::Status::INTERRUPT);
+						interruptData.resize(ret);
+						m->AddBuffer(interruptData);
+
+						// Place in list for processing by receive thread
+						{
+							std::unique_lock<std::mutex> list_lck{ m_listmutex };
+							m_list.push_back(m);
+							list_lck.unlock();
+						}
+						// Signal Parser thread
+						m_rxcond.notify_one();
+
+						errorLogged = false;
+					}
 				}
 			}
 		}

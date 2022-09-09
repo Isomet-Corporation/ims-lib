@@ -146,6 +146,8 @@ namespace iMS {
 		std::stringstream ss;
 		std::deque<std::uint8_t> glbl_rx;
 
+		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_Common::MessageListManager Thread started" << std::endl;
+
 		while (DeviceIsOpen == true)
 		{
 			// Grab any outstanding characters from the queue

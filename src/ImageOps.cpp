@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-12-15 10:49:10 +0000 (Wed, 15 Dec 2021) $
+/ Last update: $Date: 2022-09-09 00:22:40 +0100 (Fri, 09 Sep 2022) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 516 $
+/ Revision   : $Rev: 528 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -87,6 +87,7 @@ namespace iMS
 	const std::uint16_t CTRLR_INTERRUPT_TONE_START = 5;
 	const std::uint16_t CTRLR_INTERRUPT_SEQDL_ERROR = 6;
 	const std::uint16_t CTRLR_INTERRUPT_SEQDL_COMPLETE = 7;
+	const std::uint16_t CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED = 8;
 
 //	class VerifyListener : public IEventHandler
 //	{
@@ -319,11 +320,20 @@ namespace iMS
 	int FormatSequenceBuffer(const ImageSequence& seq, const IMSSystem& ims, boost::container::deque < std::uint8_t >& seq_data)
 	{
 		static const char signature[] = "iMS_SEQ";
+		static const char signature2[] = "iMS_SQ2";
 		seq_data.clear();
 
 		// Sequence Buffer header
-		seq_data.assign(signature, signature + sizeof(signature));
-		AppendVarToContainer< boost::container::deque<std::uint8_t>, std::uint16_t >(seq_data, seq.size());
+		if (seq.size() <= (int)UINT16_MAX)
+		{
+			seq_data.assign(signature, signature + sizeof(signature));
+			AppendVarToContainer< boost::container::deque<std::uint8_t>, std::uint16_t >(seq_data, static_cast<std::uint16_t>(seq.size()));
+		}
+		else
+		{
+			seq_data.assign(signature2, signature2 + sizeof(signature2));
+			AppendVarToContainer< boost::container::deque<std::uint8_t>, std::uint32_t >(seq_data, static_cast<std::uint32_t>(seq.size()));
+		}
 		//seq_data.push_back(static_cast<std::uint16_t>(seq.size()) & 0xFF);
 		//seq_data.push_back(static_cast<std::uint16_t>((seq.size()) >> 8) & 0xFF);
 
@@ -339,7 +349,7 @@ namespace iMS
 			std::move(std::begin(v), std::end(v), std::back_inserter(seq_data));
 		}
 
-		return seq_data.size();
+		return (int)seq_data.size();
 	}
 
 	class DMASupervisor : public IEventHandler
@@ -352,7 +362,12 @@ namespace iMS
 		{
 			switch (message)
 			{
-			case (MessageEvents::MEMORY_TRANSFER_COMPLETE): m_busy.store(false); m_tfr_size.store(param);  break;
+			case (MessageEvents::MEMORY_TRANSFER_ERROR): m_busy.store(false);
+				BOOST_LOG_SEV(lg::get(), sev::error) << "Memory Transfer Error";
+				break;
+			case (MessageEvents::MEMORY_TRANSFER_COMPLETE): m_busy.store(false); m_tfr_size.store(param);  
+				BOOST_LOG_SEV(lg::get(), sev::debug) << "Memory Transfer Complete " << param << " bytes transferred";
+				break;
 			}
 		}
 		bool Busy() const { return m_busy.load(); };
@@ -1003,7 +1018,7 @@ namespace iMS
 				else {
 					m_vfydata->resize(m_imgdata->size());
 				}
-				int tfr_len = m_imgdata->size();
+				int tfr_len = (int)m_imgdata->size();
 
 				if (*m_vfydata == *m_imgdata) m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_SUCCESS, 0);
 				else {
@@ -1995,7 +2010,7 @@ namespace iMS
 
 	const int ImageTableViewer::Entries() const
 	{
-		return p_Impl->myiMS.Ctlr().ImgTable().size();
+		return (int)p_Impl->myiMS.Ctlr().ImgTable().size();
 	}
 
 	const ImageTableEntry ImageTableViewer::operator[](const std::size_t idx) const
@@ -2188,7 +2203,7 @@ namespace iMS
 		public:
 			ResponseReceiver(SequenceDownload::Impl* pl) : m_parent(pl) { Init(); };
 			void EventAction(void* sender, const int message, const int param);
-			void Init() { busy.store(true); error.store(false); }
+			void Init() { busy.store(true); error.store(false); success_code = 0; error_code = 0; }
 			bool IsBusy() const { return busy.load(); }
 			bool HasError() const { return error.load(); }
 			int SuccessCode() const { return success_code; }
@@ -2209,6 +2224,10 @@ namespace iMS
 		mutable std::mutex m_dlmutex;
 		std::condition_variable m_dlcond;
 		void DownloadWorker();
+
+		// Capability flags
+		bool fast_seq_dl_supported{ false };
+		bool large_seq_supported{ false };
 	};
 
 	SequenceDownload::Impl::Impl(IMSSystem& ims, const ImageSequence& seq) :
@@ -2219,11 +2238,14 @@ namespace iMS
 		dmah(new DMASupervisor())
 	{
 		downloaderRunning = true;
+		fast_seq_dl_supported = false;
+		large_seq_supported = false;
+
 		// Subscribe listener
 		IConnectionManager* const myiMSConn = myiMS.Connection();
 		if (myiMS.Ctlr().GetVersion().revision > 46) {
 			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
-			int IntrMask = (int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE));
+			int IntrMask = (int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
 
 			HostReport* iorpt;
 			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 1);
@@ -2252,7 +2274,7 @@ namespace iMS
 		IConnectionManager* const myiMSConn = myiMS.Connection();
 		if (myiMS.Ctlr().GetVersion().revision > 46) {
 			myiMSConn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
-			int IntrMask = ~(int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE));
+			int IntrMask = ~(int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
 
 			HostReport* iorpt;
 			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
@@ -2279,7 +2301,7 @@ namespace iMS
 		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
 
 		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		int entries = p_Impl->m_Seq.size();
+		int entries = (int)p_Impl->m_Seq.size();
 
 		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
 		ReportFields f = iorpt->Fields();
@@ -2289,17 +2311,22 @@ namespace iMS
 		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
 		delete iorpt;
 
-		bool fast_seq_dl_supported = false;
+
 		if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 2) {}
 		else {
 			if (Resp.Fields().len > 2) {
 				if (Resp.Payload<std::vector<std::uint8_t>>().at(2) != 0) {
-					fast_seq_dl_supported = true;
+					p_Impl->fast_seq_dl_supported = true;
+				}
+			}
+			if (Resp.Fields().len > 3) {
+				if (Resp.Payload<std::vector<std::uint8_t>>().at(3) != 0) {
+					p_Impl->large_seq_supported = true;
 				}
 			}
 		}
 
-		if (fast_seq_dl_supported && asynchronous) {
+		if (p_Impl->fast_seq_dl_supported && asynchronous) {
 			{
 				std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
 
@@ -2437,21 +2464,42 @@ namespace iMS
 			* [17:16] = number of entries in sequence
 			* [18] = Use fast fownload
 			* [22:19] = Download size (bytes)
+			* 
+			* OR: (for large sequence supporting firmware)
+			* 
+			* [15:0] = Sequence UUID
+			* [17:16] = set to zero
+			* [18] = Use fast fownload = 1
+			* [22:19] = Download size (bytes)
+			* [26:23] = number of entries in sequence
+			*
 			*/
-			int entries = m_Seq.size();
+			int entries = (int)m_Seq.size();
 			iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
 			ReportFields f = iorpt->Fields();
 			f.context = 0;
 			iorpt->Fields(f);
 			std::array<std::uint8_t, 16> uuid = m_Seq.GetUUID();
 			std::vector<std::uint8_t> v(uuid.begin(), uuid.begin() + 16);
+			if (entries <= (int)UINT16_MAX) {
 			v.push_back(entries & 0xff);
 			v.push_back(entries >> 8);
+			}
+			else {
+				v.push_back(0);
+				v.push_back(0);
+			}
 			v.push_back(1);
 			v.push_back(BytesInSequenceBuffer & 0xff);
 			v.push_back((BytesInSequenceBuffer >> 8) & 0xff);
 			v.push_back((BytesInSequenceBuffer >> 16) & 0xff);
 			v.push_back((BytesInSequenceBuffer >> 24) & 0xff);
+			if (entries > (int)UINT16_MAX) {
+				v.push_back(entries & 0xff);
+				v.push_back((entries >> 8) & 0xff);
+				v.push_back((entries >> 16) & 0xff);
+				v.push_back((entries >> 24) & 0xff);
+			}
 			iorpt->Payload<std::vector<std::uint8_t>>(v);
 			DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
 			if (!Resp.Done() || Resp.GeneralError()) {
@@ -2469,31 +2517,61 @@ namespace iMS
 			}
 				
 			std::uint32_t SeqMemoryAddress = Resp.Payload < std::uint32_t >();
+			std::uint32_t SeqMemoryLength = 0x1000000;
+
+			if (Resp.Fields().len >= 8) {
+				SeqMemoryLength = Resp.Payload < std::vector <std::uint32_t> >().at(1);
+			}
+			BOOST_LOG_SEV(lg::get(), sev::trace) << "Download Buffer " << SeqMemoryLength << " bytes @ 0x" << std::hex << SeqMemoryAddress << std::dec;
 
 			// Start memory download
-			dmah->Reset();
-			Receiver->Init();
-			myiMSConn->MemoryDownload(*m_seqdata, SeqMemoryAddress, 0, uuid);
+			int tfr_size = 0;
+			boost::container::deque<std::uint8_t>::iterator bufs = m_seqdata->begin();
+			boost::container::deque<std::uint8_t>::iterator bufe = m_seqdata->end();
 
-			while (dmah->Busy()) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(5));
-			}
-			//std::cout << "Memory Download complete" << std::endl;
+			//boost::container::deque<std::uint8_t> copy_buf;
 
-			int tfr_size = dmah->GetTransferredSize();
+			do {
+				dmah->Reset();
+				Receiver->Init();
 
-			while (Receiver->IsBusy()) {
-//				std::cout << "Busy" << std::endl;
-				std::this_thread::sleep_for(std::chrono::milliseconds(5));
-			}
+				if (m_seqdata->size() > SeqMemoryLength) {
+					if ((m_seqdata->size() - tfr_size) <= SeqMemoryLength)
+					{
+						bufe = m_seqdata->end();
+					}
+					else
+					{
+						bufe = bufs + SeqMemoryLength;
+					}
+				}
+				boost::container::deque<std::uint8_t> copy_buf(boost::make_move_iterator(bufs), boost::make_move_iterator(bufe));
+				myiMSConn->MemoryDownload(copy_buf, SeqMemoryAddress, 0, uuid);
+				uuid[0]++;
 
-			if (Receiver->HasError()) {
-//				std::cout << "Has Error" << std::endl;
-				m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_ERROR, Receiver->ErrorCode());
-			}
+				while (dmah->Busy()) {
+					std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				}
+
+				tfr_size += dmah->GetTransferredSize();
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Memory Download complete. Transferred " << tfr_size << " bytes.";
+
+				while (Receiver->IsBusy()) {
+	//				std::cout << "Busy" << std::endl;
+					std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				}
+
+				if (Receiver->HasError()) {
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Error in sequence download";
+					m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_ERROR, Receiver->ErrorCode());
+						break;
+				}
+
+				bufs += dmah->GetTransferredSize();
+			} while (tfr_size < m_seqdata->size());
 
 			if (tfr_size > 0) {
-//				std::cout << "Seq Download Commit" << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::trace) << "Seq Download Commit";
 				// Transfer complete.  Commit sequence
 				/* Commit Sequence */
 				/* Payload:
@@ -2553,6 +2631,12 @@ namespace iMS
 				BOOST_LOG_SEV(lg::get(), sev::debug) << "Sequence Download Complete Event Trigger";
 //				std::cout << "Seq Download Complete" << std::endl;
 				error.store(false); busy.store(false); success_code = value;
+			}
+			break;
+			case (CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED): {
+				BOOST_LOG_SEV(lg::get(), sev::debug) << "Sequence Download Buffer Processed Event Trigger";
+//				std::cout << "Seq Download Complete" << std::endl;
+				error.store(false); busy.store(false);
 			}
 			break;
 			}
