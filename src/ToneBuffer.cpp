@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2016-02-24
-/ Last update: $Date: 2020-06-05 07:45:07 +0100 (Fri, 05 Jun 2020) $
+/ Last update: $Date: 2024-12-18 16:58:21 +0000 (Wed, 18 Dec 2024) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 443 $
+/ Revision   : $Rev: 648 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -29,6 +29,7 @@
 #include "FileSystem.h"
 #include "FileSystem_p.h"
 #include "IMSTypeDefs_p.h"
+#include "IMSConstants.h"
 
 #include <mutex>
 #include <condition_variable>
@@ -40,24 +41,6 @@
 #include <boost/uuid/uuid_generators.hpp>
 
 namespace iMS {
-
-	const std::uint16_t SYNTH_REG_ProgLocal = 25;
-	const std::uint16_t SYNTH_REG_ProgFreq0L = 32;  // Now used for Sync Digital
-	const std::uint16_t SYNTH_REG_ProgFreq0H = 33;
-	const std::uint16_t SYNTH_REG_ProgAmpl0 = 34;
-	const std::uint16_t SYNTH_REG_ProgPhase0 = 35;
-	const std::uint16_t SYNTH_REG_ProgFreq1L = 36;
-	const std::uint16_t SYNTH_REG_ProgFreq1H = 37;
-	const std::uint16_t SYNTH_REG_ProgAmpl1 = 38;
-	const std::uint16_t SYNTH_REG_ProgPhase1 = 39;
-	const std::uint16_t SYNTH_REG_ProgFreq2L = 40;
-	const std::uint16_t SYNTH_REG_ProgFreq2H = 41;
-	const std::uint16_t SYNTH_REG_ProgAmpl2 = 42;
-	const std::uint16_t SYNTH_REG_ProgPhase2 = 43;
-	const std::uint16_t SYNTH_REG_ProgFreq3L = 44;
-	const std::uint16_t SYNTH_REG_ProgFreq3H = 45;
-	const std::uint16_t SYNTH_REG_ProgAmpl3 = 46;
-	const std::uint16_t SYNTH_REG_ProgPhase3 = 47;
 
 	class ToneBufferEventTrigger :
 		public IEventTrigger
@@ -341,19 +324,27 @@ namespace iMS {
 
 	void ToneBufferDownload::Impl::AddPointToVector(std::vector<std::uint8_t>& ltb_data, const TBEntry& tbe, bool toEEPROM)
 	{
+		int freqBits = myiMS.Synth().GetCap().freqBits;
 		// Note that for-construct here enters infinite loop as can't increment past 4
 		RFChannel chan(RFChannel::min);
 		do {
+			unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, tbe.GetFAP(chan).freq);
 			if (!toEEPROM) {
-				// The first two entries were previously the lower frequency bits but became unused.  Now using them for sync data (not to EEPROM)
-				unsigned int syncd = tbe.GetSyncD();
-				std::uint16_t syncd_mod = syncd & ((1 << myiMS.Synth().GetCap().LUTSyncDBits) - 1);
-				ltb_data.push_back(static_cast<std::uint8_t>(syncd_mod & 0xFF));
-				ltb_data.push_back(static_cast<std::uint8_t>((syncd_mod >> 8) & 0xFF));
+				if ((chan == RFChannel::min) || (freqBits <= 16))
+				{
+					// The first two entries were previously the lower frequency bits but became unused.  Now using them for sync data (not to EEPROM)
+					unsigned int syncd = tbe.GetSyncD();
+					std::uint16_t syncd_mod = syncd & ((1 << myiMS.Synth().GetCap().LUTSyncDBits) - 1);
+					ltb_data.push_back(static_cast<std::uint8_t>(syncd_mod & 0xFF));
+					ltb_data.push_back(static_cast<std::uint8_t>((syncd_mod >> 8) & 0xFF));
+				}
+				else {
+					ltb_data.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 32)) & 0xFF));
+					ltb_data.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 24)) & 0xFF));
+				}
 			}
-			std::uint16_t freq = FrequencyRenderer::RenderAsImagePoint(myiMS, tbe.GetFAP(chan).freq);
-			ltb_data.push_back(static_cast<std::uint8_t>(freq & 0xFF));
-			ltb_data.push_back(static_cast<std::uint8_t>((freq >> 8) & 0xFF));
+			ltb_data.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 16)) & 0xFF));
+			ltb_data.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 8)) & 0xFF));
 			std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, tbe.GetFAP(chan).ampl);
 			ltb_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 			ltb_data.push_back(static_cast<std::uint8_t>((ampl >> 8) & 0xFF));
@@ -406,7 +397,7 @@ namespace iMS {
 				}
 				buf_bytes -= ltb_data.size();
 
-				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ProgFreq0L);
+				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ProgSyncDig);
 				iorpt->Payload<std::vector<std::uint8_t>>(ltb_data);
 				MessageHandle h = myiMSConn->SendMsg(*iorpt);
 				delete iorpt;
@@ -416,6 +407,19 @@ namespace iMS {
     				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
        				dl_list.push_back(h);
                 }
+
+				ltb_data.clear();
+
+				if (myiMS.Synth().GetCap().freqBits > 16)
+				{
+					unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, it->GetFAP(RFChannel::min).freq);
+					ltb_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 32)) & 0xFF));
+					ltb_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 24)) & 0xFF));
+					iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ProgFreq0L);
+					iorpt->Payload<std::vector<std::uint8_t>>(ltb_data);
+					myiMSConn->SendMsg(*iorpt);
+					delete iorpt;
+				}
 
 				ltb_data.clear();
 

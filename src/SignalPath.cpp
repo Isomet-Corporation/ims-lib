@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-12-15 10:49:10 +0000 (Wed, 15 Dec 2021) $
+/ Last update: $Date: 2024-12-19 19:57:02 +0000 (Thu, 19 Dec 2024) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 516 $
+/ Revision   : $Rev: 652 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -544,42 +544,42 @@ namespace iMS
 	  //	  BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("SetCalibrationTone");
 
 		// Convert F/A/P data into integers relevant to synthesiser type
-		std::uint16_t freq = FrequencyRenderer::RenderAsImagePoint(p_Impl->myiMS, fap.freq);
+		unsigned int freq = FrequencyRenderer::RenderAsImagePoint(p_Impl->myiMS, fap.freq);
 		std::uint16_t ampl = AmplitudeRenderer::RenderAsCalibrationTone(p_Impl->myiMS, fap.ampl);
 		std::uint16_t phase = PhaseRenderer::RenderAsCalibrationTone(p_Impl->myiMS, fap.phase);
 
+		int freqBits = p_Impl->myiMS.Synth().GetCap().freqBits;
 		std::vector<std::uint8_t> fap_vec;
-		fap_vec.push_back(static_cast<std::uint8_t>(phase & 0xFF));
-		fap_vec.push_back(static_cast<std::uint8_t>((phase >> 8) & 0xFF));
-		fap_vec.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
-		fap_vec.push_back(static_cast<std::uint8_t>((ampl >> 8) & 0xFF));
-		fap_vec.push_back(static_cast<std::uint8_t>(freq & 0xFF));
-		fap_vec.push_back(static_cast<std::uint8_t>((freq >> 8) & 0xFF));
  
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
 		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		//	std::stringstream ss;
-		//ss << "myiMSConn ptr = " << (void *)myiMSConn;
-		//BOOST_LOG_SEV(lg::get(), sev::trace) << ss.str();
-
 		HostReport *iorpt;
 		DeviceReport Resp;
 
-		std::uint16_t local_in_use = 0;
+		if (freqBits > 16) {
+			fap_vec.clear();
+			fap_vec.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 32)) & 0xFF));
+			fap_vec.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 24)) & 0xFF));
 
-		iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::READ, 0xFFFF);
-		Resp = myiMSConn->SendMsgBlocking(*iorpt);
-		if (Resp.Done())
-		{
-			local_in_use = Resp.Payload<std::uint16_t>() & ACR_LocalInUse;
-		}
-		delete iorpt;
+			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_FreqLower);
+			iorpt->Payload<std::vector<std::uint8_t>>(fap_vec);
 
-		if (!local_in_use) {
-			// Set Auto Phase Clear
-		  //			this->AutoPhaseResync();   // v1.7.1 - no need!
+			if (NullMessage == myiMSConn->SendMsg(*iorpt))
+			{
+				delete iorpt;
+				return false;
+			}
+			delete iorpt;
 		}
+
+		fap_vec.clear();
+		fap_vec.push_back(static_cast<std::uint8_t>(phase & 0xFF));
+		fap_vec.push_back(static_cast<std::uint8_t>((phase >> 8) & 0xFF));
+		fap_vec.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
+		fap_vec.push_back(static_cast<std::uint8_t>((ampl >> 8) & 0xFF));
+		fap_vec.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 16)) & 0xFF));
+		fap_vec.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 8)) & 0xFF));
 
 		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_SingleTone_Phase);
 		iorpt->Payload<std::vector<std::uint8_t>>(fap_vec);
@@ -590,12 +590,18 @@ namespace iMS
 			return false;
 		}
 		delete iorpt;
+
 		return true;
 	}
 
 	bool SignalPath::ClearTone()
 	{
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+
+		FAP fap_clear;
+		fap_clear.ampl = 0.0;
+
+		SetCalibrationTone(fap_clear);
 
 		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
 
@@ -791,10 +797,10 @@ namespace iMS
 		DDSScriptRegister reg_CSR(DDSScriptRegister::Name::CSR, { csr_word });
 
 		/** CFR **/
-		uint8_t ls_type = 0, ls_en = 0, ls_clr = 0;
+		uint8_t ls_type = 0, ls_en = 0, ls_clr = 0x20;
 		switch (tone.mode())
 		{
-			case ENHANCED_TONE_MODE::NO_SWEEP: ls_type = 0; ls_en = 0, ls_clr = 8;  break;
+			case ENHANCED_TONE_MODE::NO_SWEEP: ls_type = 0; ls_en = 0, ls_clr = 0x28;  break;
 			case ENHANCED_TONE_MODE::FREQUENCY_DWELL: ls_type = 0x80; ls_en = 0x40; break;
 			case ENHANCED_TONE_MODE::FREQUENCY_NO_DWELL: ls_type = 0x80; ls_en = 0xC0; break;
 			case ENHANCED_TONE_MODE::PHASE_DWELL: ls_type = 0xC0; ls_en = 0x40; break;
@@ -909,6 +915,84 @@ namespace iMS
 
 	}
 
+	static std::vector < std::uint16_t > add_sweep_to_vector(IMSSystem& myiMS, const SweepTone& tone)
+	{
+		std::vector < std::uint16_t > etm_data;
+
+		unsigned int start_freq = FrequencyRenderer::RenderAsDDSValue(myiMS, tone.start().freq);
+		unsigned int start_ampl = AmplitudeRenderer::RenderAsCalibrationTone(myiMS, tone.start().ampl);
+		unsigned int start_phs = PhaseRenderer::RenderAsCalibrationTone(myiMS, tone.start().phase);
+
+		etm_data.push_back(static_cast<std::uint16_t>(start_freq & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>((start_freq >> 16) & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>(start_ampl & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>(start_phs & 0xFFFF));
+
+		unsigned int end_freq = FrequencyRenderer::RenderAsDDSValue(myiMS, tone.end().freq);
+		unsigned int end_ampl = AmplitudeRenderer::RenderAsCalibrationTone(myiMS, tone.end().ampl);
+		unsigned int end_phs = PhaseRenderer::RenderAsCalibrationTone(myiMS, tone.end().phase);
+
+		etm_data.push_back(static_cast<std::uint16_t>(end_freq & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>((end_freq >> 16) & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>(end_ampl & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>(end_phs & 0xFFFF));
+
+		return etm_data;
+	}
+
+	static std::vector < std::uint16_t > add_rate_to_vector(IMSSystem& myiMS, const SweepTone& tone)
+	{
+		std::vector < std::uint16_t > etm_data;
+
+		/** LSR, RDW, FDW **/
+		unsigned int rsrr, fsrr;
+		unsigned int rdw = 0, fdw = 0;
+		// Calculate Rising and Falling Ramp Rate and Delta Words from number of steps and ramp period
+		double sc = myiMS.Synth().GetCap().syncClock;
+		rsrr = static_cast<unsigned int>(tone.up_ramp().count() * 1000000.0 * sc / (tone.n_steps() + 1));  // Number of target Sync Clock periods (= sys clock / 4) to reach sweep time period
+		rsrr = rsrr > 255 ? 255 : rsrr < 1 ? 1 : rsrr;
+		int actual_steps = static_cast<int>(tone.up_ramp().count() * 1000000.0 * sc / rsrr) + 1;  // Number of steps in linear sweep (plus 1 to ensure not zero)
+
+		double delta_ampl = (tone.end().ampl - tone.start().ampl) / actual_steps;
+		double delta_freq = (tone.end().freq - tone.start().freq) / actual_steps;
+		double delta_phase = (tone.end().phase - tone.start().phase) / actual_steps;
+
+		switch (tone.mode())
+		{
+		case ENHANCED_TONE_MODE::FREQUENCY_DWELL:
+		case ENHANCED_TONE_MODE::FREQUENCY_NO_DWELL:	rdw = static_cast<unsigned int>(std::floor((delta_freq * std::pow(2, 32) / myiMS.Synth().GetCap().sysClock) - 0.5)); break;
+		case ENHANCED_TONE_MODE::PHASE_DWELL:
+		case ENHANCED_TONE_MODE::PHASE_NO_DWELL: rdw = static_cast<unsigned int>(std::floor((delta_phase * std::pow(2, 14) / 360.0) - 0.5)); break;
+		}
+		rdw = (rdw == 0) ? 1 : rdw;
+
+		fsrr = static_cast<unsigned int>(tone.down_ramp().count() * 1000000.0 * sc / (tone.n_steps() + 1));  // Number of target Sync Clock periods (= sys clock / 4) to reach sweep time period
+		fsrr = fsrr > 255 ? 255 : fsrr < 1 ? 1 : fsrr;
+		actual_steps = static_cast<int>(tone.down_ramp().count() * 1000000.0 * sc / fsrr) + 1;  // Number of steps in linear sweep
+
+		delta_ampl = (tone.end().ampl - tone.start().ampl) / actual_steps;
+		delta_freq = (tone.end().freq - tone.start().freq) / actual_steps;
+		delta_phase = (tone.end().phase - tone.start().phase) / actual_steps;
+
+		switch (tone.mode())
+		{
+		case ENHANCED_TONE_MODE::FREQUENCY_DWELL:
+		case ENHANCED_TONE_MODE::FREQUENCY_NO_DWELL: fdw = static_cast<unsigned int>(std::floor((delta_freq * std::pow(2, 32) / myiMS.Synth().GetCap().sysClock) - 0.5)); break;
+		case ENHANCED_TONE_MODE::PHASE_DWELL:
+		case ENHANCED_TONE_MODE::PHASE_NO_DWELL: fdw = static_cast<unsigned int>(std::floor((delta_phase * std::pow(2, 14) / 360.0) - 0.5)); break;
+		}
+		fdw = (fdw == 0) ? 1 : fdw;
+
+		etm_data.push_back(static_cast<std::uint16_t>(fsrr));
+		etm_data.push_back(static_cast<std::uint16_t>(rsrr));
+		etm_data.push_back(static_cast<std::uint16_t>(fdw & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>((fdw >> 16) & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>(rdw & 0xFFFF));
+		etm_data.push_back(static_cast<std::uint16_t>((rdw >> 16) & 0xFFFF));
+
+		return etm_data;
+	}
+
 	static bool fst_match(const IMSSystem& myiMS, const std::string& check)
 	{
 		// Uses DDS Script
@@ -986,6 +1070,13 @@ namespace iMS
 
 	bool SignalPath::SetEnhancedToneMode(const SweepTone& tone_ch1, const SweepTone& tone_ch2, const SweepTone& tone_ch3, const SweepTone& tone_ch4)
 	{
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt;
+
+		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("Verifying support for ETM mode ") << p_Impl->myiMS.Synth().IsValid() << " " << p_Impl->myiMS.Synth().Model() << " " << p_Impl->myiMS.Synth().GetVersion().revision;
+
+		bool use_dds_script = true;
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
 		// Original iMS4 (rev A) cannot support DDS Scripts and therefore won't work with Enhanced Tone Mode
@@ -997,12 +1088,17 @@ namespace iMS
 			// iMS4b/4c use DDS scripts, from version 68 onwards.  Earlier builds had issue with DDS scripts
 			if (p_Impl->myiMS.Synth().GetVersion().revision < 68) return false;
 		}
+		else if (p_Impl->myiMS.Synth().Model() == "iMS4d") {
+			// iMS4d use direct programming, from version 148 onwards.
+			if (p_Impl->myiMS.Synth().GetVersion().revision < 148) return false;
+			use_dds_script = false;
+		}
 		else {
 			// Synth doesn't support scripts
 			return false;
 		}
 
-		if (check_linear_sweep(p_Impl->myiMS))
+		if (use_dds_script && check_linear_sweep(p_Impl->myiMS))
 		{
 			// Already playing out a linear sweep. Remove DDS script if present, and reprogram
 			FileSystemTableViewer fstv(p_Impl->myiMS);
@@ -1021,37 +1117,125 @@ namespace iMS
 			}
 
 		}
+
+		// Check whether we support linear sweep as part of STM, or need to use a DDS script
+		if (use_dds_script)
 		{
-			// Check whether we support linear sweep as part of STM, or need to use a DDS script
-//			if (((p_Impl->myiMS.Synth().Model() == "iMS4") || (p_Impl->myiMS.Synth().Model() == "iMS4b")) &&
-//				(p_Impl->myiMS.Synth().GetVersion().revision <= 68))
-			{
-				// Use a DDS Script
-				DDSScript scr;
-				add_sweep_to_script(p_Impl->myiMS, scr, tone_ch1, 1);
-				add_sweep_to_script(p_Impl->myiMS, scr, tone_ch2, 2);
-				add_sweep_to_script(p_Impl->myiMS, scr, tone_ch3, 3);
-				add_sweep_to_script(p_Impl->myiMS, scr, tone_ch4, 4);
+			BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("Programming ETM Mode using DDS Script");
 
-				scr.push_back(DDSScriptRegister(DDSScriptRegister::Name::UPDATE));
+			// Use a DDS Script
+			DDSScript scr;
+			add_sweep_to_script(p_Impl->myiMS, scr, tone_ch1, 1);
+			add_sweep_to_script(p_Impl->myiMS, scr, tone_ch2, 2);
+			add_sweep_to_script(p_Impl->myiMS, scr, tone_ch3, 3);
+			add_sweep_to_script(p_Impl->myiMS, scr, tone_ch4, 4);
 
-				DDSScriptDownload ddsdl(p_Impl->myiMS, scr);
-				FileSystemIndex idx = ddsdl.Program("alwaowwr", FileDefault::NON_DEFAULT);
-				if (idx < 0) return false;
+			scr.push_back(DDSScriptRegister(DDSScriptRegister::Name::UPDATE));
 
-				FileSystemManager fsm(p_Impl->myiMS);
-				fsm.Execute(idx);
-			}
-//			else {
-//			}
+			DDSScriptDownload ddsdl(p_Impl->myiMS, scr);
+			FileSystemIndex idx = ddsdl.Program("alwaowwr", FileDefault::NON_DEFAULT);
+			if (idx < 0) return false;
 
-			return true;
+			FileSystemManager fsm(p_Impl->myiMS);
+			fsm.Execute(idx);
 		}
-		return false;
+		else {
+			BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("Programming ETM Mode using Direct DDS Configuration");
+
+			std::vector<std::uint16_t> etm_data;
+			const SweepTone* tone = &tone_ch1;
+
+			for (int i = RFChannel::min; i <= RFChannel::max; i++)
+			{
+				switch (i)
+				{
+				case 1: tone = &tone_ch1; break;
+				case 2: tone = &tone_ch2;  break;
+				case 3: tone = &tone_ch3;  break;
+				case 4: tone = &tone_ch4;  break;
+				}
+				etm_data = add_sweep_to_vector(p_Impl->myiMS, *tone);
+				
+				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ETMStartFreqLo);
+				iorpt->Payload<std::vector<std::uint16_t>>(etm_data);
+
+				ReportFields f = iorpt->Fields();
+				f.len = static_cast<std::uint16_t>(etm_data.size() * sizeof(std::uint16_t));
+				iorpt->Fields(f);
+
+				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				{
+					delete iorpt;
+					return false;
+				}
+				delete iorpt;
+
+				etm_data = add_rate_to_vector(p_Impl->myiMS, *tone);
+
+				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_SweepFSRR);
+				iorpt->Payload<std::vector<std::uint16_t>>(etm_data);
+
+				f = iorpt->Fields();
+				f.len = static_cast<std::uint16_t>(etm_data.size() * sizeof(std::uint16_t));
+				iorpt->Fields(f);
+
+				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				{
+					delete iorpt;
+					return false;
+				}
+				delete iorpt;
+
+				// Program channel
+				std::uint16_t etm_control = 0;
+
+				etm_control |= SYNTH_REG_ETMControl_bits_Program_mask;  // Program Channel data
+				if (i == RFChannel::max) {
+					etm_control |= SYNTH_REG_ETMControl_bits_Trigger_mask;  // And trigger transfer to DDS
+				}
+
+				etm_control |= ((i - 1) & SYNTH_REG_ETMControl_bits_Channel_mask);
+				switch (tone->mode())
+				{
+				case ENHANCED_TONE_MODE::NO_SWEEP: break;
+				case ENHANCED_TONE_MODE::FREQUENCY_DWELL:    etm_control |= (0x9 << SYNTH_REG_ETMControl_bits_Function_shift); break;
+				case ENHANCED_TONE_MODE::FREQUENCY_NO_DWELL: etm_control |= (0xB << SYNTH_REG_ETMControl_bits_Function_shift); break;
+				case ENHANCED_TONE_MODE::FREQUENCY_FAST_MOD: etm_control |= (0x8 << SYNTH_REG_ETMControl_bits_Function_shift); break;
+				case ENHANCED_TONE_MODE::PHASE_DWELL:        etm_control |= (0xD << SYNTH_REG_ETMControl_bits_Function_shift); break;
+				case ENHANCED_TONE_MODE::PHASE_NO_DWELL:     etm_control |= (0xF << SYNTH_REG_ETMControl_bits_Function_shift); break;
+				case ENHANCED_TONE_MODE::PHASE_FAST_MOD:     etm_control |= (0xC << SYNTH_REG_ETMControl_bits_Function_shift); break;
+				}
+
+				switch (tone->scaling())
+				{
+				case DAC_CURRENT_REFERENCE::FULL_SCALE: etm_control |= (3 << SYNTH_REG_ETMControl_bits_Scaling_shift); break;
+				case DAC_CURRENT_REFERENCE::HALF_SCALE: etm_control |= (1 << SYNTH_REG_ETMControl_bits_Scaling_shift); break;
+				case DAC_CURRENT_REFERENCE::QUARTER_SCALE: etm_control |= (2 << SYNTH_REG_ETMControl_bits_Scaling_shift); break;
+				case DAC_CURRENT_REFERENCE::EIGHTH_SCALE: etm_control |= (0 << SYNTH_REG_ETMControl_bits_Scaling_shift); break;
+				}
+
+				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ETMControl);
+				iorpt->Payload<std::uint16_t>(etm_control);
+
+				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				{
+					delete iorpt;
+					return false;
+				}
+				delete iorpt;
+			}
+		}
+
+		return true;
 	}
 
 	bool SignalPath::SetEnhancedToneChannel(const RFChannel& chan, const SweepTone& tone)
 	{
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt;
+
+		bool use_dds_script = true;
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
 		// Original iMS4 (rev A) cannot support DDS Scripts and therefore won't work with Enhanced Tone Mode
@@ -1063,6 +1247,11 @@ namespace iMS
 			// iMS4b/4c use DDS scripts, from version 68 onwards.  Earlier builds had issue with DDS scripts
 			if (p_Impl->myiMS.Synth().GetVersion().revision < 68) return false;
 		}
+		else if (p_Impl->myiMS.Synth().Model() == "iMS4d") {
+			// iMS4d use direct programming, from version 148 onwards.
+			if (p_Impl->myiMS.Synth().GetVersion().revision < 148) return false;
+			use_dds_script = false;
+		}
 		else {
 			// Synth doesn't support scripts
 			return false;
@@ -1070,7 +1259,7 @@ namespace iMS
 
 		if (chan.IsAll()) return SetEnhancedToneMode(tone, tone, tone, tone);
 
-		if (check_linear_sweep(p_Impl->myiMS, chan))
+		if (use_dds_script && check_linear_sweep(p_Impl->myiMS, chan))
 		{
 			// Already playing out a linear sweep. Remove DDS script if present, and reprogram
 			FileSystemTableViewer fstv(p_Impl->myiMS);
@@ -1091,33 +1280,107 @@ namespace iMS
 				}
 			}
 		}
+
+		// Check whether we support linear sweep as part of STM, or need to use a DDS script
+		if (use_dds_script)
 		{
-			// Check whether we support linear sweep as part of STM, or need to use a DDS script
-//			if (((p_Impl->myiMS.Synth().Model() == "iMS4") || (p_Impl->myiMS.Synth().Model() == "iMS4b")) &&
-//				(p_Impl->myiMS.Synth().GetVersion().revision <= 68))
-			{
-				// Use a DDS Script
-				DDSScript scr;
-				add_sweep_to_script(p_Impl->myiMS, scr, tone, chan);
+			// Use a DDS Script
+			DDSScript scr;
+			add_sweep_to_script(p_Impl->myiMS, scr, tone, chan);
 
-				scr.push_back(DDSScriptRegister(DDSScriptRegister::Name::UPDATE));
+			scr.push_back(DDSScriptRegister(DDSScriptRegister::Name::UPDATE));
 
-				DDSScriptDownload ddsdl(p_Impl->myiMS, scr);
-				std::string name("alwaoww");
-				name += std::to_string((int)chan);
-				FileSystemIndex idx = ddsdl.Program(name, FileDefault::NON_DEFAULT);
-				if (idx < 0) return false;
+			DDSScriptDownload ddsdl(p_Impl->myiMS, scr);
+			std::string name("alwaoww");
+			name += std::to_string((int)chan);
+			FileSystemIndex idx = ddsdl.Program(name, FileDefault::NON_DEFAULT);
+			if (idx < 0) return false;
 
-				FileSystemManager fsm(p_Impl->myiMS);
-				fsm.Execute(idx);
-			}
-			return true;
+			FileSystemManager fsm(p_Impl->myiMS);
+			fsm.Execute(idx);
 		}
-		return false;
+		else {
+			std::vector<std::uint16_t> etm_data;
+
+			etm_data = add_sweep_to_vector(p_Impl->myiMS, tone);
+
+			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ETMStartFreqLo);
+			iorpt->Payload<std::vector<std::uint16_t>>(etm_data);
+
+			ReportFields f = iorpt->Fields();
+			f.len = static_cast<std::uint16_t>(etm_data.size() * sizeof(std::uint16_t));
+			iorpt->Fields(f);
+
+			if (NullMessage == myiMSConn->SendMsg(*iorpt))
+			{
+				delete iorpt;
+				return false;
+			}
+			delete iorpt;
+
+			etm_data = add_rate_to_vector(p_Impl->myiMS, tone);
+
+			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_SweepFSRR);
+			iorpt->Payload<std::vector<std::uint16_t>>(etm_data);
+
+			f = iorpt->Fields();
+			f.len = static_cast<std::uint16_t>(etm_data.size() * sizeof(std::uint16_t));
+			iorpt->Fields(f);
+
+			if (NullMessage == myiMSConn->SendMsg(*iorpt))
+			{
+				delete iorpt;
+				return false;
+			}
+			delete iorpt;
+
+			// Program channel
+			std::uint16_t etm_control = 0;
+
+			etm_control |= SYNTH_REG_ETMControl_bits_Program_mask;  // Program Channel data
+			etm_control |= SYNTH_REG_ETMControl_bits_Trigger_mask;  // And trigger transfer to DDS
+
+			etm_control |= ((static_cast<int>(chan) - 1) & SYNTH_REG_ETMControl_bits_Channel_mask);
+			switch (tone.mode())
+			{
+			case ENHANCED_TONE_MODE::NO_SWEEP: break;
+			case ENHANCED_TONE_MODE::FREQUENCY_DWELL:    etm_control |= (0x9 << SYNTH_REG_ETMControl_bits_Function_shift); break;
+			case ENHANCED_TONE_MODE::FREQUENCY_NO_DWELL: etm_control |= (0xB << SYNTH_REG_ETMControl_bits_Function_shift); break;
+			case ENHANCED_TONE_MODE::FREQUENCY_FAST_MOD: etm_control |= (0x8 << SYNTH_REG_ETMControl_bits_Function_shift); break;
+			case ENHANCED_TONE_MODE::PHASE_DWELL:        etm_control |= (0xD << SYNTH_REG_ETMControl_bits_Function_shift); break;
+			case ENHANCED_TONE_MODE::PHASE_NO_DWELL:     etm_control |= (0xF << SYNTH_REG_ETMControl_bits_Function_shift); break;
+			case ENHANCED_TONE_MODE::PHASE_FAST_MOD:     etm_control |= (0xC << SYNTH_REG_ETMControl_bits_Function_shift); break;
+			}
+
+			switch (tone.scaling())
+			{
+			case DAC_CURRENT_REFERENCE::FULL_SCALE: etm_control |= (3 << SYNTH_REG_ETMControl_bits_Scaling_shift); break;
+			case DAC_CURRENT_REFERENCE::HALF_SCALE: etm_control |= (1 << SYNTH_REG_ETMControl_bits_Scaling_shift); break;
+			case DAC_CURRENT_REFERENCE::QUARTER_SCALE: etm_control |= (2 << SYNTH_REG_ETMControl_bits_Scaling_shift); break;
+			case DAC_CURRENT_REFERENCE::EIGHTH_SCALE: etm_control |= (0 << SYNTH_REG_ETMControl_bits_Scaling_shift); break;
+			}
+
+			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ETMControl);
+			iorpt->Payload<std::uint16_t>(etm_control);
+
+			if (NullMessage == myiMSConn->SendMsg(*iorpt))
+			{
+				delete iorpt;
+				return false;
+			}
+			delete iorpt;
+
+		}
+		return true;
 	}
 
 	bool SignalPath::ClearEnhancedToneChannel(const RFChannel& chan)
 	{
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt;
+
+		bool use_dds_script = true;
 		// Original iMS4 (rev A) cannot support DDS Scripts and therefore won't work with Enhanced Tone Mode
 		// SDK v1.5.1: rev A v1.3.57 and later supports ETM
 		if (p_Impl->myiMS.Synth().Model() == "iMS4") {
@@ -1126,6 +1389,11 @@ namespace iMS
 		else if ((p_Impl->myiMS.Synth().Model() == "iMS4b") || (p_Impl->myiMS.Synth().Model() == "iMS4c")) {
 			// iMS4b/4c use DDS scripts, from version 68 onwards.  Earlier builds had issue with DDS scripts
 			if (p_Impl->myiMS.Synth().GetVersion().revision < 68) return false;
+		}
+		else if (p_Impl->myiMS.Synth().Model() == "iMS4d") {
+			// iMS4d use direct programming, from version 148 onwards.
+			if (p_Impl->myiMS.Synth().GetVersion().revision < 148) return false;
+			use_dds_script = false;
 		}
 		else {
 			// Synth doesn't support scripts
@@ -1134,59 +1402,76 @@ namespace iMS
 
 		if (chan.IsAll()) return ClearEnhancedToneMode();
 
-		if (check_linear_sweep(p_Impl->myiMS, chan))
+		if (!use_dds_script)
 		{
-			// Check whether we support linear sweep as part of STM, or need to use a DDS script
-//			if (((p_Impl->myiMS.Synth().Model() == "iMS4") || (p_Impl->myiMS.Synth().Model() == "iMS4b")) &&
-//				(p_Impl->myiMS.Synth().GetVersion().revision <= 68))
+			std::uint16_t etm_control = 0;
+
+			etm_control |= SYNTH_REG_ETMControl_bits_Clear_mask;  // Clear ETM Mode
+
+			// Do we support clearing ETM by channel???
+			etm_control |= ((static_cast<int>(chan) - 1) & SYNTH_REG_ETMControl_bits_Channel_mask);
+			
+			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ETMControl);
+			iorpt->Payload<std::uint16_t>(etm_control);
+
+			if (NullMessage == myiMSConn->SendMsg(*iorpt))
 			{
-				// Uses DDS Script
-				FileSystemTableViewer fstv(p_Impl->myiMS);
+				delete iorpt;
+				return false;
+			}
+			delete iorpt;
+		}
+		else if (use_dds_script && check_linear_sweep(p_Impl->myiMS, chan))
+		{
+			// Uses DDS Script
+			FileSystemTableViewer fstv(p_Impl->myiMS);
 
-				// Reset Function Register
-				DDSScript scr;
+			// Reset Function Register
+			DDSScript scr;
 
-				SweepTone tone;
-				add_sweep_to_script(p_Impl->myiMS, scr, tone, chan);
+			SweepTone tone;
+			add_sweep_to_script(p_Impl->myiMS, scr, tone, chan);
 
-				scr.push_back(DDSScriptRegister(DDSScriptRegister::Name::UPDATE));
+			scr.push_back(DDSScriptRegister(DDSScriptRegister::Name::UPDATE));
 
-				DDSScriptDownload ddsdl(p_Impl->myiMS, scr);
-				FileSystemIndex stop_idx = ddsdl.Program("stoplsm", FileDefault::NON_DEFAULT);
-				if (stop_idx < 0) return false;
+			DDSScriptDownload ddsdl(p_Impl->myiMS, scr);
+			FileSystemIndex stop_idx = ddsdl.Program("stoplsm", FileDefault::NON_DEFAULT);
+			if (stop_idx < 0) return false;
 
-				FileSystemManager fsm(p_Impl->myiMS);
-				fsm.Execute(stop_idx);
-				fsm.Delete(stop_idx);
+			FileSystemManager fsm(p_Impl->myiMS);
+			fsm.Execute(stop_idx);
+			fsm.Delete(stop_idx);
 
-				std::string check("alwaoww");
-				check += std::to_string((int)chan);
+			std::string check("alwaoww");
+			check += std::to_string((int)chan);
 
-				for (int i = 0; i < MAX_FST_ENTRIES; i++) {
-					FileSystemTypes type = fstv[i].Type();
-					std::string name = fstv[i].Name();
-					if ((type == FileSystemTypes::DDS_SCRIPT))
+			for (int i = 0; i < MAX_FST_ENTRIES; i++) {
+				FileSystemTypes type = fstv[i].Type();
+				std::string name = fstv[i].Name();
+				if ((type == FileSystemTypes::DDS_SCRIPT))
+				{
+					name.resize(8);
+					if (name.compare(check) == 0)
 					{
-						name.resize(8);
-						if (name.compare(check) == 0)
-						{
-							fsm.Delete(i);
-						}
+						fsm.Delete(i);
 					}
 				}
 			}
-//			else {
-				// Uses STM
-//				return false;
-//			}
+		}
+		else {
+			return false;
+		}
 
-			return true;
-		} 
-		return false;
+		return true;
 	}
 
 	bool SignalPath::ClearEnhancedToneMode()
 	{
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt;
+
+		bool use_dds_script = true;
 		// Original iMS4 (rev A) cannot support DDS Scripts and therefore won't work with Enhanced Tone Mode
 		// SDK v1.5.1: rev A v1.3.57 and later supports ETM
 		if (p_Impl->myiMS.Synth().Model() == "iMS4") {
@@ -1196,12 +1481,33 @@ namespace iMS
 			// iMS4b/4c use DDS scripts, from version 68 onwards.  Earlier builds had issue with DDS scripts
 			if (p_Impl->myiMS.Synth().GetVersion().revision < 68) return false;
 		}
+		else if (p_Impl->myiMS.Synth().Model() == "iMS4d") {
+			// iMS4d use direct programming, from version 148 onwards.
+			if (p_Impl->myiMS.Synth().GetVersion().revision < 148) return false;
+			use_dds_script = false;
+		}
 		else {
-			// Synth doesn't support scripts
+			// Synth doesn't support scripts 
 			return false;
 		}
 
-		if (check_linear_sweep(p_Impl->myiMS))
+		if (!use_dds_script)
+		{
+			std::uint16_t etm_control = 0;
+
+			etm_control |= SYNTH_REG_ETMControl_bits_Clear_mask;  // Clear ETM Mode
+
+			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ETMControl);
+			iorpt->Payload<std::uint16_t>(etm_control);
+
+			if (NullMessage == myiMSConn->SendMsg(*iorpt))
+			{
+				delete iorpt;
+				return false;
+			}
+			delete iorpt;
+		}
+		else if (use_dds_script && check_linear_sweep(p_Impl->myiMS))
 		{
 			// Check whether we support linear sweep as part of STM, or need to use a DDS script
 //			if (((p_Impl->myiMS.Synth().Model() == "iMS4") || (p_Impl->myiMS.Synth().Model() == "iMS4b")) &&
@@ -1372,6 +1678,137 @@ namespace iMS
 		ReportFields f = iorpt->Fields();
 		f.len = static_cast<std::uint16_t>(data.size() * sizeof(std::uint16_t));
 		iorpt->Fields(f);
+
+		if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		{
+			delete iorpt;
+			return false;
+		}
+
+		return true;
+	}
+
+	bool SignalPath::SyncDigitalOutputInvert(bool invert)
+	{
+		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_SDORInvert);
+		iorpt->Payload < std::uint16_t > (invert ? 1 : 0);
+
+		if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+		return true;
+	}
+
+	bool SignalPath::SyncDigitalOutputMode(SYNC_DIG_MODE mode, int index)
+	{
+		if ( ((index < 0) || (index > 11)) && (index != INT_MAX))
+			return false;
+
+		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt;
+
+		if (index != INT_MAX)
+		{
+			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
+			iorpt->Payload<std::uint16_t>(1 << index);
+
+			if (NullMessage == myiMSConn->SendMsg(*iorpt))
+			{
+				delete iorpt;
+				return false;
+			}
+			delete iorpt;
+		}
+
+		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_SDORPulseSelect);
+		iorpt->Payload<std::uint16_t>(mode == SYNC_DIG_MODE::LEVEL ? 0xFFFF : 0);
+
+		if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+
+		return true;
+	}
+
+	bool SignalPath::SetXYChannelDelay(::std::chrono::nanoseconds delay)
+	{
+		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt;
+		std::vector<std::uint16_t> data;
+
+//		std::uint16_t data;
+
+		long long del = delay.count() / 10;
+		if ((del > 4092) || (del < -4092)) return false;
+
+		if (del < 0) {
+			del = -del;
+
+			// undelayed channel experiences a 30ns bypass delay.  Compensate by adding 30ns to the delayed channel
+			del += 3;
+
+			data.push_back(static_cast<std::uint16_t>(0));
+			data.push_back(static_cast<std::uint16_t>(del));
+		}
+		else {
+			del += 3;
+			data.push_back(static_cast<std::uint16_t>(del));
+			data.push_back(static_cast<std::uint16_t>(0));
+		}
+
+
+		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ChannelDelay34);
+		iorpt->Payload < std::vector < std::uint16_t > >(data);
+
+		if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+
+		return true;
+	}
+
+	bool SignalPath::SetChannelDelay(::std::chrono::nanoseconds first, ::std::chrono::nanoseconds second)
+	{
+		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt;
+		std::vector<std::uint16_t> data;
+
+		long long del1 = first.count() / 10;
+		if ((del1 > 4092) || (del1 < 0)) return false;
+
+		long long del2 = second.count() / 10;
+		if ((del2 > 4092) || (del2 < 0)) return false;
+
+		if (del1 < 3) del2 += (3 - del1);
+		if (del2 < 3) del1 += (3 - del2);
+
+		data.push_back(static_cast<std::uint16_t>(del2));
+		data.push_back(static_cast<std::uint16_t>(del1));
+
+		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ChannelDelay34);
+		iorpt->Payload < std::vector < std::uint16_t > >(data);
 
 		if (NullMessage == myiMSConn->SendMsg(*iorpt))
 		{

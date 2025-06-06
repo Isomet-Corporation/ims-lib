@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-08-20 22:35:21 +0100 (Fri, 20 Aug 2021) $
+/ Last update: $Date: 2023-11-24 08:01:48 +0000 (Fri, 24 Nov 2023) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 489 $
+/ Revision   : $Rev: 589 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -449,6 +449,14 @@ namespace iMS {
 
 	}
 
+	void CM_RS422::SetTimeouts(int send_timeout_ms, int rx_timeout_ms, int free_timeout_ms, int discover_timeout_ms)
+	{
+		(void)discover_timeout_ms;
+		sendTimeout = std::chrono::milliseconds(send_timeout_ms);
+		rxTimeout = std::chrono::milliseconds(rx_timeout_ms);
+		autoFreeTimeout = std::chrono::milliseconds(free_timeout_ms);
+	}
+
 	void CM_RS422::MessageSender()
 	{
 		while (DeviceIsOpen == true)
@@ -578,7 +586,6 @@ namespace iMS {
 		DWORD dwRes;
 		unsigned char  chRead[Impl::RxBufferSize];
 		BOOL fWaitingOnRead = FALSE;
-		BOOL fDataAvailable = FALSE;
 		BOOL fHandleError = FALSE;
 		OVERLAPPED osReader = { 0 };
 		int retries = 0;
@@ -691,6 +698,8 @@ namespace iMS {
 
 	bool CM_RS422::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
+		(void)uuid;
+
 		// Only proceed if idle
 		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
@@ -716,6 +725,8 @@ namespace iMS {
 
 	bool CM_RS422::MemoryUpload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int len, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
+		(void)uuid;
+
 		// Only proceed if idle
 		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
@@ -796,12 +807,12 @@ namespace iMS {
 					// Prime DMA Transfer
 					HostReport *iorpt;
 					//uint32_t len = static_cast<uint32_t>(mImpl->fti->m_transBytesRemaining);
-					uint32_t addr = mImpl->fti->m_addr + i * FastTransfer::TRANSFER_GRANULARITY;
+					//uint32_t addr = mImpl->fti->m_addr + i * FastTransfer::TRANSFER_GRANULARITY;
 					if (mImpl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
 						iorpt = new HostReport(HostReport::Actions::CTRLR_IMAGE, HostReport::Dir::WRITE, ((mImpl->fti->m_currentTrans-1) & 0xFFFF));
 						if (mImpl->fti->m_currentTrans > 0x10000) {
 							ReportFields f = iorpt->Fields();
-							f.context = ((mImpl->fti->m_currentTrans-1) >> 16);
+							f.context = static_cast<std::uint8_t>((mImpl->fti->m_currentTrans-1) >> 16);
 							iorpt->Fields(f);
 						}
 						LONG len = FastTransfer::DL_TRANSFER_SIZE;
@@ -822,11 +833,11 @@ namespace iMS {
 					}
 					else if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
 						uint16_t len = FastTransfer::UL_TRANSFER_SIZE;
-						if (mImpl->fti->m_transBytesRemaining < FastTransfer::UL_TRANSFER_SIZE) len = mImpl->fti->m_transBytesRemaining;
+						if (mImpl->fti->m_transBytesRemaining < FastTransfer::UL_TRANSFER_SIZE) len = static_cast<std::uint16_t>(mImpl->fti->m_transBytesRemaining);
 						iorpt = new HostReport(HostReport::Actions::CTRLR_IMAGE, HostReport::Dir::READ, ((mImpl->fti->m_currentTrans - 1) & 0xFFFF));
 						ReportFields f = iorpt->Fields();
 						if (mImpl->fti->m_currentTrans > 0x10000) {
-							f.context = ((mImpl->fti->m_currentTrans - 1) >> 16);
+							f.context = static_cast<std::uint8_t>((mImpl->fti->m_currentTrans - 1) >> 16);
 						}
 						f.len = len;
 						iorpt->Fields(f);

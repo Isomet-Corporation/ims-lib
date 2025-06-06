@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2020-06-05 07:45:07 +0100 (Fri, 05 Jun 2020) $
+/ Last update: $Date: 2024-12-19 18:57:04 +0000 (Thu, 19 Dec 2024) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 443 $
+/ Revision   : $Rev: 650 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -88,8 +88,8 @@ namespace iMS {
 
 	unsigned int FrequencyRenderer::RenderAsPointRate(const IMSSystem& system, const Frequency freq, const bool PrescalerDisable)
 	{
-		double d = freq, max = system.Ctlr().GetCap().MaxImageRate;
-		d = 100000000.0 / std::min(d, max);
+		double d = freq, cmax = system.Ctlr().GetCap().MaxImageRate, smax = system.Synth().GetCap().MaxImageRate;
+		d = 100000000.0 / std::min(d, std::min(cmax, smax));
 		if (!system.Ctlr().GetCap().FastImageTransfer || !PrescalerDisable) {
 			d /= 100.0;
 		}
@@ -107,7 +107,7 @@ namespace iMS {
 		d = (d - static_cast<double>(system.Synth().GetCap().lowerFrequency)) / (static_cast<double>(system.Synth().GetCap().upperFrequency) - static_cast<double>(system.Synth().GetCap().lowerFrequency));
 		d = d * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1 << system.Synth().GetCap().freqBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << system.Synth().GetCap().freqBits) - 1));
 	}
 
 	unsigned int FrequencyRenderer::RenderAsStaticOffset(const IMSSystem& system, const MHz freq, int add_sub)
@@ -122,7 +122,7 @@ namespace iMS {
 		d = d * int_repr;
 		if (add_sub) d *= -1.0;
 
-		return static_cast<unsigned int>(static_cast<int>(d)& ((1 << system.Synth().GetCap().freqBits) - 1));
+		return static_cast<unsigned int>(static_cast<int>(d)& ((1ULL << system.Synth().GetCap().freqBits) - 1));
 	}
 
 	unsigned int FrequencyRenderer::RenderAsDDSValue(const IMSSystem& system, const MHz freq)
@@ -147,7 +147,7 @@ namespace iMS {
 		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().amplBits)) - 0.5);
 		d = (d / 100.0) * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1 << system.Synth().GetCap().amplBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << system.Synth().GetCap().amplBits) - 1));
 	}
 
 	unsigned int AmplitudeRenderer::RenderAsCompensationPoint(const IMSSystem& system, const Percent ampl)
@@ -157,7 +157,7 @@ namespace iMS {
 		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().LUTAmplBits)) - 0.5);
 		d = (d / 100.0) * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1 << system.Synth().GetCap().LUTAmplBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << system.Synth().GetCap().LUTAmplBits) - 1));
 	}
 
 	unsigned int AmplitudeRenderer::RenderAsCalibrationTone(const IMSSystem& system, const Percent ampl)
@@ -167,7 +167,7 @@ namespace iMS {
 		double int_repr = std::floor(std::pow(2.0, (CalibAmplBits)) - 0.5);
 		d = (d / 100.0) * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1 << CalibAmplBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << CalibAmplBits) - 1));
 	}
 
 	unsigned int AmplitudeRenderer::RenderAsChirp(const IMSSystem& system, const Percent ampl)
@@ -188,7 +188,7 @@ namespace iMS {
 		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().phaseBits)) - 0.5);
 		d = (d / 360.0) * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1 << system.Synth().GetCap().phaseBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << system.Synth().GetCap().phaseBits) - 1));
 	}
 
 	unsigned int PhaseRenderer::RenderAsCompensationPoint(const IMSSystem& system, const Degrees deg)
@@ -198,7 +198,7 @@ namespace iMS {
 		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().LUTPhaseBits)) - 0.5);
 		d = (d / 360.0) * int_repr;
 
-		return (static_cast<unsigned int>(d) & ((1 << system.Synth().GetCap().LUTPhaseBits)-1));
+		return (static_cast<unsigned int>(d) & ((1ULL << system.Synth().GetCap().LUTPhaseBits)-1));
 	}
 
 	unsigned int PhaseRenderer::RenderAsCalibrationTone(const IMSSystem& system, const Degrees deg)
@@ -208,7 +208,7 @@ namespace iMS {
 		double int_repr = std::floor(std::pow(2.0, (CalibPhaseBits)) - 0.5);
 		d = (d / 360.0) * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1 << CalibPhaseBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << CalibPhaseBits) - 1));
 	}
 
 	unsigned int PhaseRenderer::RenderAsChirp(const IMSSystem& system, const Degrees deg)

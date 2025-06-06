@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-08-20 22:35:21 +0100 (Fri, 20 Aug 2021) $
+/ Last update: $Date: 2023-07-28 14:23:44 +0100 (Fri, 28 Jul 2023) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 489 $
+/ Revision   : $Rev: 576 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -257,6 +257,15 @@ namespace iMS
 			DIG
 		};
 
+	/// \enum SYNC_DIG_MODE
+	/// \brief Synchronous Digital output mode setting: pulsed (configurable width) or level (image point duration)
+	/// \since 1.8.7
+		enum class SYNC_DIG_MODE
+		{
+			PULSE,
+			LEVEL
+		};
+
 	/// \enum ENCODER_MODE
 	/// \brief Selects the type of encoder connected to the Synthesiser
 	///
@@ -428,7 +437,35 @@ namespace iMS
 	/// \return true if the XY Phase Setting request was sent successfully.
 	/// \since 1.3
 		bool EnableXYPhaseCompensation(bool XYCompEnable);
-    //@}
+
+	/// \brief Sets a configurable delay between output channel pairs
+	/// 
+	/// When using a pair of AO deflectors in X/Y mode, it can be useful to configure a small output delay
+	/// between the RF channels used to drive the X AOD and the channels used to drive the Y AOD to 
+	/// maximise the combined efficieny.
+	/// 
+	/// This function will delay the RF output of one pair of channels in a 4-channel synthesiser relative to 
+	/// the other.  The delay is configurable in 10ns increments and ranges from -40.9 to +40.9 microseconds.
+	/// If delay > 0, channels 3&4 (Y axis) are delayed relative to channels 1&2 (X axis).
+	/// If delay < 0, channels 1&2 (X axis) are delayed relative to channels 3&4 (Y axis)
+	/// \param[in] delay The amount of time to delay the second pair of channels relative to the first
+	/// \return true if the delay command was issued successfully
+	/// \since 1.8.7
+		bool SetXYChannelDelay(::std::chrono::nanoseconds delay  = ::std::chrono::nanoseconds::zero());
+
+	/// \brief Sets a configurable delay for both output channel pairs
+	/// 
+	/// This method configures both channel delays simultaneously.  Both delay values should be in the
+	/// range 0 to +40.9 microseconds.  Setting both values the same allows the user to configure
+	/// an overall RF delay for all RF outputs of the synthesiser.
+	/// 
+	/// \param[in] first The amount of time to delay the first pair of channels (channels 1 & 2)
+	/// \param[in] second The amount of time to delay the second pair of channels (channels 3 & 4)
+	/// \return true if the delay command was issued successfully
+	/// \since 1.8.8
+		bool SetChannelDelay(::std::chrono::nanoseconds first  = ::std::chrono::nanoseconds::zero(),
+					 	     ::std::chrono::nanoseconds second = ::std::chrono::nanoseconds::zero());
+		//@}
 
 	/// \name Calibration Functions
     //@{
@@ -561,13 +598,43 @@ namespace iMS
 	/// number of nanoseconds that is less than 655360ns and has a minimum resolution of 10ns.
 	/// (2) The synchronous digital output bits can be set to "pulse mode" - they return to inactive after a 
 	/// defined time period.  The period may be any number of nanoseconds that is less than 655360ns and has
-	/// a minimum resolution of 10ns.
+	/// a minimum resolution of 10ns. A setting of 0ns disables pulsed mode - all outputs are level out.
 	/// \param[in] delay the number of nanoseconds to delay the onset of synchronous digital output data
 	/// \param[in] pulse_length the width of the digital output data pulse (or zero to disable)
 	/// \return true if the syncronous digital output data configuration request was sent successfully
 	/// \since 1.4
 		bool ConfigureSyncDigitalOutput(::std::chrono::nanoseconds delay = ::std::chrono::nanoseconds::zero(),
 			::std::chrono::nanoseconds pulse_length = ::std::chrono::nanoseconds::zero());
+
+	///
+	/// \brief Sets the polarity of the Synchronous Digital outputs
+	///
+	/// The iMS digital outputs can be configured for active high or active low polarity.
+	/// If output inversion is enabled (invert = true), the digital output is asserted low when the associated
+	/// synchronous digital bit = 1 and asserted high when the sync digital bit = 0.  This is the default behaviour
+	/// for compatibility with earlier iMS hardware with fixed inverting optocouled outputs.
+	/// If the inversion is disabled (invert = false), the digital output follows the polarity of the sync
+	/// digital bit, i.e. sync dig bit = 0, output = low (GND); sync dig bit = 1, output = high (VCC).
+	/// \param[in] invert true = hardware output opposite sense to programmed bit.  false = hardware follows software bit
+	/// \return true if the syncronous digital output inversion request was sent successfully
+	/// \since 1.8.8
+		bool SyncDigitalOutputInvert(bool invert = true);
+
+	///
+	/// \brief Sets the assertion mode of the Synchronous Digital outputs
+	///
+	/// The synchronous digital outputs can be set for pulsed or level mode.  In pulsed mode, if the software bit = 1,
+	/// the output is asserted for the pulse length (see ConfigureSyncDigitalOutput for how to set the pulse length), then
+	/// returns to deasserted.  In level mode, the output signal remains asserted or deasserted for the duration of the 
+	/// image point.
+	///
+	/// With iMS rev D hardware fw ver 4.1.129+, individual synchronous output bits can be set independently.  Specify
+	/// in 'index' which bit to change the mode for.  If index is not specified, all bits have their mode changed
+	/// \param[in] mode Set to PULSED or LEVEL to configure the output mode
+	/// \param[in] index Select a bit (0-11) to change the mode for, or INT_MAX for all bits
+	/// \return true if the syncronous digital output mode request was sent successfully
+	/// \since 1.8.8
+		bool SyncDigitalOutputMode(SYNC_DIG_MODE mode, int index = INT_MAX);
 	//@}
 
 	///

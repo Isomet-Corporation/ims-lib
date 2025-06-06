@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2017-09-11 23:55:34 +0100 (Mon, 11 Sep 2017) $
+/ Last update: $Date: 2022-02-23 14:10:12 +0000 (Wed, 23 Feb 2022) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 300 $
+/ Revision   : $Rev: 521 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------

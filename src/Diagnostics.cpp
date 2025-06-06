@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2019-07-10 12:10:35 +0100 (Wed, 10 Jul 2019) $
+/ Last update: $Date: 2024-12-18 16:57:01 +0000 (Wed, 18 Dec 2024) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 418 $
+/ Revision   : $Rev: 647 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -293,25 +293,23 @@ namespace iMS
 						{
 							case (static_cast<int>(HostReport::Actions::AOD_TEMP)) : {
 								std::uint16_t Temperature = Resp.Payload<std::uint16_t>();
-								Temperature >>= 7;
 								double d = static_cast<double>(Temperature);
 								// Convert from 2's comp representation
-								if (d > 255.0) {
-									d -= 256.0;
+								if (d > 32767.0) {
+									d -= 65536.0;
 								}
-								d /= 2.0;
+								d /= 256.0;
 								m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::AOD_TEMP_UPDATE, d);
 								break;
 							}
 							case (static_cast<int>(HostReport::Actions::RFA_TEMP)) : {
 								std::uint16_t Temperature = Resp.Payload<std::uint16_t>();
-								Temperature >>= 7;
 								double d = static_cast<double>(Temperature);
 								// Convert from 2's comp representation
-								if (d > 255.0) {
-									d -= 256.0;
+								if (d > 32767.0) {
+									d -= 65536.0;
 								}
-								d /= 2.0;
+								d /= 256.0;
 								m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::RFA_TEMP_UPDATE, d);
 								break;
 							}

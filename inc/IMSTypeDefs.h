@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2019-07-10 12:10:35 +0100 (Wed, 10 Jul 2019) $
+/ Last update: $Date: 2024-11-07 15:36:38 +0000 (Thu, 07 Nov 2024) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 418 $
+/ Revision   : $Rev: 632 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -351,10 +351,14 @@ namespace iMS
 		FREQUENCY_DWELL,
 		/// Frequency Sweep with output returning to initial specification point at end of sweep.
 		FREQUENCY_NO_DWELL,
+		/// Two Point Frequency Fast Modulation
+		FREQUENCY_FAST_MOD,
 		/// Phase Sweep with output dwell at final specification point.
 		PHASE_DWELL,
 		/// Phase Sweep with output returning to initial specification point at end of sweep.
-		PHASE_NO_DWELL
+		PHASE_NO_DWELL,
+		/// Two Point Phase Fast Modulation
+		PHASE_FAST_MOD
 	};
 	///
 
@@ -597,6 +601,16 @@ namespace iMS
 	using centimeter = centimetre;
 	/// \brief Decimeters
 	using decimeter = decimetre;
+
+	/// <summary>
+	///  Signal Polarity: rising or falling edge
+	/// </summary>
+	enum class Polarity {
+		/// CLK / TRIG are active on the rising edge.  ENABLE is active high
+		NORMAL,
+		/// CLK / TRIG are active on the falling edge.  ENABLE is active low
+		INVERSE
+	};
 }
 
 #if defined _WIN32

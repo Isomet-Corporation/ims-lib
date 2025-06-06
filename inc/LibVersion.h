@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-09-20 17:02:23 +0100 (Mon, 20 Sep 2021) $
+/ Last update: $Date: 2025-01-08 22:15:19 +0000 (Wed, 08 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 502 $
+/ Revision   : $Rev: 658 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -95,7 +95,7 @@
 ///
 /// The API Patch Version number for use in preprocessing directives
 ///
-#define IMS_API_PATCH 5
+#define IMS_API_PATCH 12
 //@}
 
 /// \namespace iMS

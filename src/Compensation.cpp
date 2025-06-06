@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2019-07-10 12:10:35 +0100 (Wed, 10 Jul 2019) $
+/ Last update: $Date: 2023-05-30 10:50:42 +0100 (Tue, 30 May 2023) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 418 $
+/ Revision   : $Rev: 561 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -189,7 +189,7 @@ namespace iMS
 	public:
 		Impl()
 			{
-			m_style[CompensationFeature::AMPLITUDE] = CompensationFunction::InterpolationStyle::BSPLINE;
+			m_style[CompensationFeature::AMPLITUDE] = CompensationFunction::InterpolationStyle::LINEAR;
 			m_style[CompensationFeature::PHASE]     = CompensationFunction::InterpolationStyle::LINEXTEND;
 			m_style[CompensationFeature::SYNC_ANLG] = CompensationFunction::InterpolationStyle::LINEAR;
 			m_style[CompensationFeature::SYNC_DIG]  = CompensationFunction::InterpolationStyle::SPOT;

@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2020-06-05 07:45:07 +0100 (Fri, 05 Jun 2020) $
+/ Last update: $Date: 2025-01-08 21:34:12 +0000 (Wed, 08 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 443 $
+/ Revision   : $Rev: 655 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -63,8 +63,26 @@ namespace iMS {
 	const std::uint16_t SYNTH_REG_NHF_Timeout = 18;
 	const std::uint16_t SYNTH_REG_Clear_NHF = 19;
 	const std::uint16_t SYNTH_REG_NHF_Action = 20;
+	const std::uint16_t SYNTH_REG_ProgLocal = 25;
 	const std::uint16_t SYNTH_REG_UseLocal = 26;
 	const std::uint16_t SYNTH_REG_IO_Config_Mask = 31;
+	const std::uint16_t SYNTH_REG_ProgSyncDig = 32;
+	const std::uint16_t SYNTH_REG_ProgFreq0L = 58;
+	const std::uint16_t SYNTH_REG_ProgFreq0H = 33;
+	const std::uint16_t SYNTH_REG_ProgAmpl0 = 34;
+	const std::uint16_t SYNTH_REG_ProgPhase0 = 35;
+	const std::uint16_t SYNTH_REG_ProgFreq1L = 36;
+	const std::uint16_t SYNTH_REG_ProgFreq1H = 37;
+	const std::uint16_t SYNTH_REG_ProgAmpl1 = 38;
+	const std::uint16_t SYNTH_REG_ProgPhase1 = 39;
+	const std::uint16_t SYNTH_REG_ProgFreq2L = 40;
+	const std::uint16_t SYNTH_REG_ProgFreq2H = 41;
+	const std::uint16_t SYNTH_REG_ProgAmpl2 = 42;
+	const std::uint16_t SYNTH_REG_ProgPhase2 = 43;
+	const std::uint16_t SYNTH_REG_ProgFreq3L = 44;
+	const std::uint16_t SYNTH_REG_ProgFreq3H = 45;
+	const std::uint16_t SYNTH_REG_ProgAmpl3 = 46;
+	const std::uint16_t SYNTH_REG_ProgPhase3 = 47;
 	const std::uint16_t SYNTH_REG_PDI_Checksum = 48;
 	const std::uint16_t SYNTH_REG_ENC_Control = 49;
 	const std::uint16_t SYNTH_REG_ENC_CoeffKP = 50;
@@ -76,6 +94,12 @@ namespace iMS {
 	const std::uint16_t SYNTH_REG_SDOR_Pulse = 56;
 	const std::uint16_t SYNTH_REG_SDOR_Delay = 57;
 	const std::uint16_t SYNTH_REG_STM_FuncHold = 61;
+	const std::uint16_t SYNTH_REG_SweepFSRR = 62;
+	const std::uint16_t SYNTH_REG_SweepRSRR = 63;
+	const std::uint16_t SYNTH_REG_SweepFDWLo = 64;
+	const std::uint16_t SYNTH_REG_SweepFDWHi = 65;
+	const std::uint16_t SYNTH_REG_SweepRDWLo = 66;
+	const std::uint16_t SYNTH_REG_SweepRDWHi = 67;
 	const std::uint16_t SYNTH_REG_Chan_Scope = 69;
 	const std::uint16_t SYNTH_REG_Sync_Update = 70;
 	const std::uint16_t SYNTH_REG_Phase_Resync = 71;
@@ -85,6 +109,24 @@ namespace iMS {
 	const std::uint16_t SYNTH_REG_Freq_Offset_Ch3 = 76;
 	const std::uint16_t SYNTH_REG_Freq_Offset_Ch4 = 77;
 	const std::uint16_t SYNTH_REG_UseLocalIndex = 78;
+	const std::uint16_t SYNTH_REG_SDORInvert = 79;
+	const std::uint16_t SYNTH_REG_SDORPulseSelect = 80;
+	const std::uint16_t SYNTH_REG_ChannelDelay34 = 81;
+	const std::uint16_t SYNTH_REG_ChannelDelay12 = 82;
+	const std::uint16_t SYNTH_REG_ETMStartFreqLo = 85;
+	const std::uint16_t SYNTH_REG_ETMStartFreqHi = 86;
+	const std::uint16_t SYNTH_REG_ETMStartAmpl = 87;
+	const std::uint16_t SYNTH_REG_ETMStartPhase = 88;
+	const std::uint16_t SYNTH_REG_ETMEndFreqLo = 89;
+	const std::uint16_t SYNTH_REG_ETMEndFreqHi = 90;
+	const std::uint16_t SYNTH_REG_ETMEndAmpl = 91;
+	const std::uint16_t SYNTH_REG_ETMEndPhase = 92;
+	const std::uint16_t SYNTH_REG_ETMControl = 93;
+	const std::uint16_t SYNTH_REG_FreqLower = 94;
+	const std::uint16_t SYNTH_REG_Freq_OffsetLower_Ch1 = 95;
+	const std::uint16_t SYNTH_REG_Freq_OffsetLower_Ch2 = 96;
+	const std::uint16_t SYNTH_REG_Freq_OffsetLower_Ch3 = 97;
+	const std::uint16_t SYNTH_REG_Freq_OffsetLower_Ch4 = 98;
 
 	const std::uint16_t ACR_RFGate_bitmask = 0x0001;
 	const std::uint16_t ACR_EXTEn_bitmask = 0x0002;
@@ -99,10 +141,72 @@ namespace iMS {
 	const std::uint16_t ACR_RFBias34_OFF = 0x0020;
 	const std::uint16_t ACR_RFBias34_ON = 0x0000;
 
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Channel_mask = 0x3;
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Channel_shift = 0;
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Scaling_mask = 0xC;
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Scaling_shift = 2;
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Function_mask = 0xF00;
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Function_shift = 8;
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Program_mask = 0x20;
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Trigger_mask = 0x40;
+	const std::uint16_t SYNTH_REG_ETMControl_bits_Clear_mask = 0x80;
+
 	const std::uint16_t ENC_Control_ENC_Mode_Quadrature = 0;
 	const std::uint16_t ENC_Control_ENC_Mode_Clk_Dir = 1;
 	const std::uint16_t ENC_Control_Vel_Mode_Fast = 0;
 	const std::uint16_t ENC_Control_Vel_Mode_Slow = 2;
+
+	const std::uint16_t CTRLR_REG_NumPts = 48;
+	const std::uint16_t CTRLR_REG_OscFreq = 49;
+	const std::uint16_t CTRLR_REG_ExtDiv = 69;
+	const std::uint16_t CTRLR_REG_ImgDelay = 50;
+	const std::uint16_t CTRLR_REG_ImgModes = 51;
+	const std::uint16_t CTRLR_REG_ExtPolarity = 52;
+	const std::uint16_t CTRLR_REG_Img_Play = 53;
+	const std::uint16_t CTRLR_REG_Img_Ctrl = 54;
+	const std::uint16_t CTRLR_REG_Img_Progress = 55;
+	const std::uint16_t CTRLR_REG_UUID = 56;
+	const std::uint16_t CTRLR_REG_NumPtsLo = 64;
+	const std::uint16_t CTRLR_REG_NumPtsHi = 65;
+	const std::uint16_t CTRLR_REG_Img_ProgressLo = 66;
+	const std::uint16_t CTRLR_REG_Img_ProgressHi = 67;
+	const std::uint16_t CTRLR_REG_ImgModesExt = 70;
+	const std::uint16_t CTRLR_REG_ClockOutput = 71;
+	const std::uint16_t CTRLR_REG_DutyCycle = 72;
+	const std::uint16_t CTRLR_REG_OscPhase = 73;
+	const std::uint16_t CTRLR_REG_FPIFormat = 74;
+
+	const std::uint16_t SYNTH_REG_Img_FormatLo = 72;
+	const std::uint16_t SYNTH_REG_Img_FormatHi = 73;
+
+	const std::uint16_t CTRLR_REG_Img_Play_FSTOP = 1;
+	const std::uint16_t CTRLR_REG_Img_Play_STOP = 2;
+	const std::uint16_t CTRLR_REG_Img_Play_RUN = 4;
+	const std::uint16_t CTRLR_REG_Img_Play_ERUN = 8;
+
+	const std::uint16_t CTRLR_REG_Img_Ctrl_IOS_Busy = 0x0001;
+	const std::uint16_t CTRLR_REG_Img_Ctrl_DL_Active = 0x0002;
+	const std::uint16_t CTRLR_REG_Img_Ctrl_Common_Channels = 0x0004;
+	const std::uint16_t CTRLR_REG_Img_Ctrl_Prescaler_Disable = 0x0008;
+
+	const std::uint16_t CTRLR_SYNDMA_Start_DMA = 0;
+	const std::uint16_t CTRLR_SYNDMA_DMA_Abort = 2;
+
+	const std::uint16_t CTRLR_SEQPLAY_Seq_Start = 0;
+	const std::uint16_t CTRLR_SEQPLAY_USR_Trig = 1;
+	const std::uint16_t CTRLR_SEQPLAY_Seq_Stop = 2;
+	const std::uint16_t CTRLR_SEQPLAY_Seq_Pause = 3;
+	const std::uint16_t CTRLR_SEQPLAY_Seq_Restart = 4;
+
+	const std::uint16_t CTRLR_INTERRUPT_SINGLE_IMAGE_FINISHED = 0;
+	const std::uint16_t CTRLR_INTERRUPT_SEQUENCE_START = 1;
+	const std::uint16_t CTRLR_INTERRUPT_SEQUENCE_FINISHED = 2;
+	const std::uint16_t CTRLR_INTERRUPT_SEQUENCE_ERROR = 3;
+	const std::uint16_t CTRLR_INTERRUPT_TONE_START = 5;
+	const std::uint16_t CTRLR_INTERRUPT_SEQDL_ERROR = 6;
+	const std::uint16_t CTRLR_INTERRUPT_SEQDL_COMPLETE = 7;
+	const std::uint16_t CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED = 8;
+
 }
 
 #endif

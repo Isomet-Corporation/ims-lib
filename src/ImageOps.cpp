@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-12-15 10:49:10 +0000 (Wed, 15 Dec 2021) $
+/ Last update: $Date: 2025-01-08 21:34:12 +0000 (Wed, 08 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 516 $
+/ Revision   : $Rev: 655 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -42,51 +42,6 @@
 
 namespace iMS
 {
-	const std::uint16_t CTRLR_REG_NumPts = 48;
-	const std::uint16_t CTRLR_REG_OscFreq = 49;
-	const std::uint16_t CTRLR_REG_ExtDiv = 69;
-	const std::uint16_t CTRLR_REG_ImgDelay = 50;
-	const std::uint16_t CTRLR_REG_ImgModes = 51;
-	const std::uint16_t CTRLR_REG_ExtPolarity = 52;
-	const std::uint16_t CTRLR_REG_Img_Play = 53;
-	const std::uint16_t CTRLR_REG_Img_Ctrl = 54;
-	const std::uint16_t CTRLR_REG_Img_Progress = 55;
-	const std::uint16_t CTRLR_REG_UUID = 56;
-	const std::uint16_t CTRLR_REG_NumPtsLo = 64;
-	const std::uint16_t CTRLR_REG_NumPtsHi = 65;
-	const std::uint16_t CTRLR_REG_Img_ProgressLo = 66;
-	const std::uint16_t CTRLR_REG_Img_ProgressHi = 67;
-	const std::uint16_t CTRLR_REG_ImgModesExt = 70;
-
-	const std::uint16_t SYNTH_REG_Img_FormatLo = 72;
-	const std::uint16_t SYNTH_REG_Img_FormatHi = 73;
-
-	const std::uint16_t CTRLR_REG_Img_Play_FSTOP = 1;
-	const std::uint16_t CTRLR_REG_Img_Play_STOP = 2;
-	const std::uint16_t CTRLR_REG_Img_Play_RUN = 4;
-	const std::uint16_t CTRLR_REG_Img_Play_ERUN = 8;
-
-	const std::uint16_t CTRLR_REG_Img_Ctrl_IOS_Busy = 0x0001;
-	const std::uint16_t CTRLR_REG_Img_Ctrl_DL_Active = 0x0002;
-	const std::uint16_t CTRLR_REG_Img_Ctrl_Common_Channels = 0x0004;
-	const std::uint16_t CTRLR_REG_Img_Ctrl_Prescaler_Disable = 0x0008;
-
-	const std::uint16_t CTRLR_SYNDMA_Start_DMA = 0;
-	const std::uint16_t CTRLR_SYNDMA_DMA_Abort = 2;
-
-	const std::uint16_t CTRLR_SEQPLAY_Seq_Start = 0;
-	const std::uint16_t CTRLR_SEQPLAY_USR_Trig = 1;
-	const std::uint16_t CTRLR_SEQPLAY_Seq_Stop = 2;
-	const std::uint16_t CTRLR_SEQPLAY_Seq_Pause = 3;
-	const std::uint16_t CTRLR_SEQPLAY_Seq_Restart = 4;
-
-	const std::uint16_t CTRLR_INTERRUPT_SINGLE_IMAGE_FINISHED = 0;
-	const std::uint16_t CTRLR_INTERRUPT_SEQUENCE_START = 1;
-	const std::uint16_t CTRLR_INTERRUPT_SEQUENCE_FINISHED = 2;
-	const std::uint16_t CTRLR_INTERRUPT_SEQUENCE_ERROR = 3;
-	const std::uint16_t CTRLR_INTERRUPT_TONE_START = 5;
-	const std::uint16_t CTRLR_INTERRUPT_SEQDL_ERROR = 6;
-	const std::uint16_t CTRLR_INTERRUPT_SEQDL_COMPLETE = 7;
 
 //	class VerifyListener : public IEventHandler
 //	{
@@ -95,11 +50,20 @@ namespace iMS
 //	};
 
 	// Free function for formatting Image objects into bytestreams
-	int FormatImage(const Image& img, const IMSSystem& ims, boost::container::deque < std::uint8_t >& img_data, ImageFormat formatSpec)
+	int FormatImage(const Image& img, const IMSSystem& ims, boost::container::deque < std::uint8_t >& img_data, ImageFormat formatSpec, int MSBFirst)
 	{
+		// These are the old resolutions that must be used if the iMS is in LSB first mode.  Newer firmware supports MSB first mode with variable resolution
+		const int lsb_freqbits = 16;
+		const int lsb_amplbits = 8;
+		const int lsb_phasebits = 12;
+		const int lsb_syncdbits = 12;
+		const int lsb_syncabits = 12;
+
 		int img_index = 0;
 		int length = img.Size();
 		int bytesPerPoint = 0;
+		int sync_anlg_channels = formatSpec.SyncAnlgChannels();
+		if (sync_anlg_channels > 2) sync_anlg_channels = 2;
 		// Restrict to maximum size of Controller memory;
 		//length = std::min(length, ims.Ctlr().GetCap().MaxImageSize);
 
@@ -107,40 +71,136 @@ namespace iMS
 		while ((img_index < length) && (it < img.cend()))
 		{
 			ImagePoint pt = (*it);
-			for (int chan = 1; chan <= formatSpec.Channels(); chan++) {
+
+			int chan = RFChannel::min;
+			while (chan <= formatSpec.Channels()) {
 				FAP fap = pt.GetFAP(chan);
 
 				std::uint32_t freq = FrequencyRenderer::RenderAsImagePoint(ims, fap.freq);
-				for (int i = 0; i <= ((ims.Synth().GetCap().freqBits - 1) / 8); i++) {
-					img_data.push_back(static_cast<std::uint8_t>((freq >> (i * 8)) & 0xFF));
-					if (!img_index) bytesPerPoint++;
-				}
 				std::uint32_t ampl = AmplitudeRenderer::RenderAsImagePoint(ims, fap.ampl);
-				for (int i = 0; i <= ((ims.Synth().GetCap().amplBits - 1) / 8); i++) {
-					img_data.push_back(static_cast<std::uint8_t>((ampl >> (i * 8)) & 0xFF));
-					if (!img_index) bytesPerPoint++;
-				}
 				std::uint32_t phase = PhaseRenderer::RenderAsImagePoint(ims, fap.phase);
-				for (int i = 0; i <= ((ims.Synth().GetCap().phaseBits - 1) / 8); i++) {
-					img_data.push_back(static_cast<std::uint8_t>((phase >> (i * 8)) & 0xFF));
-					if (!img_index) bytesPerPoint++;
+
+				if (!MSBFirst) {
+					for (int i = (ims.Synth().GetCap().freqBits - lsb_freqbits); i <= (ims.Synth().GetCap().freqBits - 1); i+=8) {
+						img_data.push_back(static_cast<std::uint8_t>((freq >> i) & 0xFF));
+						if (!img_index) bytesPerPoint++;
+					}
+					for (int i = (ims.Synth().GetCap().amplBits - lsb_amplbits); i <= (ims.Synth().GetCap().amplBits - 1); i+=8) {
+						img_data.push_back(static_cast<std::uint8_t>((ampl >> i) & 0xFF));
+						if (!img_index) bytesPerPoint++;
+					}
+					for (int i = (ims.Synth().GetCap().phaseBits - lsb_phasebits); i <= (ims.Synth().GetCap().phaseBits - 1); i+=8) {
+						img_data.push_back(static_cast<std::uint8_t>((phase >> i) & 0xFF));
+						if (!img_index) bytesPerPoint++;
+					}
+
+					chan++;
+				}
+				else {
+					// Add FAP
+					int freqEndBit = ims.Synth().GetCap().freqBits - formatSpec.FreqBytes() * 8;
+					if (freqEndBit < -8) freqEndBit = -8;
+
+					int amplEndBit = ims.Synth().GetCap().amplBits - formatSpec.AmplBytes() * 8;
+					if (amplEndBit < -8) amplEndBit = -8;
+
+					int phsEndBit = ims.Synth().GetCap().phaseBits - formatSpec.PhaseBytes() * 8;
+					if (phsEndBit < -8) phsEndBit = -8;
+
+					for (int i = ims.Synth().GetCap().freqBits - 8; i >= freqEndBit; i-=8) {
+						if (i < 0) {
+							img_data.push_back(static_cast<std::uint8_t>((freq << -i) & 0xFF));  // Accounts for zero filling bottom byte for non multiple-of-8 bit sizes
+						}
+						else {
+							img_data.push_back(static_cast<std::uint8_t>((freq >> i) & 0xFF));
+						}
+						if (!img_index) bytesPerPoint++;
+					}
+					if (formatSpec.EnableAmpl()) {
+						for (int i = ims.Synth().GetCap().amplBits - 8; i >= amplEndBit; i-=8) {
+							if (i < 0) {
+								img_data.push_back(static_cast<std::uint8_t>((ampl << -i) & 0xFF));
+							}
+							else {
+								img_data.push_back(static_cast<std::uint8_t>((ampl >> i) & 0xFF));
+							}
+							if (!img_index) bytesPerPoint++;
+						}
+					}
+					if (formatSpec.EnablePhase()) {
+						for (int i = ims.Synth().GetCap().phaseBits - 8; i >= phsEndBit; i-=8) {
+							if (i < 0) {
+								img_data.push_back(static_cast<std::uint8_t>((phase << -i) & 0xFF));
+							}
+							else {
+								img_data.push_back(static_cast<std::uint8_t>((phase >> i) & 0xFF));
+							}
+							if (!img_index) bytesPerPoint++;
+						}
+					}
+
+					// Set Next Channel
+					if (formatSpec.CombineAllChannels()) {
+						chan += formatSpec.Channels();
+					}
+					else if (formatSpec.CombineChannelPairs()) { 
+						chan += 2;
+					}
+					else {
+						chan++;
+					}
 				}
 			}
 
 			float synca[2] = { pt.GetSyncA(0), pt.GetSyncA(1) };
 			unsigned int syncd = pt.GetSyncD();
-
 			std::uint32_t syncd_mod = syncd & ((1 << ims.Synth().GetCap().LUTSyncDBits) - 1);
-			for (int i = 0; i <= ((ims.Synth().GetCap().LUTSyncDBits - 1) / 8); i++) {
-				img_data.push_back(static_cast<std::uint8_t>((syncd_mod >> (i * 8)) & 0xFF));
-				if (!img_index) bytesPerPoint++;
-			}
 
-			for (int j = 0; j < 2; j++) {
-				std::uint32_t synca_int = (std::uint32_t)((1 << ims.Synth().GetCap().LUTSyncABits) * synca[j]);
-				for (int i = 0; i <= ((ims.Synth().GetCap().LUTSyncABits - 1) / 8); i++) {
-					img_data.push_back(static_cast<std::uint8_t>((synca_int >> (i * 8)) & 0xFF));
+			if (!MSBFirst) {
+				for (int i = (ims.Synth().GetCap().LUTSyncDBits - lsb_syncdbits); i <= (ims.Synth().GetCap().LUTSyncDBits - 1); i += 8) {
+					img_data.push_back(static_cast<std::uint8_t>((syncd_mod >> i) & 0xFF));
 					if (!img_index) bytesPerPoint++;
+				}
+
+				for (int j = 0; j < 2; j++) {
+					std::uint32_t synca_int = (std::uint32_t)((1 << ims.Synth().GetCap().LUTSyncABits) * synca[j]);
+					for (int i = (ims.Synth().GetCap().LUTSyncABits - lsb_syncabits); i <= (ims.Synth().GetCap().LUTSyncABits - 1); i += 8) {
+						img_data.push_back(static_cast<std::uint8_t>((synca_int >> i) & 0xFF));
+						if (!img_index) bytesPerPoint++;
+					}
+				}
+			}
+			else {
+				// Add Sync
+				int syncDEndBit = ims.Synth().GetCap().LUTSyncDBits - formatSpec.SyncBytes() * 8;
+				if (syncDEndBit < -8) syncDEndBit = -8;
+
+				int syncAEndBit = ims.Synth().GetCap().LUTSyncABits - formatSpec.SyncBytes() * 8;
+				if (syncAEndBit < -8) syncAEndBit = -8;
+
+				if (formatSpec.EnableSyncDig()) {
+					for (int i = ims.Synth().GetCap().LUTSyncDBits - 8; i >= syncDEndBit; i -= 8) {
+						if (i < 0) {
+							img_data.push_back(static_cast<std::uint8_t>((syncd_mod << -i) & 0xFF));
+						}
+						else {
+							img_data.push_back(static_cast<std::uint8_t>((syncd_mod >> i) & 0xFF));
+						}
+						if (!img_index) bytesPerPoint++;
+					}
+				}
+
+				for (int j = 0; j < sync_anlg_channels; j++) {
+					std::uint32_t synca_int = (std::uint32_t)((1 << ims.Synth().GetCap().LUTSyncABits) * synca[j]);
+					for (int i = ims.Synth().GetCap().LUTSyncABits - 8; i >= syncAEndBit; i -= 8) {
+						if (i < 0) {
+							img_data.push_back(static_cast<std::uint8_t>((synca_int << -i) & 0xFF));
+						}
+						else {
+							img_data.push_back(static_cast<std::uint8_t>((synca_int >> i) & 0xFF));
+						}
+						if (!img_index) bytesPerPoint++;
+					}
 				}
 			}
 
@@ -319,11 +379,20 @@ namespace iMS
 	int FormatSequenceBuffer(const ImageSequence& seq, const IMSSystem& ims, boost::container::deque < std::uint8_t >& seq_data)
 	{
 		static const char signature[] = "iMS_SEQ";
+		static const char signature2[] = "iMS_SQ2";
 		seq_data.clear();
 
 		// Sequence Buffer header
-		seq_data.assign(signature, signature + sizeof(signature));
-		AppendVarToContainer< boost::container::deque<std::uint8_t>, std::uint16_t >(seq_data, seq.size());
+		if (seq.size() <= (int)UINT16_MAX)
+		{
+			seq_data.assign(signature, signature + sizeof(signature));
+			AppendVarToContainer< boost::container::deque<std::uint8_t>, std::uint16_t >(seq_data, static_cast<std::uint16_t>(seq.size()));
+		}
+		else
+		{
+			seq_data.assign(signature2, signature2 + sizeof(signature2));
+			AppendVarToContainer< boost::container::deque<std::uint8_t>, std::uint32_t >(seq_data, static_cast<std::uint32_t>(seq.size()));
+		}
 		//seq_data.push_back(static_cast<std::uint16_t>(seq.size()) & 0xFF);
 		//seq_data.push_back(static_cast<std::uint16_t>((seq.size()) >> 8) & 0xFF);
 
@@ -339,7 +408,7 @@ namespace iMS
 			std::move(std::begin(v), std::end(v), std::back_inserter(seq_data));
 		}
 
-		return seq_data.size();
+		return (int)seq_data.size();
 	}
 
 	class DMASupervisor : public IEventHandler
@@ -352,7 +421,12 @@ namespace iMS
 		{
 			switch (message)
 			{
-			case (MessageEvents::MEMORY_TRANSFER_COMPLETE): m_busy.store(false); m_tfr_size.store(param);  break;
+			case (MessageEvents::MEMORY_TRANSFER_ERROR): m_busy.store(false);
+				BOOST_LOG_SEV(lg::get(), sev::error) << "Memory Transfer Error";
+				break;
+			case (MessageEvents::MEMORY_TRANSFER_COMPLETE): m_busy.store(false); m_tfr_size.store(param);  
+				BOOST_LOG_SEV(lg::get(), sev::debug) << "Memory Transfer Complete " << param << " bytes transferred";
+				break;
 			}
 		}
 		bool Busy() const { return m_busy.load(); };
@@ -381,9 +455,11 @@ namespace iMS
 
 		IMSSystem& myiMS;
 		const Image& m_Image;
+		ImageFormat m_fmt;
 
 		//ImageBank m_bank;
 		int m_startaddr { -1 };
+		int m_msbFirst{ 0 };
 
 		const std::unique_ptr<boost::container::deque<std::uint8_t>> m_imgdata;
 		const std::unique_ptr<boost::container::deque<std::uint8_t>> m_vfydata;
@@ -449,6 +525,7 @@ namespace iMS
 		verifier(iMS)
 	{
 		downloaderRunning = true;
+		m_fmt = ImageFormat(myiMS);
 
 		// Subscribe listeners
 		IConnectionManager * const myiMSConn = myiMS.Connection();
@@ -548,6 +625,11 @@ namespace iMS
 		case (BulkVerifierEvents::VERIFY_SUCCESS) : m_parent->m_Event->Trigger<int>((void *)m_parent, ImageDownloadEvents::VERIFY_SUCCESS, 0); break;
 		case (BulkVerifierEvents::VERIFY_FAIL) : m_parent->m_Event->Trigger<int>((void *)m_parent, ImageDownloadEvents::VERIFY_FAIL, m_parent->verifier.Errors()); break;
 		}
+	}
+
+	void ImageDownload::SetFormat(const ImageFormat& fmt)
+	{
+		p_Impl->m_fmt = fmt;
 	}
 
 	bool ImageDownload::StartDownload()
@@ -656,7 +738,6 @@ namespace iMS
 		IMSController::Capabilities cap = myiMS.Ctlr().GetCap();
 		IConnectionManager * const myiMSConn = myiMS.Connection();
 		HostReport * iorpt;
-		ImageFormat fmt(myiMS);
 
 		while (downloaderRunning) {
 			std::unique_lock<std::mutex> lck{ m_dlmutex };
@@ -669,9 +750,34 @@ namespace iMS
 			if (cap.FastImageTransfer) {
 				// Fast transfer to large capacity memory
 
+				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_FPIFormat);
+
+				DeviceReport ioresp = myiMSConn->SendMsgBlocking(*iorpt);
+
+				if (ioresp.Payload<std::uint16_t>() & 1)
+				{
+					// Device supports MSB Mode
+					m_msbFirst = 1;
+
+					delete iorpt;
+					iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_FPIFormat);
+					iorpt->Payload<std::uint16_t>(ioresp.Payload<std::uint16_t>() << 1);
+
+					// Set Controller to download mode
+					if (NullMessage == myiMSConn->SendMsg(*iorpt))
+					{
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Failed to set MSB Mode";
+
+						delete iorpt;
+						lck.unlock();
+						continue;
+					}
+				}
+				delete iorpt;
+
 				// Create Byte Vector
 				m_imgdata->clear();
-				int BytesInImagePoint = FormatImage(m_Image, myiMS, *m_imgdata, fmt);
+				int BytesInImagePoint = FormatImage(m_Image, myiMS, *m_imgdata, m_fmt, m_msbFirst);
 				std::uint32_t ImageBytes = BytesInImagePoint * m_Image.Size();
 
 				/*std::uint32_t checksum = 0;
@@ -707,7 +813,7 @@ namespace iMS
 				for (int i = 0; i < 4; i++) {
 					data.push_back((ImageSize >> (i * 8)) & 0xFF);
 				}
-				std::uint32_t fmt_spec = fmt.GetFormatSpec();
+				std::uint32_t fmt_spec = m_fmt.GetFormatSpec();
 				for (int i = 0; i < 4; i++) {
 					data.push_back((fmt_spec >> (i * 8)) & 0xFF);
 				}
@@ -717,7 +823,7 @@ namespace iMS
 
 				iorpt->Payload<std::vector<std::uint8_t>>(data);
 
-				DeviceReport ioresp = myiMSConn->SendMsgBlocking(*iorpt);
+				ioresp = myiMSConn->SendMsgBlocking(*iorpt);
 				if (ioresp.Done() && !ioresp.GeneralError()) {
 					ImageIndex ImageMemoryIndex = ioresp.Fields().addr;
 					std::uint32_t ImageMemoryAddress = ioresp.Payload<std::uint32_t>();
@@ -819,9 +925,9 @@ namespace iMS
 						{
 							ImagePoint pt = (*it);
 							FAP fap = pt.GetFAP(1);
-							std::uint16_t freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
-							img_data.push_back(static_cast<std::uint8_t>(freq & 0xFF));
-							img_data.push_back(static_cast<std::uint8_t>((freq >> 8) & 0xFF));
+							unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
+							img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
+							img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 8)) & 0xFF));
 							std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, fap.ampl);
 							img_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 							img_data.push_back(static_cast<std::uint8_t>(0));  // No phase data in Common Channels mode
@@ -841,9 +947,9 @@ namespace iMS
 							ImagePoint pt = (*it);
 							for (int chan = 1; chan <= 4; chan++) {
 								FAP fap = pt.GetFAP(chan);
-								std::uint16_t freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
-								img_data.push_back(static_cast<std::uint8_t>(freq & 0xFF));
-								img_data.push_back(static_cast<std::uint8_t>((freq >> 8) & 0xFF));
+								unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
+								img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
+								img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 8)) & 0xFF));
 								std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, fap.ampl);
 								img_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 								std::uint16_t phase = PhaseRenderer::RenderAsImagePoint(myiMS, fap.phase);
@@ -951,7 +1057,6 @@ namespace iMS
 		std::unique_lock<std::mutex> lck{ m_vfymutex };
 		IMSController::Capabilities cap = myiMS.Ctlr().GetCap();
 		HostReport* iorpt;
-		ImageFormat fmt(myiMS);
 
 		while (downloaderRunning) {
 			m_vfycond.wait(lck);
@@ -967,7 +1072,7 @@ namespace iMS
 
 				// Create Byte Vector
 				m_imgdata->clear();
-				/*int BytesInImagePoint = */FormatImage(m_Image, myiMS, *m_imgdata, fmt);
+				/*int BytesInImagePoint = */FormatImage(m_Image, myiMS, *m_imgdata, m_fmt, m_msbFirst);
 				//std::uint32_t ImageBytes = BytesInImagePoint * m_Image.Size();
 
 				// Find image in image table by checking UUID
@@ -1003,7 +1108,7 @@ namespace iMS
 				else {
 					m_vfydata->resize(m_imgdata->size());
 				}
-				int tfr_len = m_imgdata->size();
+				int tfr_len = (int)m_imgdata->size();
 
 				if (*m_vfydata == *m_imgdata) m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_SUCCESS, 0);
 				else {
@@ -1055,9 +1160,9 @@ namespace iMS
 						{
 							ImagePoint pt = (*it);
 							FAP fap = pt.GetFAP(1);
-							std::uint16_t freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
-							img_data.push_back(static_cast<std::uint8_t>(freq & 0xFF));
-							img_data.push_back(static_cast<std::uint8_t>((freq >> 8) & 0xFF));
+							unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
+							img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
+							img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 8)) & 0xFF));
 							std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, fap.ampl);
 							img_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 							img_data.push_back(static_cast<std::uint8_t>(0)); // No phase data in Common Channels mode
@@ -1077,9 +1182,9 @@ namespace iMS
 							ImagePoint pt = (*it);
 							for (int chan = 1; chan <= 4; chan++) {
 								FAP fap = pt.GetFAP(chan);
-								std::uint16_t freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
-								img_data.push_back(static_cast<std::uint8_t>(freq & 0xFF));
-								img_data.push_back(static_cast<std::uint8_t>((freq >> 8) & 0xFF));
+								unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
+								img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
+								img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 8)) & 0xFF));
 								std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, fap.ampl);
 								img_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 								std::uint16_t phase = PhaseRenderer::RenderAsImagePoint(myiMS, fap.phase);
@@ -1360,9 +1465,19 @@ namespace iMS
 	bool ImagePlayer::Impl::ConfigurePlayback()
 	{
 		IConnectionManager * const myiMSConn = myiMS.Connection();
+		HostReport* iorpt;
+
+		int ckgen_mode = 0;
+
+		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_ClockOutput);
+		DeviceReport resp = myiMSConn->SendMsgBlocking(*iorpt);
+		if (resp.Done()) {
+			ckgen_mode = resp.Payload<std::uint16_t>() & 0x1;
+		}
+		delete iorpt;
 
 		// Set ImgModes CTRLR_REG_ImgModesExt
-		HostReport *iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgModes);
+		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgModes);
 		int TFR{ 0 };
 		if (cfg->int_ext == PointClock::EXTERNAL)
 		{
@@ -1393,7 +1508,7 @@ namespace iMS
 		delete iorpt;
 		if (cfg->rpts == Repeats::PROGRAM) {
 			// extend repeats to 24 bit
-			HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgModesExt);
+			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgModesExt);
 			iorpt->Payload<std::uint16_t>((cfg->n_rpts >> 8) & 0xFF);
 			if (NullMessage == myiMSConn->SendMsg(*iorpt))
 			{
@@ -1419,7 +1534,7 @@ namespace iMS
 		}
 
 		// Set external signal polarity, if required
-		if ((cfg->trig == ImageTrigger::POST_DELAY) || (cfg->int_ext == PointClock::EXTERNAL) )
+		if (!ckgen_mode && ((cfg->trig == ImageTrigger::EXTERNAL) || (cfg->int_ext == PointClock::EXTERNAL) ) )
 		{
 			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ExtPolarity);
 
@@ -1438,38 +1553,53 @@ namespace iMS
 		}
 
 		// Set Internal Oscillator clock rate or exteral clock divider, as appropriate
-		bool PrescalerDisable = true;
-		if ((int_clk < 5000.0) || !myiMS.Ctlr().GetCap().FastImageTransfer) {
-			PrescalerDisable = false;
-		}
-		if (myiMS.Ctlr().GetCap().FastImageTransfer) {
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Ctrl);
-			if (PrescalerDisable) {
-				iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Ctrl_Prescaler_Disable);
+		if (!ckgen_mode) {
+			bool PrescalerDisable = true;
+			if ((int_clk < 5000.0) || !myiMS.Ctlr().GetCap().FastImageTransfer) {
+				PrescalerDisable = false;
 			}
-			else {
-				iorpt->Payload<std::uint16_t>(0);
-			}
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
+			if (myiMS.Ctlr().GetCap().FastImageTransfer) {
+				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Ctrl);
+				if (PrescalerDisable) {
+					iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Ctrl_Prescaler_Disable);
+				}
+				else {
+					iorpt->Payload<std::uint16_t>(0);
+				}
+				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				{
+					delete iorpt;
+					return false;
+				}
 				delete iorpt;
-				return false;
 			}
-			delete iorpt;
-		}
-		if (cfg->int_ext == PointClock::INTERNAL)
-		{
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
-			iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(myiMS, int_clk, PrescalerDisable));
+			if (cfg->int_ext == PointClock::INTERNAL)
+			{
+				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
+				iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(myiMS, int_clk, PrescalerDisable));
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
+				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				{
+					delete iorpt;
+					return false;
+				}
 				delete iorpt;
-				return false;
 			}
-			delete iorpt;
 		}
-		else {
+
+		if (cfg->int_ext == PointClock::EXTERNAL) {
+			if (ckgen_mode) {
+				BOOST_LOG_SEV(lg::get(), sev::warning) << "External Image Clock requested with Signal Generator On.  Disabling signal generator";
+				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ClockOutput);
+				iorpt->Payload<uint16_t>(0);
+				MessageHandle h = myiMSConn->SendMsg(*iorpt);
+				if (NullMessage == h)
+				{
+					delete iorpt;
+					return false;
+				}
+				delete iorpt;
+			}
 			int lcl_ext_div = (ext_div < 1) ? 1 : (ext_div > 65535) ? 65535 : ext_div;
 			if (myiMS.Ctlr().GetCap().FastImageTransfer) {
 				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ExtDiv);
@@ -1489,17 +1619,17 @@ namespace iMS
 		}
 
 		// Set ImageFormat (v1.8 - use auto mode only for now)
-		if (m_fmt.IsAuto()) {
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Img_FormatLo);
-			iorpt->Payload<uint32_t>(0x80000fff);
+		//if (m_fmt.IsAuto()) {
+		//	iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Img_FormatLo);
+		//	iorpt->Payload<uint32_t>(0x80000fff);
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-		}
+		//	if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		//	{
+		//		delete iorpt;
+		//		return false;
+		//	}
+		//	delete iorpt;
+		//}
 
 		return true;
 	}
@@ -1963,11 +2093,11 @@ namespace iMS
 
 			for (ImageIndex idx = 0; idx < (int)tbl_size; idx++) {
 				iorpt = new HostReport(HostReport::Actions::CTRLR_IMGIDX, HostReport::Dir::READ, static_cast<std::uint16_t>(idx));
-				ReportFields f = iorpt->Fields();
+				f = iorpt->Fields();
 				f.context = static_cast < std::uint8_t>(HostReport::ImageIndexOperations::GET_ENTRY); 
 				f.len = 49;
 				iorpt->Fields(f);
-				DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
+				Resp = myiMSConn->SendMsgBlocking(*iorpt);
 				delete iorpt;
 				if (Resp.Done() && !Resp.GeneralError()) {
 					ImageTableEntry ite(idx, Resp.Payload<std::vector<std::uint8_t>>());
@@ -1995,7 +2125,7 @@ namespace iMS
 
 	const int ImageTableViewer::Entries() const
 	{
-		return p_Impl->myiMS.Ctlr().ImgTable().size();
+		return (int)p_Impl->myiMS.Ctlr().ImgTable().size();
 	}
 
 	const ImageTableEntry ImageTableViewer::operator[](const std::size_t idx) const
@@ -2188,7 +2318,7 @@ namespace iMS
 		public:
 			ResponseReceiver(SequenceDownload::Impl* pl) : m_parent(pl) { Init(); };
 			void EventAction(void* sender, const int message, const int param);
-			void Init() { busy.store(true); error.store(false); }
+			void Init() { busy.store(true); error.store(false); success_code = 0; error_code = 0; }
 			bool IsBusy() const { return busy.load(); }
 			bool HasError() const { return error.load(); }
 			int SuccessCode() const { return success_code; }
@@ -2209,6 +2339,10 @@ namespace iMS
 		mutable std::mutex m_dlmutex;
 		std::condition_variable m_dlcond;
 		void DownloadWorker();
+
+		// Capability flags
+		bool fast_seq_dl_supported{ false };
+		bool large_seq_supported{ false };
 	};
 
 	SequenceDownload::Impl::Impl(IMSSystem& ims, const ImageSequence& seq) :
@@ -2219,11 +2353,14 @@ namespace iMS
 		dmah(new DMASupervisor())
 	{
 		downloaderRunning = true;
+		fast_seq_dl_supported = false;
+		large_seq_supported = false;
+
 		// Subscribe listener
 		IConnectionManager* const myiMSConn = myiMS.Connection();
 		if (myiMS.Ctlr().GetVersion().revision > 46) {
 			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
-			int IntrMask = (int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE));
+			int IntrMask = (int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
 
 			HostReport* iorpt;
 			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 1);
@@ -2252,7 +2389,7 @@ namespace iMS
 		IConnectionManager* const myiMSConn = myiMS.Connection();
 		if (myiMS.Ctlr().GetVersion().revision > 46) {
 			myiMSConn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
-			int IntrMask = ~(int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE));
+			int IntrMask = ~(int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
 
 			HostReport* iorpt;
 			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
@@ -2279,7 +2416,7 @@ namespace iMS
 		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
 
 		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		int entries = p_Impl->m_Seq.size();
+		int entries = (int)p_Impl->m_Seq.size();
 
 		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
 		ReportFields f = iorpt->Fields();
@@ -2289,17 +2426,22 @@ namespace iMS
 		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
 		delete iorpt;
 
-		bool fast_seq_dl_supported = false;
+
 		if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 2) {}
 		else {
 			if (Resp.Fields().len > 2) {
 				if (Resp.Payload<std::vector<std::uint8_t>>().at(2) != 0) {
-					fast_seq_dl_supported = true;
+					p_Impl->fast_seq_dl_supported = true;
+				}
+			}
+			if (Resp.Fields().len > 3) {
+				if (Resp.Payload<std::vector<std::uint8_t>>().at(3) != 0) {
+					p_Impl->large_seq_supported = true;
 				}
 			}
 		}
 
-		if (fast_seq_dl_supported && asynchronous) {
+		if (p_Impl->fast_seq_dl_supported && asynchronous) {
 			{
 				std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
 
@@ -2437,21 +2579,42 @@ namespace iMS
 			* [17:16] = number of entries in sequence
 			* [18] = Use fast fownload
 			* [22:19] = Download size (bytes)
+			* 
+			* OR: (for large sequence supporting firmware)
+			* 
+			* [15:0] = Sequence UUID
+			* [17:16] = set to zero
+			* [18] = Use fast fownload = 1
+			* [22:19] = Download size (bytes)
+			* [26:23] = number of entries in sequence
+			*
 			*/
-			int entries = m_Seq.size();
+			int entries = (int)m_Seq.size();
 			iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
 			ReportFields f = iorpt->Fields();
 			f.context = 0;
 			iorpt->Fields(f);
 			std::array<std::uint8_t, 16> uuid = m_Seq.GetUUID();
 			std::vector<std::uint8_t> v(uuid.begin(), uuid.begin() + 16);
+			if (entries <= (int)UINT16_MAX) {
 			v.push_back(entries & 0xff);
 			v.push_back(entries >> 8);
+			}
+			else {
+				v.push_back(0);
+				v.push_back(0);
+			}
 			v.push_back(1);
 			v.push_back(BytesInSequenceBuffer & 0xff);
 			v.push_back((BytesInSequenceBuffer >> 8) & 0xff);
 			v.push_back((BytesInSequenceBuffer >> 16) & 0xff);
 			v.push_back((BytesInSequenceBuffer >> 24) & 0xff);
+			if (entries > (int)UINT16_MAX) {
+				v.push_back(entries & 0xff);
+				v.push_back((entries >> 8) & 0xff);
+				v.push_back((entries >> 16) & 0xff);
+				v.push_back((entries >> 24) & 0xff);
+			}
 			iorpt->Payload<std::vector<std::uint8_t>>(v);
 			DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
 			if (!Resp.Done() || Resp.GeneralError()) {
@@ -2469,31 +2632,61 @@ namespace iMS
 			}
 				
 			std::uint32_t SeqMemoryAddress = Resp.Payload < std::uint32_t >();
+			std::uint32_t SeqMemoryLength = 0x1000000;
+
+			if (Resp.Fields().len >= 8) {
+				SeqMemoryLength = Resp.Payload < std::vector <std::uint32_t> >().at(1);
+			}
+			BOOST_LOG_SEV(lg::get(), sev::trace) << "Download Buffer " << SeqMemoryLength << " bytes @ 0x" << std::hex << SeqMemoryAddress << std::dec;
 
 			// Start memory download
-			dmah->Reset();
-			Receiver->Init();
-			myiMSConn->MemoryDownload(*m_seqdata, SeqMemoryAddress, 0, uuid);
+			int tfr_size = 0;
+			boost::container::deque<std::uint8_t>::iterator bufs = m_seqdata->begin();
+			boost::container::deque<std::uint8_t>::iterator bufe = m_seqdata->end();
 
-			while (dmah->Busy()) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(5));
-			}
-			//std::cout << "Memory Download complete" << std::endl;
+			//boost::container::deque<std::uint8_t> copy_buf;
 
-			int tfr_size = dmah->GetTransferredSize();
+			do {
+				dmah->Reset();
+				Receiver->Init();
 
-			while (Receiver->IsBusy()) {
-//				std::cout << "Busy" << std::endl;
-				std::this_thread::sleep_for(std::chrono::milliseconds(5));
-			}
+				if (m_seqdata->size() > SeqMemoryLength) {
+					if ((m_seqdata->size() - tfr_size) <= SeqMemoryLength)
+					{
+						bufe = m_seqdata->end();
+					}
+					else
+					{
+						bufe = bufs + SeqMemoryLength;
+					}
+				}
+				boost::container::deque<std::uint8_t> copy_buf(boost::make_move_iterator(bufs), boost::make_move_iterator(bufe));
+				myiMSConn->MemoryDownload(copy_buf, SeqMemoryAddress, 0, uuid);
+				uuid[0]++;
 
-			if (Receiver->HasError()) {
-//				std::cout << "Has Error" << std::endl;
-				m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_ERROR, Receiver->ErrorCode());
-			}
+				while (dmah->Busy()) {
+					std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				}
+
+				tfr_size += dmah->GetTransferredSize();
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Memory Download complete. Transferred " << tfr_size << " bytes.";
+
+				while (Receiver->IsBusy()) {
+	//				std::cout << "Busy" << std::endl;
+					std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				}
+
+				if (Receiver->HasError()) {
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Error in sequence download";
+					m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_ERROR, Receiver->ErrorCode());
+						break;
+				}
+
+				bufs += dmah->GetTransferredSize();
+			} while (tfr_size < m_seqdata->size());
 
 			if (tfr_size > 0) {
-//				std::cout << "Seq Download Commit" << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::trace) << "Seq Download Commit";
 				// Transfer complete.  Commit sequence
 				/* Commit Sequence */
 				/* Payload:
@@ -2553,6 +2746,12 @@ namespace iMS
 				BOOST_LOG_SEV(lg::get(), sev::debug) << "Sequence Download Complete Event Trigger";
 //				std::cout << "Seq Download Complete" << std::endl;
 				error.store(false); busy.store(false); success_code = value;
+			}
+			break;
+			case (CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED): {
+				BOOST_LOG_SEV(lg::get(), sev::debug) << "Sequence Download Buffer Processed Event Trigger";
+//				std::cout << "Seq Download Complete" << std::endl;
+				error.store(false); busy.store(false);
 			}
 			break;
 			}

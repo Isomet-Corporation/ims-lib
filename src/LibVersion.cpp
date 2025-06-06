@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-09-20 17:02:23 +0100 (Mon, 20 Sep 2021) $
+/ Last update: $Date: 2024-10-29 15:20:37 +0000 (Tue, 29 Oct 2024) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 502 $
+/ Revision   : $Rev: 614 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -103,6 +103,7 @@ namespace iMS {
 			features.insert("FX2");
 			features.insert("CHANNEL_COMPENSATION");
 			features.insert("FAST_SEQUENCE_DOWNLOAD");
+			features.insert("CLOCK_GEN");
 		}
 
 		return features.find(name) != features.end();

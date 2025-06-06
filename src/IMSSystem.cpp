@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-12-15 10:49:10 +0000 (Wed, 15 Dec 2021) $
+/ Last update: $Date: 2023-11-24 08:01:48 +0000 (Fri, 24 Nov 2023) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 516 $
+/ Revision   : $Rev: 589 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -333,6 +333,9 @@ namespace iMS
 						else if (std::string(azColName[i]) == "Description") {
 							desc = s;
 						}
+						else if ((std::string(azColName[i]) == "MaxImageRate") && iparam_ok) {
+							cap.MaxImageRate = iparam;
+						}
 						else if ((std::string(azColName[i]) == "LowerFreq") && dparam_ok) {
 							cap.lowerFrequency = dparam;
 						}
@@ -556,6 +559,11 @@ namespace iMS
 		p_Impl->m_conn->Disconnect();
 	}
 	
+	void IMSSystem::SetTimeouts(int send_timeout_ms, int rx_timeout_ms, int free_timeout_ms, int discover_timeout_ms)
+	{
+		p_Impl->m_conn->SetTimeouts(send_timeout_ms, rx_timeout_ms, free_timeout_ms, discover_timeout_ms);
+	}
+
 	bool IMSSystem::Open() const
 	{
 		return p_Impl->m_conn->Open();

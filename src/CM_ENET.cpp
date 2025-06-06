@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2020-11-20 16:06:38 +0000 (Fri, 20 Nov 2020) $
+/ Last update: $Date: 2025-01-17 18:00:31 +0000 (Fri, 17 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 475 $
+/ Revision   : $Rev: 678 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -88,26 +88,32 @@ typedef struct _INTERFACE_INFO  {
 
 #endif
 
-	static std::string logErrorString() {
-		static char msgbuf [ 256 ] ;
+static std::string logErrorString(int err = INT_MAX) {
+	static char msgbuf[256];
 
-		memset(msgbuf, '\0', 256 * sizeof (char));
+	memset(msgbuf, '\0', 256 * sizeof(char));
 
 #ifdef WIN32
-		DWORD err = WSAGetLastError ();
+	DWORD werr = err;
+	if (err == INT_MAX) {
+		werr = WSAGetLastError();
+	}
 
-		FormatMessageA (FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,   // flags
-        		       	NULL,                // lpsource
-               			err,                 // message id
-               			MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT),    // languageid
-               			msgbuf,              // output buffer
-               			sizeof (msgbuf),     // size of msgbuf, bytes
-               			NULL);               // va_list of arguments
-		if (! *msgbuf) {
-  			 sprintf (msgbuf, "%d", err);  // provide error # if no string available
-		}
+	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,   // flags
+		NULL,                // lpsource
+		werr,                 // message id
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),    // languageid
+		msgbuf,              // output buffer
+		sizeof(msgbuf),     // size of msgbuf, bytes
+		NULL);               // va_list of arguments
+	if (!*msgbuf) {
+		sprintf(msgbuf, "%d", werr);  // provide error # if no string available
+	}
 #else
-		strncpy(msgbuf, strerror(errno), sizeof(msgbuf) );
+	if (err == INT_MAX) {
+		err = errno;	
+	}
+	strncpy(msgbuf, strerror(err), sizeof(msgbuf) );
 #endif
 		return std::string(msgbuf);
 	}
@@ -206,6 +212,8 @@ typedef struct _INTERFACE_INFO  {
 		static const int ANNOUNCE_WAIT;
 		static const int MTU_SIZE;
 
+		int discovery_timeout;
+
 		std::vector<IMSSystem> ListConnectedDevices();
 
 		//std::shared_ptr<CM_ENET::MsgContext> SocketArray[WSA_MAXIMUM_WAIT_EVENTS];
@@ -262,6 +270,7 @@ typedef struct _INTERFACE_INFO  {
 			BOOST_LOG_SEV(lg::get(), sev::error) << "WSAStartup failed: " << iResult << std::endl;
 		}
 #endif
+		discovery_timeout = ANNOUNCE_WAIT;
 	}
 
 	CM_ENET::Impl::~Impl()
@@ -287,7 +296,7 @@ typedef struct _INTERFACE_INFO  {
 		char mess[64], recvBuf[MTU_SIZE];
 		SOCKADDR_IN recvAddr;
 		socklen_t recvAddrLen;
-		int numBytes;
+		int numBytes, err;
 
 		int nNumInterfaces = 0;
 
@@ -430,18 +439,18 @@ typedef struct _INTERFACE_INFO  {
 						(SOCKADDR *)&AnnounceDestAddr, sizeof(AnnounceDestAddr));
 
 				// Wait for responses to arrive
-				std::this_thread::sleep_for(std::chrono::milliseconds(ANNOUNCE_WAIT));
+				std::this_thread::sleep_for(std::chrono::milliseconds(discovery_timeout));
 
 				do {
 					recvAddrLen = sizeof(recvAddr);
 					memset(&recvBuf, '\0', sizeof(recvBuf));
 					if ((numBytes = recvfrom(AnnounceSocket, recvBuf, sizeof(recvBuf), 0, (SOCKADDR *)&recvAddr, &recvAddrLen)) == -1) {
 #ifdef WIN32
-						if (WSAGetLastError() != WSAEWOULDBLOCK) {
+						if (err = WSAGetLastError() != WSAEWOULDBLOCK) {
 #else
-							if (errno != EWOULDBLOCK) {
+							if (err = errno != EWOULDBLOCK) {
 #endif
-						BOOST_LOG_SEV(lg::get(), sev::error) << "announce: recvfrom error" << logErrorString() << std::endl;
+						BOOST_LOG_SEV(lg::get(), sev::error) << "announce: recvfrom error" << logErrorString(err) << std::endl;
 
 								return std::vector<IMSSystem>();
 							}
@@ -605,7 +614,7 @@ typedef struct _INTERFACE_INFO  {
 			if (setsockopt(InterruptSock, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on)) == -1) {
 #ifdef WIN32
 				int err = WSAGetLastError();
-				BOOST_LOG_SEV(lg::get(), sev::error) << "setsockopt (SO_REUSEADDR): " << err << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::error) << "setsockopt (SO_REUSEADDR): " << logErrorString(err) << std::endl;
 				closesocket(mImpl->msgSock);
 				closesocket(InterruptSock);
 #else
@@ -621,7 +630,7 @@ typedef struct _INTERFACE_INFO  {
 			if (INVALID_SOCKET == bindResult) {
 #ifdef WIN32
 				int err = WSAGetLastError();
-				BOOST_LOG_SEV(lg::get(), sev::error) << "interrupt socket failed to bind: " << err << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::error) << "interrupt socket failed to bind: " << logErrorString(err) << std::endl;
 				closesocket(mImpl->msgSock);
 				closesocket(InterruptSock);
 #else
@@ -693,13 +702,14 @@ typedef struct _INTERFACE_INFO  {
 #ifdef WIN32
 				int err = WSAGetLastError();
 				if (err != WSAEWOULDBLOCK) {
-					BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() failed! " << err << std::endl;
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() failed! " << logErrorString(err) << std::endl;
 					// Close the socket
 					closesocket(mImpl->msgSock);
 					closesocket(InterruptSock);
 #else
-				if ((errno != EWOULDBLOCK) && (errno != EINPROGRESS)) {
-					BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() failed! " << strerror(errno) << std::endl;
+				int err = errno;
+				if ((err != EWOULDBLOCK) && (err != EINPROGRESS)) {
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() failed! " << logErrorString(err) << std::endl;
 					// Close the socket
 					close(mImpl->msgSock);
 					close(InterruptSock);
@@ -716,18 +726,17 @@ typedef struct _INTERFACE_INFO  {
 					FD_SET(mImpl->msgSock, &Err);
 
 					// check if the socket is ready
-					select(0, NULL, &Write, &Err, &Timeout);
+					select(mImpl->msgSock+1, NULL, &Write, &Err, &Timeout);
 					if (FD_ISSET(mImpl->msgSock, &Write))
 					{
 					}
 					else {
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() timed out! " << logErrorString() << std::endl;
 #ifdef WIN32
-						BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() timed out! " << err << std::endl;
 						// Close the socket
 						closesocket(mImpl->msgSock);
 						closesocket(InterruptSock);
 #else
-						BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() timed out! " << strerror(errno) << std::endl;
 						close(mImpl->msgSock);
 						close(InterruptSock);
 #endif
@@ -745,7 +754,7 @@ typedef struct _INTERFACE_INFO  {
 					fd_set Read;
 					FD_ZERO(&Read);
 					FD_SET(InterruptSock, &Read);
-					select(0, &Read, NULL, NULL, &Timeout);
+					select(InterruptSock+1, &Read, NULL, NULL, &Timeout);
 					if (FD_ISSET(InterruptSock, &Read))
 					{
 						mImpl->intrSock = accept(InterruptSock, NULL, NULL);
@@ -895,6 +904,14 @@ typedef struct _INTERFACE_INFO  {
 
 	}
 
+	void CM_ENET::SetTimeouts(int send_timeout_ms, int rx_timeout_ms, int free_timeout_ms, int discover_timeout_ms)
+	{
+		sendTimeout = std::chrono::milliseconds(send_timeout_ms);
+		rxTimeout = std::chrono::milliseconds(rx_timeout_ms);
+		autoFreeTimeout = std::chrono::milliseconds(free_timeout_ms);
+		mImpl->discovery_timeout = discover_timeout_ms;
+	}
+
 	void CM_ENET::MessageSender()
 	{
 		while (DeviceIsOpen == true)
@@ -919,7 +936,7 @@ typedef struct _INTERFACE_INFO  {
 				outContext->handle = m->getMessageHandle();
 				// Get HostReport bytes and send to device
 				*outContext->Buffer = m->SerialStream();
-				outContext->bufLen = outContext->Buffer->size();
+				outContext->bufLen = (LONG)outContext->Buffer->size();
 
 				int err;
 				m->setStatus(Message::Status::UNSENT);
@@ -1058,6 +1075,7 @@ typedef struct _INTERFACE_INFO  {
 	{
 		char szBuffer[CM_ENET::MsgContext::MaxPacketSize];
 		fd_set Read;
+		int lastRet = 0;
 
 		TIMEVAL Timeout;
 		Timeout.tv_sec = 0;
@@ -1067,7 +1085,7 @@ typedef struct _INTERFACE_INFO  {
 		{
 			FD_ZERO(&Read);
 			FD_SET(mImpl->msgSock, &Read);
-			select(0, &Read, NULL, NULL, &Timeout);
+			select(mImpl->msgSock+1, &Read, NULL, NULL, &Timeout);
 			if (FD_ISSET(mImpl->msgSock, &Read)) {
 				// Receive any bytes present in socket
 				//{
@@ -1085,7 +1103,10 @@ typedef struct _INTERFACE_INFO  {
 #endif
 				{
 					// Handle Error
-					BOOST_LOG_SEV(lg::get(), sev::error) << "Receive Error (recv): " <<  logErrorString() << std::endl;
+					if (lastRet != ret) {
+						// Only log once
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Receive Error (recv): " <<  logErrorString(err) << " (" << err << ")";
+					}
 				}
 				else if (ret > 0) {
 					std::unique_lock<std::mutex> rxlck{ m_rxmutex };
@@ -1099,19 +1120,22 @@ typedef struct _INTERFACE_INFO  {
 					rxlck.unlock();
 					m_rxcond.notify_one();
 				}
+				lastRet = ret;
 			}
 		}
 	}
 
 	bool CM_ENET::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
+		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_ENET::MemoryDownload addr = " << start_addr << " index = " << image_index << " size = " << arr.size() << std::endl;
 		// Only proceed if idle
 		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
+			BOOST_LOG_SEV(lg::get(), sev::error) << "Memory Transfer not idle" << std::endl;
 			return false;
 		}
 		// Setup transfer
-		int length = arr.size();
+		int length = (int)arr.size();
 		length = (((length - 1) / FastTransfer::TRANSFER_GRANULARITY) + 1) * FastTransfer::TRANSFER_GRANULARITY;
 		arr.resize(length);  // Increase the buffer size to the transfer granularity
 		{
@@ -1128,9 +1152,11 @@ typedef struct _INTERFACE_INFO  {
 
 	bool CM_ENET::MemoryUpload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int len, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
+		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_ENET::MemoryUpload addr = " << start_addr << " index = " << image_index << " size = " << len << std::endl;
 		// Only proceed if idle
 		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
+			BOOST_LOG_SEV(lg::get(), sev::error) << "Memory Transfer not idle" << std::endl;
 			return false;
 		}
 
@@ -1169,6 +1195,7 @@ typedef struct _INTERFACE_INFO  {
 					break;
 				}
 
+				BOOST_LOG_SEV(lg::get(), sev::trace) << "Initiating TFTP transfer" << std::endl;
 				TFTPClient* client = nullptr;
 				
 				//int i = sizeof(struct sockaddr_in);
@@ -1177,6 +1204,7 @@ typedef struct _INTERFACE_INFO  {
 				} catch (ETFTPSocketCreate e)
 				{
 					//std::cout << "Unable to connect to iMS Image Server" << std::endl;
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Unable to create TFTP socket" << std::endl;
 					mMsgEvent.Trigger<int>(this, MessageEvents::DEVICE_NOT_AVAILABLE, -1);
 					delete client;
 					continue;
@@ -1196,7 +1224,7 @@ typedef struct _INTERFACE_INFO  {
 				}
 				delete client;
 
-				int bytesTransferred = mImpl->fti->m_data.size();
+				int bytesTransferred = (int)mImpl->fti->m_data.size();
 				delete mImpl->fti;
 				mImpl->fti = nullptr;
 
@@ -1208,6 +1236,7 @@ typedef struct _INTERFACE_INFO  {
 
 	void CM_ENET::InterruptReceiver()
 	{
+		bool errorLogged = false;
 		while (DeviceIsOpen == true)
 		{
 			std::vector<uint8_t> interruptData(64, 0);
@@ -1219,36 +1248,59 @@ typedef struct _INTERFACE_INFO  {
 			fd_set Read;
 			FD_ZERO(&Read);
 			FD_SET(mImpl->intrSock, &Read);
-			select(0, &Read, NULL, NULL, &Timeout);
-			if (FD_ISSET(mImpl->intrSock, &Read)) {
-				// Receive any bytes present in socket
-				int ret = recv(mImpl->intrSock, (char*)&interruptData[0], 64, 0);
+			int rc = select(mImpl->intrSock + 1, &Read, NULL, NULL, &Timeout);
+			if (rc < 0) {
+				// Error
 #ifdef WIN32
 				int err = WSAGetLastError();
-				if ((ret == SOCKET_ERROR) && (WSAEWOULDBLOCK != err))
 #else
 				int err = errno;
-				if ((ret == -1) && (EWOULDBLOCK != err))
 #endif
-				{
-					// Handle Error
-					BOOST_LOG_SEV(lg::get(), sev::error) << "Interrupt Receive Error (recv): " << logErrorString() << std::endl;
+				if (!errorLogged) {
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Interrupt Select Error (recv): " << logErrorString(err) << std::endl;
+					errorLogged = true;
 				}
-				else if (ret > 0) {
-					std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
-					m->MarkSendTime();
-					m->setStatus(Message::Status::INTERRUPT);
-					interruptData.resize(ret);
-					m->AddBuffer(interruptData);
+			}
+			else if (rc == 0) {
+				// Timeout
+			}
+			else {
 
-					// Place in list for processing by receive thread
+				if (FD_ISSET(mImpl->intrSock, &Read)) {
+					// Receive any bytes present in socket
+					int ret = recv(mImpl->intrSock, (char*)&interruptData[0], 64, 0);
+#ifdef WIN32
+					int err = WSAGetLastError();
+					if ((ret == SOCKET_ERROR) && (WSAEWOULDBLOCK != err))
+#else
+					int err = errno;
+					if ((ret == -1) && (EWOULDBLOCK != err))
+#endif
 					{
-						std::unique_lock<std::mutex> list_lck{ m_listmutex };
-						m_list.push_back(m);
-						list_lck.unlock();
+						// Handle Error
+						if (!errorLogged) {
+							BOOST_LOG_SEV(lg::get(), sev::error) << "Interrupt Receive Error (recv): " << logErrorString(err) << " (" << err << ")" << std::endl;
+							errorLogged = true;
+						}
 					}
-					// Signal Parser thread
-					m_rxcond.notify_one();
+					else if (ret > 0) {
+						std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
+						m->MarkSendTime();
+						m->setStatus(Message::Status::INTERRUPT);
+						interruptData.resize(ret);
+						m->AddBuffer(interruptData);
+
+						// Place in list for processing by receive thread
+						{
+							std::unique_lock<std::mutex> list_lck{ m_listmutex };
+							m_list.push_back(m);
+							list_lck.unlock();
+						}
+						// Signal Parser thread
+						m_rxcond.notify_one();
+
+						errorLogged = false;
+					}
 				}
 			}
 		}

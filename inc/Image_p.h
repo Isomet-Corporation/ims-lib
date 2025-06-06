@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2020-07-30 23:38:22 +0100 (Thu, 30 Jul 2020) $
+/ Last update: $Date: 2025-01-08 21:34:12 +0000 (Wed, 08 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 469 $
+/ Revision   : $Rev: 655 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -86,31 +86,6 @@ namespace iMS {
 		const IMSSystem& myiMS;
 	};
 
-	class ImageFormat
-	{
-	public:
-		ImageFormat(bool auto_det = true);
-		ImageFormat(const IMSSystem&);
-		~ImageFormat() {}
-
-		const int Channels() const;
-
-		bool IsAuto() const;
-		unsigned int GetFormatSpec() const;
-	private:
-		bool auto_detect;
-		int num_chan;
-		unsigned int n_ampl_bytes;
-		bool ampl_en;
-		unsigned int n_phs_bytes;
-		bool phase_en;
-		unsigned int n_freq_bytes;
-		unsigned int n_synca;
-		unsigned int n_syncd;
-		bool chan01_combine;
-		bool chan23_combine;
-		bool all_combine;
-	};
 }
 
 #endif

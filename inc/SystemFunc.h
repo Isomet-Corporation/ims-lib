@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2020-02-18 11:06:06 +0000 (Tue, 18 Feb 2020) $
+/ Last update: $Date: 2025-01-17 19:40:37 +0000 (Fri, 17 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 434 $
+/ Revision   : $Rev: 680 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -108,8 +108,9 @@ namespace iMS
 		};
 	};
 
-	// Forward declaration
+	// Forward declarations
 	struct StartupConfiguration;
+	struct ClockGenConfiguration;
 
   ///
   /// \class SystemFunc SystemFunc.h include\SystemFunc.h
@@ -404,6 +405,38 @@ namespace iMS
 		bool GetClockReferenceMode();
 	//@}
 
+
+	/// \name Image Clock Generator
+	///
+	/// The iMS System has an internal clock and trigger generator which can be used when an external clock or trigger
+	/// is not provided to the system.  The generator operates in two modes:
+	/// 
+	/// (1) Internal mode (default).  In this mode, the clock is not visible externally.  The image clock frequency is
+	/// determined by the frequency value associated with an image.
+	/// 
+	/// (2) Clock output mode.  The clock frequency is programmed by the user with configurable duty cycle and phase
+	/// (relative to the position of the image point update).  The generated clock signal is output by the iMS system
+	/// so that it can be used to drive other system components.  Clock frequencies associated with images are ignored.
+	/// 
+	/// The functions in this section are used to configure the iMS system in Clock Output mode.
+	/// 
+	/// \since 1.8.11
+	/// 
+	//@{
+	///
+	/// \brief Configure the internal clock generator for Clock Output mode
+	/// 
+		bool ConfigureClockGenerator(const ClockGenConfiguration& cfg);
+	///
+	/// \brief Return the current configuration of the clock generator
+		const ClockGenConfiguration& GetClockGenConfiguration() const;
+	///
+	/// \brief Disables the clock generator, returning to Internal Clock only mode
+	///
+		bool DisableClockGenerator();
+	///
+	//@}
+
 	/// \name Event Notifications
     //@{
     ///
@@ -528,6 +561,39 @@ namespace iMS
 		bool PhaseAccClear{ false };
 	};
 
+
+	/// \struct ClockGenConfiguration SystemFunc.h include\SystemFunc.h
+	/// \brief Set values in this struct to configure the clock generator for clock output mode
+	///
+	/// Modify the values present in this struct and pass the struct by reference to the
+	/// SystemFunc::ConfigureClockGenerator() function to update the clock generator configuration
+	///
+	/// e.g.
+	/// \code
+	/// SystemFunc sys(myiMS);
+	/// ClockGenConfiguration cfg;
+	/// cfg.ClockFreq = kHz(700.0);
+	/// cfg.AlwaysOn = true;
+	/// sys.ConfigureClockGenerator(cfg);
+	/// \endcode
+	/// \since 1.8.11
+	struct LIBSPEC ClockGenConfiguration
+	{
+		///  Set the Clock Generator Frequency (use Hz, kHz or MHz)
+		Frequency  ClockFreq{ 1000000.0 };
+		///  Set the Oscillator Phase (Output clock edge relative to RF image point update)
+		Degrees    OscPhase{ 0.0 };
+		///  Generated Clock Duty Cycle
+		Percent    DutyCycle{ 50.0 };
+		///  Set true to output clock continuously.  If false, clock is output only during image playback
+		bool       AlwaysOn{ true };
+		///  Also generate a trigger pulse during the first point of image playback on trigger connector
+		bool       GenerateTrigger{ false };
+		///  Clock Polarity: Rising Edge active (NORMAL) or Falling Edge active (INVERSE)
+		Polarity   ClockPolarity{ Polarity::NORMAL };
+		///  Trigger Polarity: Rising Edge active (NORMAL) or Falling Edge active (INVERSE)
+		Polarity   TrigPolarity{ Polarity::NORMAL };
+	};
 }
 
 #undef EXPIMP_TEMPLATE

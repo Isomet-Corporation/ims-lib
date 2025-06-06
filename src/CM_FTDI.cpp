@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-09-13 10:43:17 +0100 (Mon, 13 Sep 2021) $
+/ Last update: $Date: 2023-11-24 08:01:48 +0000 (Fri, 24 Nov 2023) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 501 $
+/ Revision   : $Rev: 589 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -330,6 +330,13 @@ namespace iMS {
 			delete eh;
 #endif
 		}
+	}
+
+	void CM_FTDI::SetTimeouts(int send_timeout_ms, int rx_timeout_ms, int free_timeout_ms, int discover_timeout_ms)
+	{
+		sendTimeout = std::chrono::milliseconds(send_timeout_ms);
+		rxTimeout = std::chrono::milliseconds(rx_timeout_ms);
+		autoFreeTimeout = std::chrono::milliseconds(free_timeout_ms);
 	}
 
 	// Message sending thread waits until a new message has been added to the queue

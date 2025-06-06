@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2019-03-08 23:22:46 +0000 (Fri, 08 Mar 2019) $
+/ Last update: $Date: 2023-11-24 08:01:48 +0000 (Fri, 24 Nov 2023) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 386 $
+/ Revision   : $Rev: 589 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -50,6 +50,7 @@ namespace iMS
 		std::vector<IMSSystem> Discover(const ListBase<std::string>& PortMask);
 		void Connect(const std::string&);
 		void Disconnect();
+		void SetTimeouts(int send_timeout_ms = 500, int rx_timeout_ms = 5000, int free_timeout_ms = 30000, int discover_timeout_ms = 2500);
 		bool MemoryDownload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int image_index, const std::array<std::uint8_t, 16>& uuid);
 		bool MemoryUpload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int len, int image_index, const std::array<std::uint8_t, 16>& uuid);
 

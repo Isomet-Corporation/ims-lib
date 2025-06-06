@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-08-20 22:35:21 +0100 (Fri, 20 Aug 2021) $
+/ Last update: $Date: 2025-01-08 22:08:23 +0000 (Wed, 08 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 489 $
+/ Revision   : $Rev: 657 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -195,6 +195,135 @@ namespace iMS {
 		FAP m_fap[4];
 		float m_synca[2];
 		unsigned int m_syncd;
+	};
+
+	///
+	/// \class ImageFormat Image.h include/Image.h
+	/// \brief Configures formatting of software Image class to binary Image stored in iMS system memory
+	///
+	/// An Image created in software uses real world values for all parameters (Frequency, Amplitude, Phase
+	/// and Sync Data).  Before downloading the Image to an iMS System, the user must specify what binary
+	/// representation should be used by the iMS to interpret the image data that is sent to it.
+	/// 
+	/// Binary representation is a combination of the hardware capabilities of the attached Synthesiser 
+	/// (made available in the IMSSynthesiser::Capabilities class) and a trade-off between Image
+	/// speed (update rate) and precision (bit depth).
+	/// 
+	/// If not specified, then default values are assumed which provide a good compromise between update 
+	/// rate and precision.
+	///
+	/// \author Dave Cowan
+	/// \date 2025-01-08
+	/// \since 1.8.12
+	///
+	class LIBSPEC ImageFormat
+	{
+	public:
+		/// 
+		/// \brief Default Constructor
+		/// 
+		/// 4 Independent Channels
+		/// 2 Frequency Bytes
+		/// 1 Amplitude Byte
+		/// 2 Phase Bytes
+		/// Amplitude and Phase Enabled
+		/// Sync Digital Enabled
+		/// 2 Sync Analog Channels Enabled
+		/// 2 Sync Bytes
+		/// 
+		ImageFormat();
+		/// 
+		/// \brief iMS Specific Constructor
+		/// 
+		/// As default constructor but sets channel number according to iMS hardware channels,
+		/// phase and amplitude depth according to iMS capability.  Frequency depth is set to 2 bytes
+		/// regardless of iMS capability for backwards compatibility.
+		/// 
+		ImageFormat(const IMSSystem& ims);
+		~ImageFormat() {}
+
+		/// \brief Copy Constructor
+		ImageFormat(const ImageFormat&);
+		/// \brief Assignment Constructor
+		ImageFormat& operator =(const ImageFormat&);
+
+		/// \brief Set the number of RF channels to use from the Image data
+		///
+		/// Images allow up to 4 RF channels to be programmed although not all iMS systems support
+		/// 4 channels.  This parameter instructs the library how many channels of the Image data
+		/// should be stored in iMS system memory.  A smaller number than the channel count of the 
+		/// iMS system can be used to increase update rate if not all channels are needed.
+		//@{
+		/// \brief Get Channel Count parameter
+		int Channels() const;
+		/// \brief Set Channel Count parameter
+		void Channels(int value);
+		//@}
+
+		/// \brief Parameter Precision
+		///
+		/// The number of bytes store in iMS memory per parameter can be changed to optimise the
+		/// system for increased precision where necessary or to reduce precision and increase
+		/// speed where this is preferable.
+		//@{
+		/// \brief Get Frequency Parameter Precision (1 - 4 bytes)
+		int FreqBytes() const;
+		/// \brief Set Frequency Parameter Precision
+		void FreqBytes(int value);
+
+		/// \brief Get Amplitude Parameter Precision (1 - 3 bytes)
+		int AmplBytes() const;
+		/// \brief Set Amplitude Parameter Precision
+		void AmplBytes(int value);
+
+		/// \brief Get Phase Parameter Precision (1 - 3 bytes)
+		int PhaseBytes() const;
+		/// \brief Set Phase Parameter Precision
+		void PhaseBytes(int value);
+
+		/// \brief Get Sync Data Parameter Precision (1 - 4 bytes)
+		int SyncBytes() const;
+		/// \brief Set Sync Data Parameter Precision (1 - 4 bytes)
+		void SyncBytes(int value);
+		//@}
+
+		/// \brief Return whether Image Amplitude Programming is enabled.
+		bool EnableAmpl() const;
+		/// \brief Enable Amplitude Programing as part of Image data (if disabled, compensation 
+		/// programming can still be used to create frequency dependent amplitude profiles)
+		void EnableAmpl(bool value);
+
+		/// \brief Return whether Image Phase Programming is enabled.
+		bool EnablePhase() const;
+		/// \brief Enable Phase Programing as part of Image data (if disabled, compensation 
+		/// programming can still be used to create frequency dependent phase profiles)
+		void EnablePhase(bool value);
+
+		/// \brief Return number of Analogue Sync Data Channels (1 - 2)
+		int SyncAnlgChannels() const;
+		/// \brief Set number of Analogue Sync Data Channels stored as part of image
+		void SyncAnlgChannels(int value);
+
+		/// \brief Return whether Digital Sync Data is enabled as part of Image
+		bool EnableSyncDig() const;
+		/// \brief Enable Digital Sync Data as part of Image in iMS memory
+		void EnableSyncDig(bool value);
+
+		/// \brief Return whether adjacent image channel pairs are combined
+		bool CombineChannelPairs() const;
+		/// \brief If true, the data for channel 1 in the Image is used for RF channels 1 + 2 and the data for channel 3 is used for RF 3 + 4
+		void CombineChannelPairs(bool value);
+
+		/// \brief Return whether all RF image channels are combined
+		bool CombineAllChannels() const;
+		/// \brief If true, the data for channel 1 in the Image is used for all RF channels of the synthesiser
+		void CombineAllChannels(bool value);
+
+		/// \brief Returns a unique code that describes the ImageFormat state to the hardware. Not required by user code.
+		unsigned int GetFormatSpec() const;
+	private:
+		class Impl;
+		Impl* p_Impl;
 	};
 
     ///

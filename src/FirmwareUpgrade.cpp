@@ -144,6 +144,14 @@ namespace iMS
 		}
 		else {
 			if (!p_Impl->myiMS.Ctlr().GetCap().RemoteUpgrade) return false;
+
+			if (p_Impl->myiMS.Ctlr().Model() == "iMSP") {
+				if (p_Impl->myiMS.Ctlr().GetVersion().revision == 98) {
+					// This is the limit for rev A Controllers
+					BOOST_LOG_SEV(lg::get(), sev::warning) << "Cannot upgrade iMSP rev A beyond 2.4.98" << std::endl;
+					return false;
+				}
+			}
 		}
 		p_Impl->m_target = target;
 

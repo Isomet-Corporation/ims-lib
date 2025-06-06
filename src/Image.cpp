@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2020-07-30 23:38:22 +0100 (Thu, 30 Jul 2020) $
+/ Last update: $Date: 2025-01-08 21:34:12 +0000 (Wed, 08 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 469 $
+/ Revision   : $Rev: 655 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -35,67 +35,203 @@
 
 namespace iMS {
 
-	ImageFormat::ImageFormat(bool auto_det) : auto_detect(auto_det), num_chan(4) {}
+	class ImageFormat::Impl {
+	public:
+		Impl();
+		Impl(const IMSSystem& myiMS);
 
-	ImageFormat::ImageFormat(const IMSSystem& ims)
-	{
+		int num_chan{ 4 };
+		unsigned int n_ampl_bytes{ 1 };
+		bool ampl_en{ true };
+		unsigned int n_phs_bytes{ 2 };
+		bool phase_en{ true };
+		unsigned int n_freq_bytes{ 2 };
+		unsigned int n_sync_bytes{ 2 };
+		unsigned int n_synca{ 2 };
+		bool n_syncd{ 1 };
+		bool pairs_combine{ false };
+		bool all_combine{ false };
+	};
+
+	ImageFormat::Impl::Impl() : num_chan(4) {}
+
+	ImageFormat::Impl::Impl(const IMSSystem& ims) {
 		/* In earlier iMSP Controller firmwares, only 4 channel images are supported */
 		if (ims.Ctlr().Model() == "iMSP" && ims.Ctlr().GetVersion().revision <= 63) {
-			auto_detect = true;
 			num_chan = 4;
 		}
-		else 
+		else
 		{
-			auto_detect = false;
-
 			num_chan = ims.Synth().GetCap().channels;
 			if (num_chan < RFChannel::min) num_chan = RFChannel::min;
 			if (num_chan > RFChannel::max) num_chan = RFChannel::max;
 
-			n_ampl_bytes = 1;
+			n_ampl_bytes = 1 + (ims.Synth().GetCap().amplBits-1) / 8;
 			ampl_en = true;
-			n_phs_bytes = 2;
+			n_phs_bytes = 1 + (ims.Synth().GetCap().phaseBits-1) / 8;
 			phase_en = true;
-			n_freq_bytes = 2;
+			n_freq_bytes = 2; // For backwards compatibility.  Must be manually set for higher resolution  // ims.Synth().GetCap().freqBits / 8;
 			n_synca = 2;
-			n_syncd = 1;
-			chan01_combine = false;
-			chan23_combine = false;
+			n_syncd = true;
+			n_sync_bytes = 2;
+			pairs_combine = false;
 			all_combine = false;
 		}
 	}
 
-	const int ImageFormat::Channels() const
+	ImageFormat::ImageFormat() : p_Impl(new Impl()) {}
+
+	ImageFormat::ImageFormat(const IMSSystem& ims) : p_Impl(new Impl(ims)) {}
+
+	/// \brief Copy Constructor
+	ImageFormat::ImageFormat(const ImageFormat& rhs) : p_Impl(new Impl())
 	{
-		return num_chan;
+		p_Impl->num_chan = rhs.p_Impl->num_chan;
+		p_Impl->n_ampl_bytes = rhs.p_Impl->n_ampl_bytes;
+		p_Impl->ampl_en = rhs.p_Impl->ampl_en;
+		p_Impl->n_phs_bytes = rhs.p_Impl->n_phs_bytes;
+		p_Impl->phase_en = rhs.p_Impl->phase_en;
+		p_Impl->n_freq_bytes = rhs.p_Impl->n_freq_bytes;
+		p_Impl->n_synca = rhs.p_Impl->n_synca;
+		p_Impl->n_syncd = rhs.p_Impl->n_syncd;
+		p_Impl->n_sync_bytes = rhs.p_Impl->n_sync_bytes;
+		p_Impl->pairs_combine = rhs.p_Impl->pairs_combine;
+		p_Impl->all_combine = rhs.p_Impl->all_combine;
 	}
 
-	unsigned int ImageFormat::GetFormatSpec() const {
-		if (this->IsAuto()) {
-			return 0;
-		}
-		else {
-			unsigned int fmt = 0x8000;  // bit 15 enables format spec
-			fmt |= (num_chan - RFChannel::min) & 0x3;
-			if (ampl_en) {
-				fmt |= (((n_ampl_bytes - 1) % 3) + 1) << 2;
-			}
-			if (phase_en) {
-				fmt |= (((n_phs_bytes - 1) % 3) + 1) << 4;
-			}
-			fmt |= ((n_freq_bytes - 1) % 4) << 6;
-			fmt |= (n_synca % 3) << 8;
-			fmt |= (n_syncd % 2) << 10;
-			fmt |= (chan01_combine) ? (1 << 11) : 0;
-			fmt |= (chan23_combine) ? (1 << 12) : 0;
-			fmt |= (all_combine) ? (1 << 13) : 0;
-			return fmt;
+	/// \brief Assignment Constructor
+	ImageFormat& ImageFormat::operator =(const ImageFormat& rhs)
+	{
+		if (this == &rhs) return *this;
+
+		p_Impl->num_chan = rhs.p_Impl->num_chan;
+		p_Impl->n_ampl_bytes = rhs.p_Impl->n_ampl_bytes;
+		p_Impl->ampl_en = rhs.p_Impl->ampl_en;
+		p_Impl->n_phs_bytes = rhs.p_Impl->n_phs_bytes;
+		p_Impl->phase_en = rhs.p_Impl->phase_en;
+		p_Impl->n_freq_bytes = rhs.p_Impl->n_freq_bytes;
+		p_Impl->n_synca = rhs.p_Impl->n_synca;
+		p_Impl->n_syncd = rhs.p_Impl->n_syncd;
+		p_Impl->n_sync_bytes = rhs.p_Impl->n_sync_bytes;
+		p_Impl->pairs_combine = rhs.p_Impl->pairs_combine;
+		p_Impl->all_combine = rhs.p_Impl->all_combine;
+
+		return *this;
+	}
+
+	int ImageFormat::Channels() const
+	{
+		return p_Impl->num_chan;
+	}
+
+	void ImageFormat::Channels(int value)
+	{
+		if (value > 0)
+		{
+			p_Impl->num_chan = value;
 		}
 	}
 
-	bool ImageFormat::IsAuto() const
+	int ImageFormat::FreqBytes() const
 	{
-		return this->auto_detect;
+		return p_Impl->n_freq_bytes;
+	}
+
+	void ImageFormat::FreqBytes(int value)
+	{
+		if (value > 0)
+		{
+			p_Impl->n_freq_bytes = value;
+		}
+	}
+
+	int ImageFormat::AmplBytes() const
+	{
+		return p_Impl->n_ampl_bytes;
+	}
+
+	void ImageFormat::AmplBytes(int value)
+	{
+		if (value > 0) {
+			p_Impl->n_ampl_bytes = value;
+		}
+	}
+
+	int ImageFormat::PhaseBytes() const
+	{
+		return p_Impl->n_phs_bytes;
+	}
+
+	void ImageFormat::PhaseBytes(int value)
+	{
+		if (value > 0) {
+			p_Impl->n_phs_bytes = value;
+		}
+	}
+
+	int ImageFormat::SyncBytes() const
+	{
+		return p_Impl->n_sync_bytes;
+	}
+
+	void ImageFormat::SyncBytes(int value)
+	{
+		if (value > 0) {
+			p_Impl->n_sync_bytes = value;
+		}
+	}
+
+	bool ImageFormat::EnableAmpl() const { return p_Impl->ampl_en; }
+	void ImageFormat::EnableAmpl(bool value) { p_Impl->ampl_en = value; }
+
+	bool ImageFormat::EnablePhase() const { return p_Impl->phase_en; }
+	void ImageFormat::EnablePhase(bool value) { p_Impl->phase_en = value; }
+
+	bool ImageFormat::CombineChannelPairs() const { return p_Impl->pairs_combine; }
+	void ImageFormat::CombineChannelPairs(bool value) { p_Impl->pairs_combine = value; }
+
+	bool ImageFormat::CombineAllChannels() const { return p_Impl->all_combine; }
+	void ImageFormat::CombineAllChannels(bool value) { p_Impl->all_combine = value; }
+
+	int ImageFormat::SyncAnlgChannels() const
+	{
+		return p_Impl->n_synca;
+	}
+
+	void ImageFormat::SyncAnlgChannels(int value)
+	{
+		if (value >= 0) {
+			p_Impl->n_synca = value;
+		}
+	}
+
+	bool ImageFormat::EnableSyncDig() const
+	{
+		return p_Impl->n_syncd;
+	}
+
+	void ImageFormat::EnableSyncDig(bool value)
+	{
+		p_Impl->n_syncd = value;
+	}
+
+	unsigned int ImageFormat::GetFormatSpec() const 
+	{
+		unsigned int fmt = 0x8000;  // bit 15 enables format spec
+		fmt |= (p_Impl->num_chan - RFChannel::min) & 0x3;
+		if (p_Impl->ampl_en) {
+			fmt |= (((p_Impl->n_ampl_bytes - 1) % 3) + 1) << 2;
+		}
+		if (p_Impl->phase_en) {
+			fmt |= (((p_Impl->n_phs_bytes - 1) % 3) + 1) << 4;
+		}
+		fmt |= ((p_Impl->n_freq_bytes - 1) % 4) << 6;
+		fmt |= (p_Impl->n_synca % 3) << 8;
+		fmt |= (p_Impl->n_syncd ? 1 : 0) << 10;
+		fmt |= ((p_Impl->n_sync_bytes - 1) % 4) << 11;
+		fmt |= (p_Impl->all_combine) ? (1 << 13) : 0;
+		fmt |= (p_Impl->pairs_combine) ? (1 << 14) : 0;
+		return fmt;
 	}
 
 	ImagePoint::ImagePoint(FAP fap) {
@@ -203,7 +339,7 @@ namespace iMS {
 		m_synca[index & 1] = f;
 	}
 
-	const unsigned int& ImagePoint::GetSyncD() const
+	const unsigned int& ImagePoint::GetSyncD() const 
 	{
 		return m_syncd;
 	}

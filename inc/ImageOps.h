@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-09-22 17:16:36 +0100 (Wed, 22 Sep 2021) $
+/ Last update: $Date: 2025-01-08 21:36:05 +0000 (Wed, 08 Jan 2025) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 504 $
+/ Revision   : $Rev: 656 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -171,6 +171,30 @@ namespace iMS
 		~ImageDownload();
     //@}
 
+	/// \name Configure Image Format
+	//@{
+	///
+	/// \brief Apply Format parameters to the downloaded Image
+	/// 
+	/// An iMS Image in software uses real values for Frequency, Amplitude, Phase and Sync Data that are
+	/// abstract from the fixed point values and hardware capabilities of the connected iMS System.
+	/// 
+	/// During the ImageDownload process, the Image contents are rendered to the particular characteristics
+	/// of the iMS system taking into account, the number of RF channels it supports, and the bit depths of
+	/// the DDS device being used.
+	/// 
+	/// If the user does not specify how the Image should be formatted then a number of assumptions are made
+	/// to ensure the Image can be played out with good precision and with a reasonably fast update rate.
+	/// 
+	/// However, it is possible to control the formatting to process to priorities either fixed point precision 
+	/// or update rate, by extending or reducing the number of bytes per parameter.  It is also possible to
+	/// reduce the number of channels being used to increase the update rate.
+	/// 
+	/// \param[in] fmt An optional Image Format description which can be used to modify the characteristics of 
+	///  the Image stored in iMS system memory
+	/// \since 1.8.12
+		void SetFormat(const ImageFormat& fmt);
+	//@}
     /// \name Bulk Transfer Initiation
     //@{
 	///
@@ -187,6 +211,7 @@ namespace iMS
 	/// Provided the conditions to start the download completed successfully, the function call will return
 	/// as soon as the download procedure has begun.  It is then up to user software to monitor when the
 	/// download has completed.
+	/// 
 	/// \return true if the download was initiated successfully
 		bool StartDownload();
 	///
@@ -315,15 +340,9 @@ namespace iMS
     /// \brief Each Image can be repeated, either a programmable number of times, or indefinitely
     /// \since 1.0
 		using Repeats = ImageRepeats;
-    /// \enum Polarity
     /// \brief The external signal connections can be configured to be active on the rising edge or the falling edge (CLK, TRIG), high or low (ENABLE)
     /// \since 1.0
-    enum class Polarity {
-      /// CLK / TRIG are active on the rising edge.  ENABLE is active high
-      NORMAL,
-      /// CLK / TRIG are active on the falling edge.  ENABLE is active low
-      INVERSE
-    };
+		using Polarity = iMS::Polarity;
     /// \enum StopStyle
     /// \brief The ImagePlayer can end the Image Playback either at the end of the Image or Repeat, or immediately
     /// \since 1.0

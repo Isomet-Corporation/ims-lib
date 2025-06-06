@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-12-15 10:49:10 +0000 (Wed, 15 Dec 2021) $
+/ Last update: $Date: 2023-11-24 08:01:48 +0000 (Fri, 24 Nov 2023) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 516 $
+/ Revision   : $Rev: 589 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -38,6 +38,7 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/ini_parser.hpp>
 #include <boost/property_tree/xml_parser.hpp>
+#include <boost/foreach.hpp>
 #include <boost/log/utility/setup/from_settings.hpp>
 #include <boost/log/utility/setup/settings_parser.hpp>
 #include "boost/filesystem.hpp"
@@ -72,6 +73,41 @@ extern "C" IMAGE_DOS_HEADER __ImageBase;
 
 namespace pt = boost::property_tree;
 
+static boost::filesystem::path get_settings_path()
+{
+	boost::filesystem::path settings_path;
+
+#if defined(_WIN32)
+	LPWSTR wszPath = NULL;
+	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, NULL, &wszPath)))
+	{
+		settings_path = wszPath;
+	}
+	if (!boost::filesystem::exists(settings_path += L"\\Isomet")) {
+		boost::filesystem::create_directory(settings_path);
+	}
+	if (!boost::filesystem::exists(settings_path += L"\\iMS_SDK")) {
+		boost::filesystem::create_directory(settings_path);
+	}
+#else
+	auto home = boost::filesystem::path(getenv("HOME"));
+	if (home.size() < 1) {
+		// strange there is no home folder, but we have to go somewhere so we'll put it in tmp 
+		home = "/tmp";
+	}
+	settings_path += home;
+
+	if (!boost::filesystem::exists(settings_path += "/.config")) {
+		boost::filesystem::create_directory(settings_path);
+	}
+	if (!boost::filesystem::exists(settings_path += "/ims")) {
+		boost::filesystem::create_directory(settings_path);
+	}
+#endif
+
+	return settings_path;
+}
+
 static void init_logging()
 {
 /*	auto log_path = boost::filesystem::temp_directory_path();
@@ -91,19 +127,8 @@ static void init_logging()
 	);*/
 
 	// Look for a configuration file and read logging settings
-	boost::filesystem::path settings_path;
+	boost::filesystem::path settings_path = get_settings_path();
 #if defined(_WIN32)
-	LPWSTR wszPath = NULL;
-	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, NULL, &wszPath)))
-	{
-		settings_path = wszPath;
-	}
-	if (!boost::filesystem::exists(settings_path += L"\\Isomet")) {
-		boost::filesystem::create_directory(settings_path);
-	}
-	if (!boost::filesystem::exists(settings_path += L"\\iMS_SDK")) {
-		boost::filesystem::create_directory(settings_path);
-	}
 	
 	auto old_settings = settings_path;
 	old_settings += L"\\settings.ini";
@@ -131,20 +156,6 @@ static void init_logging()
 				{
 					DWORD dwSize = ::SizeofResource(hModule, hr);
 #else
-	auto home = boost::filesystem::path(getenv("HOME"));
-	if (home.size() < 1) {
-		// strange there is no home folder, but we have to go somewhere so we'll put it in tmp 
-		home = "/tmp";
-	}
-	settings_path += home;
-
-	if (!boost::filesystem::exists(settings_path += "/.config")) {
-		boost::filesystem::create_directory(settings_path);
-	}
-	if (!boost::filesystem::exists(settings_path += "/ims")) {
-		boost::filesystem::create_directory(settings_path);
-	}
-
 	if (!boost::filesystem::exists(settings_path += "/logging")) 
 	{
 		{
@@ -216,6 +227,100 @@ static void stop_logging()
 	core->remove_all_sinks();
 }
 
+struct ConnectionListSettings
+{
+	ConnectionListSettings() :
+		SendTimeout(500),
+		RxTimeout(5000),
+		FreeTimeout(30000),
+		DiscoveryTimeout(2500),
+		IncludeInScan(true) {}
+
+	int SendTimeout;
+	int RxTimeout;
+	int FreeTimeout;
+	int DiscoveryTimeout;
+	bool IncludeInScan;
+};
+
+struct ConnectionListSettingsMap
+{
+	typedef std::map<std::string, ConnectionListSettings> SettingsMap_t;
+	SettingsMap_t mSettingsMap;
+	std::string mFilename;
+
+	void Load(const std::string& filename);
+	void Save(const std::string& filename);
+};
+
+const pt::ptree& empty_ptree() {
+	static pt::ptree t;
+	return t;
+}
+
+void ConnectionListSettingsMap::Load(const std::string& filename)
+{
+	mFilename = filename;
+	pt::ptree tree;
+
+	try {
+		pt::read_xml(filename, tree);
+
+		BOOST_FOREACH(const pt::ptree::value_type & v, tree.get_child("connection.modules", empty_ptree())) {
+			const pt::ptree& attributes = v.second.get_child("<xmlattr>", empty_ptree());
+			std::string module_name = "";
+			BOOST_FOREACH(const pt::ptree::value_type & f, attributes) {
+				if (!f.first.compare("Name")) module_name = f.second.data();
+			}
+			if (module_name != "") {
+				ConnectionListSettings settings;
+				settings.SendTimeout = v.second.get("send_timeout", 500);
+				settings.RxTimeout = v.second.get("recv_timeout", 5000);
+				settings.FreeTimeout = v.second.get("free_timeout", 30000);
+				settings.DiscoveryTimeout = v.second.get("discover_timeout", 2500);
+				settings.IncludeInScan = v.second.get("scan", true);
+
+				mSettingsMap.emplace(module_name, settings);
+
+//				std::cout << "Module " << module_name << ": Send " << settings.SendTimeout << " Rx " << settings.RxTimeout << " Free " << settings.FreeTimeout << " Disc " << settings.DiscoveryTimeout << " Scan " << settings.IncludeInScan << std::endl;
+			}
+		}
+	}
+	catch (pt::xml_parser::xml_parser_error ex)
+	{
+		// No file or invalid contents
+		return;
+	}
+
+}
+
+void ConnectionListSettingsMap::Save(const std::string& filename)
+{
+	pt::ptree tree;
+
+	BOOST_FOREACH(const SettingsMap_t::value_type& v, mSettingsMap)
+	{
+		pt::ptree module_tree;
+		module_tree.add("<xmlattr>.Name", v.first);
+		module_tree.put("send_timeout", v.second.SendTimeout);
+		module_tree.put("recv_timeout", v.second.RxTimeout);
+		module_tree.put("free_timeout", v.second.FreeTimeout);
+		module_tree.put("discover_timeout", v.second.DiscoveryTimeout);
+		module_tree.put("scan", v.second.IncludeInScan);
+
+		tree.add_child("connection.modules.module", module_tree);
+	}
+
+	try {
+		pt::write_xml(filename, tree);
+	}
+	catch (pt::xml_parser::xml_parser_error ex)
+	{
+		// Unable to write file
+		return;
+	}
+}
+
 namespace iMS
 {
 	class ConnectionList::Impl
@@ -236,15 +341,27 @@ namespace iMS
 
 		typedef std::map<std::string, ConnectionConfig> ConnectionConfigMap;
 		ConnectionConfigMap* config_map;
+
+		ConnectionListSettingsMap* settings_map;
 	};
 
 	ConnectionList::Impl::Impl()
 	{
 		connList = new ConnectionTypesList;
 		config_map = new ConnectionList::Impl::ConnectionConfigMap;
+		settings_map = new ConnectionListSettingsMap;
 
 		init_logging();
 		logging::add_common_attributes();
+
+		boost::filesystem::path settings_path = get_settings_path();
+
+#if defined(_WIN32)
+		settings_path += L"\\connection.xml";
+#else
+		settings_path += "/connection.xml";
+#endif
+		settings_map->Load(settings_path.string());
 
 		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("ConnectionList::ConnectionList()");
 	}
@@ -262,6 +379,7 @@ namespace iMS
 		}
 		delete connList;
 		delete config_map;
+		delete settings_map;
 
 		stop_logging();
 	}
@@ -326,9 +444,15 @@ namespace iMS
 			iter != pImpl->end();
 			iter++)
 		{
-			pImpl->config_map->emplace(pImpl->connList->back()->Ident(), ConnectionConfig());
-			pImpl->ModuleNames.push_back(pImpl->connList->back()->Ident());
+			// Apply Connection Settings (Creates default entry if it doesn't exist)
+			const auto& settings = pImpl->settings_map->mSettingsMap[(*iter)->Ident()];
+
+			(*iter)->SetTimeouts(settings.SendTimeout, settings.RxTimeout, settings.FreeTimeout, settings.DiscoveryTimeout);
+			pImpl->config_map->emplace((*iter)->Ident(), ConnectionConfig(settings.IncludeInScan));
+			pImpl->ModuleNames.push_back((*iter)->Ident());
 		}
+
+		pImpl->settings_map->Save(pImpl->settings_map->mFilename);
 	}
 
 	ConnectionList::~ConnectionList()

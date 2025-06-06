@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2019-03-08 23:22:46 +0000 (Fri, 08 Mar 2019) $
+/ Last update: $Date: 2023-11-24 10:35:07 +0000 (Fri, 24 Nov 2023) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 386 $
+/ Revision   : $Rev: 594 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -308,6 +308,8 @@ namespace iMS
     ///
 		struct LIBSPEC Capabilities
 		{
+      /// \brief The maximum clock rate supported during Image playback
+            Frequency MaxImageRate{ 250.0 };
       /// \brief the Lowest RF output frequency that can be reproduced by the Synthesiser
 			MHz lowerFrequency{ 0.0 };
       /// \brief the Highest RF output frequency that can be reproduced by the Synthesiser
@@ -422,6 +424,16 @@ namespace iMS
     /// before the connection is closed.
     /// \since 1.0
 		void Disconnect();
+    /// <summary>
+    ///  Sets the timeouts associated with an iMS Connection
+    /// </summary>
+    /// <param name="send_timeout_ms">The timeout if the Connection Manager is unable to deliver a message to the physical connection</param>
+    /// <param name="rx_timeout_ms">The timeout waiting for a response from the iMS system</param>
+    /// <param name="free_timeout_ms">The delay between when a message is sent and when it is removed from memory</param>
+    /// <param name="discover_timeout_ms">The round trip wait time for iMS systems to respond to with an announce packet to a discovery broadcast (Ethernet)</param>
+    /// \since 1.8.10
+        void SetTimeouts(int send_timeout_ms = 500, int rx_timeout_ms = 5000, int free_timeout_ms = 30000, int discover_timeout_ms = 2500);
+
 	/// \brief Tests Connection Status
 	///
 	/// If an open connection exists to the iMS System, this function will return true

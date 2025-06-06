@@ -6,10 +6,10 @@
 / Author     : $Author: dave $
 / Company    : Isomet (UK) Ltd
 / Created    : 2015-04-09
-/ Last update: $Date: 2021-12-15 10:49:10 +0000 (Wed, 15 Dec 2021) $
+/ Last update: $Date: 2024-10-29 15:20:37 +0000 (Tue, 29 Oct 2024) $
 / Platform   :
 / Standard   : C++11
-/ Revision   : $Rev: 516 $
+/ Revision   : $Rev: 614 $
 /------------------------------------------------------------------------------
 / Description:
 /------------------------------------------------------------------------------
@@ -50,6 +50,8 @@ namespace iMS
 	public:
 		Impl(IMSSystem&);
 		~Impl();
+
+		ClockGenConfiguration ckgen;
 
 		const std::chrono::milliseconds poll_interval = std::chrono::milliseconds(250);
 
@@ -494,6 +496,7 @@ namespace iMS
 		return true;
 	}
 
+	// This feature doesn't work due to layout bug in rev A Q0910 Controller (FPI pin connected through PS GPIO can't accept clock)
 	bool SystemFunc::SetDDSUpdateClockSource(UpdateClockSource src)
 	{
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
@@ -854,5 +857,125 @@ namespace iMS
 		delete iorpt;
 		return true;
 	}
+
+	bool SystemFunc::ConfigureClockGenerator(const ClockGenConfiguration& cfg)
+	{
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		p_Impl->ckgen = cfg;
+
+		int clk_op, trg_op;
+		clk_op = cfg.AlwaysOn ? 1 : 3;
+		trg_op = cfg.GenerateTrigger ? 4 : 0;
+
+		double int_clk = cfg.ClockFreq;
+
+		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ClockOutput);
+		iorpt->Payload<uint16_t>(clk_op | trg_op);
+		MessageHandle h = myiMSConn->SendMsg(*iorpt);
+		if (NullMessage == h)
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+
+		// Configure Clock Frequency
+		bool PrescalerDisable = true;
+		if ((int_clk < 5.0) || !p_Impl->myiMS.Ctlr().GetCap().FastImageTransfer) {
+			PrescalerDisable = false;
+		}
+		if (p_Impl->myiMS.Ctlr().GetCap().FastImageTransfer) {
+			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Ctrl);
+			if (PrescalerDisable) {
+				iorpt->Payload<std::uint16_t>(8);
+			}
+			else {
+				iorpt->Payload<std::uint16_t>(0);
+			}
+			h = myiMSConn->SendMsg(*iorpt);
+			if (NullMessage == h)
+			{
+				delete iorpt;
+				return false;
+			}
+			delete iorpt;
+		}
+
+		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
+		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(p_Impl->myiMS, cfg.ClockFreq, PrescalerDisable));
+
+		h = myiMSConn->SendMsg(*iorpt);
+		if (NullMessage == h)
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+
+		// Configure Duty Cycle
+		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_DutyCycle);
+		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(p_Impl->myiMS, cfg.ClockFreq, PrescalerDisable) * (double)(cfg.DutyCycle) / 100.0);
+
+		h = myiMSConn->SendMsg(*iorpt);
+		if (NullMessage == h)
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+
+		// Configure Phase
+		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscPhase);
+		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(p_Impl->myiMS, cfg.ClockFreq, PrescalerDisable) * (double)(cfg.OscPhase) / 360.0);
+
+		h = myiMSConn->SendMsg(*iorpt);
+		if (NullMessage == h)
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+
+		// Set Signal Polarities
+		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ExtPolarity);
+
+		// bit 0 = clock; bit 1 = trigger
+		// <0> = rising edge; <1> = falling edge
+		std::uint16_t d = 0;
+		d |= (cfg.ClockPolarity == Polarity::INVERSE) ? 1 : 0;
+		d |= (cfg.TrigPolarity == Polarity::INVERSE) ? 2 : 0;
+		iorpt->Payload<std::uint16_t>(d);
+		if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+
+		return true;
+	}
+
+	const ClockGenConfiguration& SystemFunc::GetClockGenConfiguration() const
+	{
+		return p_Impl->ckgen;
+	}
+
+	bool SystemFunc::DisableClockGenerator()
+	{
+		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+
+		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ClockOutput);
+		iorpt->Payload<uint16_t>(0);
+		MessageHandle h = myiMSConn->SendMsg(*iorpt);
+		if (NullMessage == h)
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+		return true;
+	}
+
 
 }
