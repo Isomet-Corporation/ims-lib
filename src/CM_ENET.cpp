@@ -936,13 +936,13 @@ static std::string logErrorString(int err = INT_MAX) {
 				outContext->handle = m->getMessageHandle();
 				// Get HostReport bytes and send to device
 				*outContext->Buffer = m->SerialStream();
-				outContext->bufLen = (LONG)outContext->Buffer->size();
 
 				int err;
 				m->setStatus(Message::Status::UNSENT);
 				std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
 
 #ifdef WIN32
+				outContext->bufLen = (LONG)outContext->Buffer->size();
 				outContext->DataBuf.buf = (CHAR *)&outContext->Buffer->at(0);
 				outContext->DataBuf.len = outContext->bufLen;
 				int ret = WSASend(mImpl->msgSock, &outContext->DataBuf, 1, NULL, 0, &outContext->OvLap, NULL);
@@ -992,6 +992,8 @@ static std::string logErrorString(int err = INT_MAX) {
 				}
 
 #else
+				outContext->bufLen = (unsigned long)outContext->Buffer->size();
+
 				/*int ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(0), outContext->bufLen, 0);
 				err = errno;
 

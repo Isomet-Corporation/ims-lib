@@ -27,6 +27,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <cstdint>
 
 //#define DEBUG_PRESERVE_LIST
 

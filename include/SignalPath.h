@@ -47,6 +47,7 @@
 #include <memory>
 #include <array>
 #include <chrono>
+#include <climits>
 
 /// \cond LIB_CREATION
 #if defined _WIN32 || defined __CYGWIN__

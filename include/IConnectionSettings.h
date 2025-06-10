@@ -37,6 +37,7 @@
 
 #include <vector>
 #include <string>
+#include <cstdint>
 
 /// \cond LIB_CREATION
 #if defined _WIN32 || defined __CYGWIN__
