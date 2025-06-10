@@ -51,4 +51,4 @@ set(ims_api_source_files
 )
 endif()
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/ims_api_h.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ims_api_h.cmake)

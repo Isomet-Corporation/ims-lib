@@ -1,8 +1,11 @@
-cmake_minimum_required(VERSION 3.14)
-project(libims VERSION 1.8.5 DESCRIPTION "Isomet iMS Synthesiser Library")
+cmake_minimum_required(VERSION 3.15)
+project(libims VERSION 2.0.0 DESCRIPTION "Isomet iMS Synthesiser Library" LANGUAGES CXX)
+
+# Conan integration
+include(${CMAKE_BINARY_DIR}/generators/conan_toolchain.cmake) # Conan Toolchain (CMakeToolchain)
 
 # Min C++14
-set(CMAKE_CXX_STANDARD 14)
+#set(CMAKE_CXX_STANDARD 14)
 
 set(LIBRARY_NAME "ims")
 
@@ -11,82 +14,85 @@ include(GNUInstallDirs)
 ##
 ## Check for LibXML2
 ##
-find_package(LibXml2 2.9.4)
-if (LibXml2_FOUND)
-    message("-- Dynamically linking iMS Library to LibXml2")
-    include_directories(${LIBXML2_INCLUDE_DIR})
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LIBXML2_DEFINITIONS}")
-else()
-    include(FetchContent)
-    FetchContent_Declare(ZLIB
-         GIT_REPOSITORY https://github.com/madler/zlib
-         GIT_TAG        v1.2.11
-    )
-    FetchContent_MakeAvailable(ZLIB)
+find_package(LibXml2 2.9.9 REQUIRED)
+ if (LibXml2_FOUND)
+     message("-- Including LibXml2")
+     include_directories(${libxml2_INCLUDE_DIRS})
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${libxml2_DEFINITIONS}")
+ else()
+     message("-- LibXml2 not Found")
+#     include(FetchContent)
+#     FetchContent_Declare(ZLIB
+#          GIT_REPOSITORY https://github.com/madler/zlib
+#          GIT_TAG        v1.2.11
+#     )
+#     FetchContent_MakeAvailable(ZLIB)
 
-    FetchContent_Declare(libxml2
-         GIT_REPOSITORY https://github.com/robotology-dependencies/libxml2-cmake-buildsystem.git
-         GIT_TAG        v2.9.9  
-    )
+#     FetchContent_Declare(libxml2
+#          GIT_REPOSITORY https://github.com/robotology-dependencies/libxml2-cmake-buildsystem.git
+#          GIT_TAG        v2.9.9  
+#     )
 
-    FetchContent_GetProperties(libxml2)
+#     FetchContent_GetProperties(libxml2)
 
-    if(NOT libxml2_POPULATED)
-        message("-- Building static library LibXml2")
-        message("-- Fetching LibXML2")
-        FetchContent_Populate(libxml2)
+#     if(NOT libxml2_POPULATED)
+#         message("-- Building static library LibXml2")
+#         message("-- Fetching LibXML2")
+#         FetchContent_Populate(libxml2)
 
-        set(LIBXML2_WITH_ICONV OFF CACHE BOOL "" FORCE)
-        set(LIBXML2_WITH_ZLIB ON CACHE BOOL "" FORCE)
-        set(LIBXML2_WITH_LZMA OFF CACHE BOOL "" FORCE)
-        set(LIBXML2_WITH_HTTP OFF CACHE BOOL "" FORCE)
-        set(LIBXML2_WITH_FTP OFF CACHE BOOL "" FORCE)
-        set(LIBXML2_WITH_HTML OFF CACHE BOOL "" FORCE)
+        # set(LIBXML2_WITH_ICONV OFF CACHE BOOL "" FORCE)
+        # set(LIBXML2_WITH_ZLIB ON CACHE BOOL "" FORCE)
+        # set(LIBXML2_WITH_LZMA OFF CACHE BOOL "" FORCE)
+        # set(LIBXML2_WITH_HTTP OFF CACHE BOOL "" FORCE)
+        # set(LIBXML2_WITH_FTP OFF CACHE BOOL "" FORCE)
+        # set(LIBXML2_WITH_HTML OFF CACHE BOOL "" FORCE)
 
-        set(BUILD_SHARED_LIBS_SAVED "${BUILD_SHARED_LIBS}")
-        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+#         set(BUILD_SHARED_LIBS_SAVED "${BUILD_SHARED_LIBS}")
+#         set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-        add_subdirectory(${libxml2_SOURCE_DIR} ${libxml2_BINARY_DIR})
+#         add_subdirectory(${libxml2_SOURCE_DIR} ${libxml2_BINARY_DIR})
 
-        set(BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS_SAVED}")
+#         set(BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS_SAVED}")
 
-        find_package(LibXml2 2.9.9)
-        if (LibXml2_FOUND)
-            message("-- Statically linking iMS Library to LibXml2")
-            include_directories(${LIBXML2_INCLUDE_DIR})
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LIBXML2_DEFINITIONS}")
-        else()
-            message(FATAL_ERROR "-- Unable to build libxml2")
-        endif()
+#         find_package(LibXml2 2.9.9)
+#         if (LibXml2_FOUND)
+#             message("-- Statically linking iMS Library to LibXml2")
+#             include_directories(${LIBXML2_INCLUDE_DIR})
+#             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LIBXML2_DEFINITIONS}")
+#         else()
+#             message(FATAL_ERROR "-- Unable to build libxml2")
+#         endif()
 
-    endif()
+     endif()
 
-endif()
+# endif()
 
 ##
 ## Get BOOST
 ##
-add_subdirectory(modules/boost-cmake)
-set_property(
-    TARGET 
-        Boost_regex 
-        Boost_log_setup
-        Boost_log
-        Boost_filesystem
-        Boost_atomic
-        Boost_date_time
-        Boost_thread
-        Boost_chrono    
-    PROPERTY POSITION_INDEPENDENT_CODE ON)
+find_package(Boost REQUIRED)
 
-# Missing compile definition in boost-cmake.  If not included, compilation of init_from_settings.cpp fails with 
-# "Error: boost::condition_variable has no member 'timed_wait'
-target_compile_definitions(Boost_log_setup PRIVATE
-    BOOST_THREAD_USES_DATETIME
-)
+# add_subdirectory(modules/boost-cmake)
+# set_property(
+#     TARGET 
+#         Boost_regex 
+#         Boost_log_setup
+#         Boost_log
+#         Boost_filesystem
+#         Boost_atomic
+#         Boost_date_time
+#         Boost_thread
+#         Boost_chrono    
+#     PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+# # Missing compile definition in boost-cmake.  If not included, compilation of init_from_settings.cpp fails with 
+# # "Error: boost::condition_variable has no member 'timed_wait'
+# target_compile_definitions(Boost_log_setup PRIVATE
+#     BOOST_THREAD_USES_DATETIME
+# )
 
 set(api_source_dir  	${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(api_include_dir 	${CMAKE_CURRENT_SOURCE_DIR}/inc)
+set(api_include_dir 	${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(api_resource_dir	${CMAKE_CURRENT_SOURCE_DIR}/res)
 set(api_lib_dir	        ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 
@@ -95,7 +101,7 @@ include_directories(AFTER
     ${api_resource_dir}
     ${api_lib_dir}/spline
     ${api_lib_dir}/sqlite3
-    ${BOOST_SOURCE}
+    ${Boost_INCLUDE_DIRS}
 )
 
 if(WIN32)
@@ -107,7 +113,7 @@ include_directories(AFTER
 endif()
 
 # API Source Files
-include(${CMAKE_CURRENT_SOURCE_DIR}/ims_api.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ims_api.cmake)
 
 # Generate resources
 if (NOT WIN32)
@@ -168,11 +174,11 @@ target_include_directories(${LIBRARY_NAME}
 target_link_libraries(${LIBRARY_NAME} 
     PRIVATE 
         -Wl,--whole-archive
-            Boost::regex
-            Boost::log_setup
-            Boost::log
+#            Boost::regex
+#            Boost::log_setup
+#            Boost::log
         -Wl,--no-whole-archive        
-        ${LIBXML2_LIBRARIES}
+        ${libxml2_LIBRARIES}
 )
 
 set_target_properties(${LIBRARY_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
@@ -260,4 +266,4 @@ install(FILES
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
-include(${CMAKE_CURRENT_SOURCE_DIR}/packaging.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/packaging.cmake)
