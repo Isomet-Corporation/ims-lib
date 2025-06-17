@@ -60,7 +60,7 @@ if (WIN32)
 set(ims_api_header_files
     ${ims_api_header_files}
     ${api_lib_dir}/enumser/enumser.h
-    ${api_lib_dir}/FTDI-Driver/ftd2xx.h
+    ${api_lib_dir}/FTDI/ftd2xx.h
     ${api_resource_dir}/resource.h
 )
 else()
