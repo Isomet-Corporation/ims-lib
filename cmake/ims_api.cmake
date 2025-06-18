@@ -43,6 +43,8 @@ set(ims_api_source_files
     ${api_lib_dir}/sqlite3/sqlite3.c
 )
 
+set_source_files_properties(${api_lib_dir}/sqlite3/sqlite3.c PROPERTIES LANGUAGE C)
+
 if(WIN32)
 set(ims_api_source_files
     ${ims_api_source_files}

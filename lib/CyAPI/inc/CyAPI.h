@@ -109,9 +109,11 @@ public:
 
 /*******************************************************************************/
 
+/* {91D26942-CC3D-4B8F-B164-1118899DB375} */
+static GUID CYUSBDRV_GUID = {0x91D26942, 0xCC3D, 0x4B8F, 0xB1, 0x64, 0x11, 0x18, 0x89, 0x9D, 0xB3, 0x75};
 
 /* {AE18AA60-7F6A-11d4-97DD-00010229B959} */
-static GUID CYUSBDRV_GUID = {0xae18aa60, 0x7f6a, 0x11d4, 0x97, 0xdd, 0x0, 0x1, 0x2, 0x29, 0xb9, 0x59};
+//static GUID CYUSBDRV_GUID = {0xae18aa60, 0x7f6a, 0x11d4, 0x97, 0xdd, 0x0, 0x1, 0x2, 0x29, 0xb9, 0x59};
 
 typedef enum {TGT_DEVICE, TGT_INTFC, TGT_ENDPT, TGT_OTHER } CTL_XFER_TGT_TYPE;
 typedef enum {REQ_STD, REQ_CLASS, REQ_VENDOR } CTL_XFER_REQ_TYPE;
@@ -429,7 +431,7 @@ class CCyUSBDevice
 public:
 
     CCyUSBDevice(HANDLE hnd = NULL, GUID guid = CYUSBDRV_GUID, BOOL bOpen = true);
-    ~CCyUSBDevice(void);
+    ~CCyUSBDevice(void) noexcept(false);
 
     CCyUSBEndPoint  **EndPoints;     /* Shortcut to USBCfgs[CfgNum]->Interfaces[IntfcIndex]->Endpoints */
     CCyUSBEndPoint  *EndPointOf(UCHAR addr);
@@ -456,7 +458,11 @@ public:
     wchar_t     Product[USB_STRING_MAXLEN];
     wchar_t     SerialNumber[USB_STRING_MAXLEN];
 
+#ifdef UNICODE
+	WCHAR       DevPath[USB_STRING_MAXLEN];
+#else
     CHAR        DevPath[USB_STRING_MAXLEN];
+#endif
 
     USHORT      BcdUSB;
     USHORT      VendorID;

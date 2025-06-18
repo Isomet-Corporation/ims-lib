@@ -4,10 +4,16 @@ project(libims VERSION 2.0.0 DESCRIPTION "Isomet iMS Synthesiser Library" LANGUA
 # Conan integration
 include(${CMAKE_BINARY_DIR}/generators/conan_toolchain.cmake) # Conan Toolchain (CMakeToolchain)
 
-# Min C++14
-#set(CMAKE_CXX_STANDARD 14)
+message(STATUS "Building for Platform: '${CMAKE_GENERATOR_PLATFORM}'")
 
-set(LIBRARY_NAME "ims")
+# Min C++17
+set(CMAKE_CXX_STANDARD 17)
+
+if(MSVC)
+    set(LIBRARY_NAME "imsLibrary")
+else()
+    set(LIBRARY_NAME "ims")
+endif()
 
 include(GNUInstallDirs)
 
@@ -21,51 +27,7 @@ find_package(LibXml2 2.9.9 REQUIRED)
      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${libxml2_DEFINITIONS}")
  else()
      message("-- LibXml2 not Found")
-#     include(FetchContent)
-#     FetchContent_Declare(ZLIB
-#          GIT_REPOSITORY https://github.com/madler/zlib
-#          GIT_TAG        v1.2.11
-#     )
-#     FetchContent_MakeAvailable(ZLIB)
-
-#     FetchContent_Declare(libxml2
-#          GIT_REPOSITORY https://github.com/robotology-dependencies/libxml2-cmake-buildsystem.git
-#          GIT_TAG        v2.9.9  
-#     )
-
-#     FetchContent_GetProperties(libxml2)
-
-#     if(NOT libxml2_POPULATED)
-#         message("-- Building static library LibXml2")
-#         message("-- Fetching LibXML2")
-#         FetchContent_Populate(libxml2)
-
-        # set(LIBXML2_WITH_ICONV OFF CACHE BOOL "" FORCE)
-        # set(LIBXML2_WITH_ZLIB ON CACHE BOOL "" FORCE)
-        # set(LIBXML2_WITH_LZMA OFF CACHE BOOL "" FORCE)
-        # set(LIBXML2_WITH_HTTP OFF CACHE BOOL "" FORCE)
-        # set(LIBXML2_WITH_FTP OFF CACHE BOOL "" FORCE)
-        # set(LIBXML2_WITH_HTML OFF CACHE BOOL "" FORCE)
-
-#         set(BUILD_SHARED_LIBS_SAVED "${BUILD_SHARED_LIBS}")
-#         set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
-#         add_subdirectory(${libxml2_SOURCE_DIR} ${libxml2_BINARY_DIR})
-
-#         set(BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS_SAVED}")
-
-#         find_package(LibXml2 2.9.9)
-#         if (LibXml2_FOUND)
-#             message("-- Statically linking iMS Library to LibXml2")
-#             include_directories(${LIBXML2_INCLUDE_DIR})
-#             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LIBXML2_DEFINITIONS}")
-#         else()
-#             message(FATAL_ERROR "-- Unable to build libxml2")
-#         endif()
-
-     endif()
-
-# endif()
+ endif()
 
 ##
 ## Get BOOST
@@ -117,25 +79,42 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ims_api.cmake)
 
 # Generate resources
 if (NOT WIN32)
-execute_process(
-    COMMAND ./build.sh
-    WORKING_DIRECTORY ${api_resource_dir}
-    RESULT_VARIABLE XXD_ERR
-)
-if (XXD_ERR)
-    MESSAGE( STATUS "Resource generation error:" ${XXD_ERR})
-endif()
+    execute_process(
+        COMMAND ./build.sh
+        WORKING_DIRECTORY ${api_resource_dir}
+        RESULT_VARIABLE XXD_ERR
+    )
+    if (XXD_ERR)
+        MESSAGE( STATUS "Resource generation error:" ${XXD_ERR})
+    endif()
     set (api_db_resource ${api_resource_dir}/imshw.h)
 else()
     set (api_db_resource ${api_resource_dir}/imshw.rc)
 endif()
 
+add_library(${LIBRARY_NAME} "")
+
 #
 # Compiler specific Definitions
 #
-
 if(MSVC)
+    target_compile_definitions(${LIBRARY_NAME} PRIVATE FTD2XX_STATIC)
+    target_compile_definitions(${LIBRARY_NAME} PRIVATE _EXPORTING_IMS)
+    target_compile_definitions(${LIBRARY_NAME} PRIVATE _WIN32_WINNT=0x0A00)
+    target_compile_definitions(${LIBRARY_NAME} PRIVATE UNICODE)
+
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+    # Required by Boost::Log
+    target_link_libraries(${LIBRARY_NAME} PRIVATE synchronization)
+   # Set Warning level always to 4
+   #if (CMAKE_CXX_FLAGS MATCHES "/W[0-4]")
+   #  string(REGEX REPLACE "/W[0-4]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+   #else ()
+   #  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
+   #endif ()    
 endif()
+
 
 if(CMAKE_COMPILER_IS_GNUCXX)
 endif()
@@ -152,10 +131,13 @@ if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
 endif()
 
 #
+# Global Definitions
+#
+target_compile_definitions(${LIBRARY_NAME} PUBLIC LIBXML_STATIC)
+
+#
 # Building and Linking
 #
-add_library(${LIBRARY_NAME} "")
-
 target_sources(${LIBRARY_NAME} 
     PRIVATE 
         ${ims_api_source_files}
@@ -173,13 +155,21 @@ target_include_directories(${LIBRARY_NAME}
 
 target_link_libraries(${LIBRARY_NAME} 
     PRIVATE 
-        -Wl,--whole-archive
-#            Boost::regex
-#            Boost::log_setup
-#            Boost::log
-        -Wl,--no-whole-archive        
+#        -Wl,--whole-archive
+            Boost::regex
+            Boost::log_setup
+            Boost::log
+#        -Wl,--no-whole-archive        
         ${libxml2_LIBRARIES}
 )
+
+if(MSVC)
+target_link_directories(${LIBRARY_NAME} PRIVATE ${api_lib_dir}/FTDI/Static/${CMAKE_GENERATOR_PLATFORM})
+target_link_libraries(${LIBRARY_NAME} 
+    PRIVATE 
+    ftd2xx.lib
+)
+endif()
 
 set_target_properties(${LIBRARY_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
 set_target_properties(${LIBRARY_NAME} PROPERTIES PUBLIC_HEADER "${ims_public_api_header_files}")
