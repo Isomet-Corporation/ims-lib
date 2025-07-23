@@ -368,6 +368,7 @@ static std::string logErrorString(int err = INT_MAX) {
 				{
 					char InterfaceAddr[INET_ADDRSTRLEN];
 					inet_ntop(AF_INET, (void *)&((struct sockaddr_in *)&InterfaceList[i].iiAddress)->sin_addr, InterfaceAddr, INET_ADDRSTRLEN);
+                    InterfaceAddr[it->length()] = '\0'; // Compare equal lengths
 					if (!strcmp(InterfaceAddr, it->c_str())) {
 						match = true;
 						break;
