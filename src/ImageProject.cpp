@@ -81,7 +81,7 @@ namespace iMS {
 	/// \brief Implicit Load From File Constructor
 	ImageProject::ImageProject(const std::string& fileName) : ImageProject()
 	{
-
+        this->Load(fileName);
 	}
 
 	ImageGroupList& ImageProject::ImageGroupContainer() { return p_Impl->m_imgGroupList; }
@@ -134,7 +134,7 @@ namespace iMS {
 		if (0 > xmlTextWriterStartDocument(writer, NULL, MY_ENCODING, NULL)) return false;
 
 		/* Copyright statement */
-		if (0 > xmlTextWriterWriteComment(writer, BAD_CAST "(c) 2017 Isomet (UK) Ltd, All rights reserved")) return false;
+		if (0 > xmlTextWriterWriteComment(writer, BAD_CAST "(c) 2017-25 Isomet (UK) Ltd, All rights reserved")) return false;
 
 
 		/* Start an element to be the master root element */

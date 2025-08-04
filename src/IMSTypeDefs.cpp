@@ -24,6 +24,7 @@
 #include "IMSTypeDefs.h"
 #include "IMSSystem.h"
 #include "IMSTypeDefs_p.h"
+#include "PrivateUtil.h"
 
 #include <algorithm>
 
@@ -225,9 +226,9 @@ namespace iMS {
 
 	bool FAP::operator==(const FAP &other) const
 	{
-		return ((freq == other.freq) &&
-			(ampl == other.ampl) &&
-			(phase == other.phase));
+		return (float_compare(freq, other.freq) &&
+			float_compare(ampl, other.ampl) &&
+			float_compare(phase, other.phase));
 	}
 
 	bool FAP::operator!=(const FAP &other) const

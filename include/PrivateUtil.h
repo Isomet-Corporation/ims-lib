@@ -76,5 +76,8 @@ namespace iMS {
 	std::array<std::uint8_t, 16> StrToUUID(const std::string& str);
 
 	sqlite3* get_db();
+
+    bool float_compare(double a, double b, double epsilon = 1e-6);
+
 }
 #endif

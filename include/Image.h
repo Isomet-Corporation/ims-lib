@@ -1162,6 +1162,15 @@ namespace iMS {
 		/// \param create_time Specify the creation time for the ImageGroup.  This is intended for use only when loading ImageGroup's from an ImageProject disk file and should not be used.
 		/// \param modified_time Specify the last modified time for the ImageGroup.  This is intended for use only when loading ImageGroup's from an ImageProject disk file and should not be used.
 		ImageGroup(const std::string& name = "", const std::time_t& create_time = std::time(nullptr), const std::time_t& modified_time = std::time(nullptr));
+		/// \brief Create an ImageGroup with n empty Images
+		///
+		/// The ImageGroup is created with 'n' empty Images in its list and a default ImageSequence with each Image added once.
+		/// Call as \c ImageGroup(n) or \c ImageGroup(n, "My \c Group").  do not use the create_time or modified_time parameters.
+		/// \param n The number of empty images to create in the group.
+		/// \param name Optionally, the caller may specify a Name for the ImageGroup.  If not specified, it defaults to an empty string.
+		/// \param create_time Specify the creation time for the ImageGroup.  This is intended for use only when loading ImageGroup's from an ImageProject disk file and should not be used.
+		/// \param modified_time Specify the last modified time for the ImageGroup.  This is intended for use only when loading ImageGroup's from an ImageProject disk file and should not be used.
+		ImageGroup(size_t n, const std::string& name = "", const std::time_t& create_time = std::time(nullptr), const std::time_t& modified_time = std::time(nullptr));
 		///
 		/// \brief Copy Constructor
 		///

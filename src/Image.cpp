@@ -24,6 +24,9 @@
 #include "Image.h"
 #include "ToneBuffer.h"
 #include "Image_p.h"
+#include "PrivateUtil.h"
+
+#include <sstream>
 
 // Required for UUID
 #if defined(__QNXNTO__)
@@ -276,7 +279,14 @@ namespace iMS {
 
 	bool ImagePoint::operator==(ImagePoint const& rhs) const
 	{
-		return ((m_fap[0] == m_fap[1]) && (m_fap[1] == m_fap[2]) && (m_fap[2] == m_fap[3]));
+		bool eq = (m_fap[0] == rhs.m_fap[0]) &&
+                    (m_fap[1] == rhs.m_fap[1]) && 
+                    (m_fap[2] == rhs.m_fap[2]) && 
+                    (m_fap[3] == rhs.m_fap[3]) &&
+                    float_compare(m_synca[0], rhs.m_synca[0]) &&
+                    float_compare(m_synca[1], rhs.m_synca[1]) &&
+                    m_syncd == rhs.m_syncd;
+        return eq;
 	}
 
 	const FAP& ImagePoint::GetFAP(const RFChannel chan) const
@@ -632,19 +642,19 @@ namespace iMS {
 	};
 
 	ImageSequenceEntry::Impl::Impl() :
-		rpts(ImageRepeats::NONE), InternalClock(kHz(1.0)), ExtClockDivide(1)
+		rpts(ImageRepeats::NONE), InternalClock(kHz(1.0)), ExtClockDivide(1), imgDelay(std::chrono::duration<double>(0))
 	{}
 
 	ImageSequenceEntry::Impl::Impl(const Image& img, const ImageRepeats& Rpt) :
-		rpts(Rpt), InternalClock(img.ClockRate()), ExtClockDivide(img.ExtClockDivide())
+		rpts(Rpt), InternalClock(img.ClockRate()), ExtClockDivide(img.ExtClockDivide()), imgDelay(std::chrono::duration<double>(0))
 	{}
 
 	ImageSequenceEntry::Impl::Impl(const kHz& InternalClock, const ImageRepeats& Rpt) :
-		rpts(Rpt), InternalClock(InternalClock), ExtClockDivide(1)
+		rpts(Rpt), InternalClock(InternalClock), ExtClockDivide(1), imgDelay(std::chrono::duration<double>(0))
 	{}
 
 	ImageSequenceEntry::Impl::Impl(const int ExtClockDivide, const ImageRepeats& Rpt) :
-		rpts(Rpt), InternalClock(kHz(1.0)), ExtClockDivide(ExtClockDivide)
+		rpts(Rpt), InternalClock(kHz(1.0)), ExtClockDivide(ExtClockDivide), imgDelay(std::chrono::duration<double>(0))
 	{}
 
 	ImageSequenceEntry::ImageSequenceEntry() : p_Impl (new Impl()) {}
@@ -827,6 +837,19 @@ namespace iMS {
 
 	ImageGroup::ImageGroup(const std::string& name, const std::time_t& create_time, const std::time_t& modified_time)
 		: DequeBase<Image>(name, modified_time), p_Impl(new Impl(create_time)) {}
+
+	ImageGroup::ImageGroup(std::size_t n, const std::string& name, const std::time_t& create_time, const std::time_t& modified_time)
+		: DequeBase<Image>(name, modified_time), p_Impl(new Impl(create_time)) {
+            int i;
+            for (i=0; i<n; i++) this->AddImage(Image());
+            i=1;
+            for (auto& img: *this) {
+                std::stringstream ss;
+                ss << "Image " << i++;
+                img.Name() = ss.str();
+//                p_Impl->seq.push_back(std::make_shared<ImageSequenceEntry>(img));
+            }
+        }
 
 	ImageGroup::~ImageGroup() { delete p_Impl; p_Impl = nullptr; }
 

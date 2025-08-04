@@ -234,4 +234,8 @@ namespace iMS {
 		return db;
 	}
 
+    bool float_compare(double a, double b, double epsilon) { 
+        return std::fabs(a - b) < epsilon; 
+    }
+
 }
