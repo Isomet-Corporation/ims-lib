@@ -238,4 +238,60 @@ namespace iMS {
         return std::fabs(a - b) < epsilon; 
     }
 
+    LazyWorker::LazyWorker(WorkerFunc func)
+        : workerFunc(std::move(func)) {}
+
+    LazyWorker::~LazyWorker() {
+        stop();
+    }
+
+    void LazyWorker::start() {
+        std::call_once(startFlag, [this]() {
+            running = true;
+            workerThread = std::thread([this]() {
+                // Signal ready
+                {
+                    std::lock_guard<std::mutex> lck(readyMutex);
+                    ready = true;
+                }
+                readyCond.notify_one();
+
+                // Run worker loop
+                workerFunc(running, workCond, workMutex);
+            });
+        });
+
+        // Wait until ready
+        {
+            std::unique_lock<std::mutex> lck(readyMutex);
+            if (!ready) {
+                readyCond.wait(lck, [this]() { return ready; });
+            }
+        }
+    }
+
+    void LazyWorker::notify() {
+        workCond.notify_one();
+    }
+
+    void LazyWorker::stop() {
+        if (started()) {
+            {
+                std::lock_guard<std::mutex> lck(workMutex);
+                running = false;
+            }
+            workCond.notify_one();
+            if (workerThread.joinable()) {
+                workerThread.join();
+            }
+        }
+    }
+
+    bool LazyWorker::started() const {
+        return workerThread.joinable();
+    }
+
+    std::mutex& LazyWorker::mutex() {
+        return workMutex;
+    }    
 }

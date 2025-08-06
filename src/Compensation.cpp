@@ -36,7 +36,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
-#include <iostream>
+//#include <iostream>
 //#include <iomanip>
 #include <fstream>
 #include "math.h"
@@ -1043,6 +1043,10 @@ namespace iMS
 		Impl(IMSSystem&, const CompensationTable& table, const RFChannel& chan = RFChannel::all);
 		~Impl();
 
+        LazyWorker downloadWorker;
+        LazyWorker verifyWorker;
+        LazyWorker rxWorker;
+        
 		IMSSystem& myiMS;
 		RFChannel m_channel;
 		const CompensationTable& m_TableRef;
@@ -1076,23 +1080,16 @@ namespace iMS
 		MessageHandle dl_final;
 		mutable std::mutex dl_list_mutex;
 
-		bool downloaderRunning{ false };
-		std::thread downloadThread;
-		mutable std::mutex m_dlmutex;
-		std::condition_variable m_dlcond;
-		void DownloadWorker();
+        bool downloadRequested{ false };
+        void DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
+    
+        bool verifyRequested{ false };
+        void VerifyWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
 
-		std::thread verifyThread;
-		mutable std::mutex m_vfymutex;
-		std::condition_variable m_vfycond;
-		void VerifyWorker();
+	    void RxWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
 
-		std::thread RxThread;
-		mutable std::mutex m_rxmutex;
-		std::condition_variable m_rxcond;
 		std::deque<int> rxok_list;
 		std::deque<int> rxerr_list;
-		void RxWorker();
 
 		bool VerifyStarted{ false };
 
@@ -1102,10 +1099,17 @@ namespace iMS
 	};
 
 	CompensationTableDownload::Impl::Impl(IMSSystem& iMS, const CompensationTable& table, const RFChannel& chan) :
-		myiMS(iMS), m_TableRef(table), m_channel(chan), Receiver(new ResponseReceiver(this)), vfyResult(new VerifyResult(this)), verifier(iMS)
+		myiMS(iMS), m_TableRef(table), m_channel(chan), Receiver(new ResponseReceiver(this)), vfyResult(new VerifyResult(this)), verifier(iMS),
+        downloadWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
+            DownloadWorkerLoop(running, cond, mtx);
+        }),
+        verifyWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
+            VerifyWorkerLoop(running, cond, mtx);
+        }),
+        rxWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
+            RxWorkerLoop(running, cond, mtx);
+        })
 	{
-		downloaderRunning = true;
-
 		// Subscribe listeners
 		IConnectionManager * const myiMSConn = myiMS.Connection();
 		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
@@ -1119,25 +1123,10 @@ namespace iMS
 		verifier.BulkVerifierEventSubscribe(BulkVerifierEvents::VERIFY_SUCCESS, vfyResult);
 		verifier.BulkVerifierEventSubscribe(BulkVerifierEvents::VERIFY_FAIL, vfyResult);
 
-		// Start two new threads to run the download / verify in the background
-		downloadThread = std::thread(&CompensationTableDownload::Impl::DownloadWorker, this);
-		verifyThread = std::thread(&CompensationTableDownload::Impl::VerifyWorker, this);
-
-		// And a thread to receive the download responses
-		RxThread = std::thread(&CompensationTableDownload::Impl::RxWorker, this);
+        dl_final = NullMessage;
 	}
 
 	CompensationTableDownload::Impl::~Impl() {
-		// Unblock worker thread
-		downloaderRunning = false;
-		m_dlcond.notify_one();
-		m_vfycond.notify_one();
-		m_rxcond.notify_one();
-
-		downloadThread.join();
-		verifyThread.join();
-		RxThread.join();
-
 		// Unsubscribe listener
 		IConnectionManager * const myiMSConn = myiMS.Connection();
 		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
@@ -1164,9 +1153,9 @@ namespace iMS
 
 			// Add response to verify list for checking by rx processing thread
 			{
-				std::unique_lock<std::mutex> lck{ m_parent->m_rxmutex };
+				std::unique_lock<std::mutex> lck{ m_parent->rxWorker.mutex() };
 				m_parent->rxok_list.push_back(param);
-				m_parent->m_rxcond.notify_one();
+				m_parent->rxWorker.notify();
 				lck.unlock();
 			}
 			break;
@@ -1179,9 +1168,9 @@ namespace iMS
 
 			// Add error to list and trigger processing thread if handle exists
 			{
-				std::unique_lock<std::mutex> lck{ m_parent->m_rxmutex };
+				std::unique_lock<std::mutex> lck{ m_parent->rxWorker.mutex() };
 				m_parent->rxerr_list.push_back(param);
-				m_parent->m_rxcond.notify_one();
+				m_parent->rxWorker.notify();
 				lck.unlock();
 			}
 			break;
@@ -1240,41 +1229,54 @@ namespace iMS
 					p_Impl->m_TableRef);
 		}
 
-		std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
 
-		if (!lck.owns_lock()) {
-			// Mutex lock failed, Downloader must be busy, try again later
-			return false;
-		}
-		p_Impl->dl_list.clear();
-		//VerifyReset();
+        p_Impl->downloadWorker.start();
+        p_Impl->rxWorker.start();
 
-		if (p_Impl->m_channel.IsAll()) {
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Chan_Scope);
-			iorpt->Payload<std::uint16_t>(0);
-		}
-		else {
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
-			iorpt->Payload<std::uint16_t>(1 << (p_Impl->m_channel-1));
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
+        int retries=10;
+        while (retries)
+        {
+			std::unique_lock<std::mutex> lck{ p_Impl->downloadWorker.mutex(), std::try_to_lock };
+
+			if (!lck.owns_lock()) {
+                if (!--retries) return false;
+				// Mutex lock failed, Downloader must be busy, try again later
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				continue;
 			}
-			delete iorpt;
 
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Chan_Scope);
-			iorpt->Payload<std::uint16_t>(0xF);
-		}
+    		p_Impl->dl_list.clear();
+            p_Impl->downloadRequested = true;
 
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
+            if (p_Impl->m_channel.IsAll()) {
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Chan_Scope);
+                iorpt->Payload<std::uint16_t>(0);
+            }
+            else {
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
+                iorpt->Payload<std::uint16_t>(1 << (p_Impl->m_channel-1));
+                if (NullMessage == myiMSConn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
 
-		p_Impl->m_dlcond.notify_one();
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Chan_Scope);
+                iorpt->Payload<std::uint16_t>(0xF);
+            }
+
+            if (NullMessage == myiMSConn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+
+            break;
+        }
+
+        p_Impl->downloadWorker.notify();
 		return true;
 	}
 
@@ -1317,16 +1319,37 @@ namespace iMS
 					p_Impl->m_TableRef);
 		}
 
-		std::unique_lock<std::mutex> lck{ p_Impl->m_vfymutex, std::try_to_lock };
+        p_Impl->verifyWorker.start();
+        p_Impl->rxWorker.start();
+        
+        int retries=10;
+        while (retries)
+		{
+            std::unique_lock<std::mutex> lck{ p_Impl->verifyWorker.mutex(), std::try_to_lock };
 
-		if (!lck.owns_lock()) {
-			// Mutex lock failed, Verifier must be busy, try again later
-			return false;
-		}
+            if (!lck.owns_lock()) {
+                if (!--retries) return false;
+                // Mutex lock failed, Verifier must be busy, try again later
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				continue;
+            }
+
+            std::unique_lock<std::mutex> rxlck{ p_Impl->rxWorker.mutex(), std::try_to_lock };
+
+            if (!rxlck.owns_lock()) {
+                if (!--retries) return false;
+                // Mutex lock failed, Rx must be busy, try again later
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				continue;
+            }
+
+            p_Impl->verifyRequested = true;
+            break;
+        }
 
 		p_Impl->VerifyStarted = true;
 		p_Impl->verifier.VerifyReset();
-		p_Impl->m_vfycond.notify_one();
+		p_Impl->verifyWorker.notify();
 		return true;
 	}
 
@@ -1372,14 +1395,18 @@ namespace iMS
 	}
 
 	// CompensationTable Downloading Thread
-	void CompensationTableDownload::Impl::DownloadWorker()
+	void CompensationTableDownload::Impl::DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-		while (downloaderRunning) {
-			std::unique_lock<std::mutex> lck{ m_dlmutex };
-			m_dlcond.wait(lck);
+   
+		while (true) {
+			std::unique_lock<std::mutex> lck{ mtx };
+			cond.wait(lck, [this, &running]() {
+                return downloadRequested || !running;
+            });
 
 			// Allow thread to terminate 
-			if (!downloaderRunning) break;
+			if (!running) break;
+            downloadRequested = false;
 
 			// Download loop
 			IConnectionManager * const myiMSConn = myiMS.Connection();
@@ -1458,14 +1485,17 @@ namespace iMS
 	}
 
 	// CompensationTable Verifying Thread
-	void CompensationTableDownload::Impl::VerifyWorker()
+	void CompensationTableDownload::Impl::VerifyWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-		std::unique_lock<std::mutex> lck{ m_vfymutex };
-		while (downloaderRunning) {
-			m_vfycond.wait(lck);
+		while (true) {
+    		std::unique_lock<std::mutex> lck{ mtx };
+			cond.wait(lck, [this, &running]() {
+                return verifyRequested || !running;
+            });
 
 			// Allow thread to terminate 
-			if (!downloaderRunning) break;
+			if (!running) break;
+            verifyRequested = false;
 
 			IConnectionManager * const myiMSConn = myiMS.Connection();
 
@@ -1536,17 +1566,14 @@ namespace iMS
 	}
 
 	// CompensationTable Readback Verify Data Processing Thread
-	void CompensationTableDownload::Impl::RxWorker()
+	void CompensationTableDownload::Impl::RxWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-		std::unique_lock<std::mutex> lck{ m_rxmutex };
-		while (downloaderRunning) {
-			// Release lock implicitly, wait for next download trigger
-			m_rxcond.wait(lck);
+		while (true) {
+    		std::unique_lock<std::mutex> lck{ mtx };
+            cond.wait(lck);
 
 			// Allow thread to terminate 
-			if (!downloaderRunning) break;
-
-//			IConnectionManager * const myiMSConn = myiMS.Connection();
+			if (!running) break;
 
 			while (!rxok_list.empty())
 			{

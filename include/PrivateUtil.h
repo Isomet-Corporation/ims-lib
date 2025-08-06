@@ -26,6 +26,12 @@
 
 #include <array>
 
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <thread>
+
 extern "C" {
 #include "sqlite3.h"
 }
@@ -79,5 +85,32 @@ namespace iMS {
 
     bool float_compare(double a, double b, double epsilon = 1e-6);
 
+    class LazyWorker {
+    public:
+        using WorkerFunc = std::function<void(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)>;
+
+        explicit LazyWorker(WorkerFunc func);
+        ~LazyWorker();
+
+        void start();
+        void notify();
+        void stop();
+        bool started() const;
+        std::mutex& mutex();
+
+    private:
+        std::thread workerThread;
+        std::once_flag startFlag;
+        std::atomic<bool> running{ false };
+
+        std::mutex readyMutex;
+        std::condition_variable readyCond;
+        bool ready{ false };
+
+        std::mutex workMutex;
+        std::condition_variable workCond;
+
+        WorkerFunc workerFunc;
+    };
 }
 #endif

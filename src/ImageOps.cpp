@@ -37,82 +37,11 @@
 #include <condition_variable>
 #include <thread>
 #include <atomic>
-#include <functional>
 #include <iomanip>
 //#include <iostream>
 
 namespace iMS
 {
-    class LazyWorker {
-    public:
-        using WorkerFunc = std::function<void(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)>;
-
-        LazyWorker(WorkerFunc func)
-            : workerFunc(std::move(func)) {}
-
-        ~LazyWorker() {
-            stop();
-        }
-
-        void start() {
-            std::call_once(startFlag, [this]() {
-                running = true;
-                workerThread = std::thread([this]() {
-                    // Signal ready
-                    {
-                        std::lock_guard<std::mutex> lck(readyMutex);
-                        ready = true;
-                    }
-                    readyCond.notify_one();
-
-                    // Run worker loop
-                    workerFunc(running, workCond, workMutex);
-                });
-            });
-
-            // Wait until ready
-            std::unique_lock<std::mutex> lck(readyMutex);
-            readyCond.wait(lck, [this]() { return ready; });
-        }
-
-        void notify() {
-            workCond.notify_one();
-        }
-
-        void stop() {
-            if (started()) {
-                {
-                    std::lock_guard<std::mutex> lck(workMutex);
-                    running = false;
-                }
-                workCond.notify_one();
-                if (workerThread.joinable()) {
-                    workerThread.join();
-                }
-            }
-        }
-
-        bool started() const {
-            return workerThread.joinable();
-        }
-
-        std::mutex& mutex() { return workMutex; }
-
-    private:
-        std::thread workerThread;
-        std::once_flag startFlag;
-        std::atomic<bool> running{ false };
-
-        std::mutex readyMutex;
-        std::condition_variable readyCond;
-        bool ready{ false };
-
-        std::mutex workMutex;
-        std::condition_variable workCond;
-
-        WorkerFunc workerFunc;
-    };
-
 //	class VerifyListener : public IEventHandler
 //	{
 //	public:
@@ -1321,10 +1250,10 @@ namespace iMS
 
 		while (true) {
     		std::unique_lock<std::mutex> lck{ mtx };
-			cond.wait(lck, [this, &running]() {
-                return !running;
-            });
+            cond.wait(lck);
 
+            // Allow thread to terminate 
+			if (!running) break;
 			//IConnectionManager * const myiMSConn = myiMS.Connection();
 
 			while (!rxok_list.empty())
@@ -2401,6 +2330,8 @@ namespace iMS
 		Impl(IMSSystem&, const ImageSequence&);
 		~Impl();
 
+        LazyWorker downloadWorker;
+
 		IMSSystem& myiMS;
 		const ImageSequence& m_Seq;
 
@@ -2428,12 +2359,9 @@ namespace iMS
 
 		DMASupervisor* dmah;
 
-		bool downloaderRunning{ false };
-		std::thread downloadThread;
-		mutable std::mutex m_dlmutex;
-		std::condition_variable m_dlcond;
-		void DownloadWorker();
-
+        bool downloadRequested{ false };
+        void DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
+ 
 		// Capability flags
 		bool fast_seq_dl_supported{ false };
 		bool large_seq_supported{ false };
@@ -2444,9 +2372,11 @@ namespace iMS
 		m_seqdata(new boost::container::deque<std::uint8_t>()),
 		Receiver(new ResponseReceiver(this)),
 		m_Event(new SequenceDownloadEventTrigger()),
-		dmah(new DMASupervisor())
+		dmah(new DMASupervisor()),
+        downloadWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
+            DownloadWorkerLoop(running, cond, mtx);
+        })
 	{
-		downloaderRunning = true;
 		fast_seq_dl_supported = false;
 		large_seq_supported = false;
 
@@ -2466,19 +2396,11 @@ namespace iMS
 			delete iorpt;
 		}
 
-
 		myiMSConn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
-		downloadThread = std::thread(&SequenceDownload::Impl::DownloadWorker, this);
 	}
 
 	SequenceDownload::Impl::~Impl() 
 	{
-		// Unblock worker thread
-		downloaderRunning = false;
-		m_dlcond.notify_one();
-
-		downloadThread.join();
-
 		// Unsubscribe listener
 		IConnectionManager* const myiMSConn = myiMS.Connection();
 		if (myiMS.Ctlr().GetVersion().revision > 46) {
@@ -2536,18 +2458,29 @@ namespace iMS
 		}
 
 		if (p_Impl->fast_seq_dl_supported && asynchronous) {
-			{
-				std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
+            p_Impl->downloadWorker.start();
 
-				if (!lck.owns_lock()) {
-					BOOST_LOG_SEV(lg::get(), sev::warning) << "Sequence Download busy - try again later";
-					// Mutex lock failed, Downloader must be busy, try again later
-					return false;
-				}
-				lck.unlock();
-			}
+            int retries=10;
+            while (retries)
+            {
+                std::unique_lock<std::mutex> lck{ p_Impl->downloadWorker.mutex(), std::try_to_lock };
 
-			p_Impl->m_dlcond.notify_one();
+                if (!lck.owns_lock()) {
+                    if (!--retries) {
+    					BOOST_LOG_SEV(lg::get(), sev::warning) << "Sequence Download busy - try again later";
+                        return false;
+                    }
+                    // Mutex lock failed, Downloader must be busy, try again later
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+                p_Impl->downloadRequested = true;
+                lck.unlock();
+
+                break;
+            }
+
+			p_Impl->downloadWorker.notify();
 			return true;
 		}
 
@@ -2647,17 +2580,20 @@ namespace iMS
 	}
 
 	// Sequence Downloading Thread
-	void SequenceDownload::Impl::DownloadWorker()
+	void SequenceDownload::Impl::DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
 		IConnectionManager* const myiMSConn = myiMS.Connection();
 		HostReport* iorpt;
 
-		while (downloaderRunning) {
-			std::unique_lock<std::mutex> lck{ m_dlmutex };
-			m_dlcond.wait(lck);
+		while (true) {
+			std::unique_lock<std::mutex> lck{ mtx };
+			cond.wait(lck, [this, &running]() {
+                return downloadRequested || !running;
+            });
 
 			// Allow thread to terminate 
-			if (!downloaderRunning) break;
+			if (!running) break;
+            downloadRequested = false;
 
 			// Create Byte Vector
 			std::uint32_t BytesInSequenceBuffer = FormatSequenceBuffer(m_Seq, myiMS, *m_seqdata);
