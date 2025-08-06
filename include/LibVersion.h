@@ -89,13 +89,13 @@
 ///
 /// The API Minor Version number for use in preprocessing directives
 ///
-#define IMS_API_MINOR 8
+#define IMS_API_MINOR 9
 ///
 /// \brief Patch Version Number
 ///
 /// The API Patch Version number for use in preprocessing directives
 ///
-#define IMS_API_PATCH 12
+#define IMS_API_PATCH 1
 //@}
 
 /// \namespace iMS
