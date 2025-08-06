@@ -190,6 +190,9 @@ namespace iMS
 		/// \param[in] sync_anlg The initial Synchronous Analogue Data value
 		/// \since 1.0
 		CompensationPoint(Percent ampl = 0.0, Degrees phase = 0.0, unsigned int sync_dig = 0, double sync_anlg = 0.0);
+		CompensationPoint(Degrees phase, unsigned int sync_dig = 0, double sync_anlg = 0.0);
+		CompensationPoint(unsigned int sync_dig, double sync_anlg = 0.0);
+		CompensationPoint(double sync_anlg);
 		~CompensationPoint();
 		//@}
 

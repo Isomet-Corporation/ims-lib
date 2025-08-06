@@ -94,6 +94,18 @@ namespace iMS
 		p_Impl (new Impl(ampl, phase, sync_dig, sync_anlg))
 	{}
 
+    CompensationPoint::CompensationPoint(Degrees phase, unsigned int sync_dig, double sync_anlg) : 
+        CompensationPoint(0.0, phase, sync_dig, sync_anlg)
+    {}
+
+    CompensationPoint::CompensationPoint(unsigned int sync_dig, double sync_anlg) : 
+        CompensationPoint(0.0, 0.0, sync_dig, sync_anlg)
+    {}
+
+    CompensationPoint::CompensationPoint(double sync_anlg) : 
+        CompensationPoint(0.0, 0.0, 0, sync_anlg)
+    {}
+
 	CompensationPoint::~CompensationPoint()
 	{
 		delete p_Impl;
