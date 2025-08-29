@@ -268,7 +268,10 @@ namespace iMS {
 		if (!DeviceIsOpen)
 		{
 			// If connecting without first performing a scan, carry it out here
-			if (mImpl->rs422_list == nullptr) mImpl->ListConnectedDevices();
+			if (mImpl->rs422_list == nullptr) {
+				mImpl->rs422_list = new std::map<std::string, std::string>();
+                mImpl->ListConnectedDevices();
+            }
 
 			if (mImpl->fp != NULL)
 				this->Disconnect();
