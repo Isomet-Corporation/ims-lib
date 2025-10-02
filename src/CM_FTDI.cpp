@@ -35,6 +35,15 @@
 #include "IMSSystem.h"
 #include "PrivateUtil.h"
 
+#define DMA_PERFORMANCE_MEASUREMENT_MODE
+
+#if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
+#include "boost/chrono.hpp"
+#endif
+
+using HRClock = std::chrono::high_resolution_clock;
+using us = std::chrono::microseconds;
+
 // Workaround because FTDI Driver is not compatible with VC14.0 (2015)
 #if (_MSC_VER >= 1900)
 extern "C" { FILE __iob_func[3] = { *stdin,*stdout,*stderr }; }
@@ -128,7 +137,7 @@ namespace iMS {
 	const std::list<std::string> CM_FTDI::Impl::SerialNumberPrefix = std::list<std::string>({ "iMS", "iDDS", "iCSA" });
 
 	// Default Constructor
-	CM_FTDI::CM_FTDI() : p_Impl(new CM_FTDI::Impl(this))
+	CM_FTDI::CM_FTDI() : pImpl(new CM_FTDI::Impl(this))
 	{
 		sendTimeout = std::chrono::milliseconds(50);
 		rxTimeout = std::chrono::milliseconds(5000);
@@ -140,13 +149,13 @@ namespace iMS {
 		// v1.0.1 Clean up threads if destroyed unexpectedly
 		if (DeviceIsOpen) this->Disconnect();
 
-		delete p_Impl;
-		p_Impl = nullptr;
+		delete pImpl;
+		pImpl = nullptr;
 	}
 
 	const std::string& CM_FTDI::Ident() const
 	{
-		return p_Impl->Ident;
+		return pImpl->Ident;
 	}
 
 	std::vector<IMSSystem> CM_FTDI::Impl::ListFtUsbDevices()
@@ -211,7 +220,7 @@ namespace iMS {
 	std::vector<IMSSystem> CM_FTDI::Discover(const ListBase<std::string>& PortMask)
 	{
 //		std::cout << "CM_FTDI::Discover()" << std::endl;
-		return p_Impl->ListFtUsbDevices();
+		return pImpl->ListFtUsbDevices();
 	}
 
 	void CM_FTDI::Connect(const std::string& serial)
@@ -221,41 +230,41 @@ namespace iMS {
 			FT_STATUS ftStatus;
 
 			// Open Device
-			ftStatus = FT_OpenEx((PVOID)serial.c_str(), FT_OPEN_BY_SERIAL_NUMBER, &p_Impl->ftdiDevice);
+			ftStatus = FT_OpenEx((PVOID)serial.c_str(), FT_OPEN_BY_SERIAL_NUMBER, &pImpl->ftdiDevice);
 			if (ftStatus != FT_OK) {
 				// FT_Open failed
 				return;
 			}
 			DeviceIsOpen = true;
 
-			ftStatus = FT_Purge(p_Impl->ftdiDevice, FT_PURGE_RX | FT_PURGE_TX); // Purge both Rx and Tx buffers
+			ftStatus = FT_Purge(pImpl->ftdiDevice, FT_PURGE_RX | FT_PURGE_TX); // Purge both Rx and Tx buffers
 
-            FT_SetLatencyTimer(p_Impl->ftdiDevice, 1); // in ms
+            FT_SetLatencyTimer(pImpl->ftdiDevice, 1); // in ms
 
 			// Assign Event Handle to receive notifications from device
 			DWORD EventMask = FT_EVENT_RXCHAR;
 #if defined(_WIN32)
-			p_Impl->hEvent = CreateEvent(
+			pImpl->hEvent = CreateEvent(
 				NULL,
 				false, // auto-reset event
 				false, // non-signalled state
 				NULL
 				);
-			ftStatus = FT_SetEventNotification(p_Impl->ftdiDevice, EventMask, (PVOID)p_Impl->hEvent);
+			ftStatus = FT_SetEventNotification(pImpl->ftdiDevice, EventMask, (PVOID)pImpl->hEvent);
 
             // Used to unblock the waiting threads
-            p_Impl->hShutdown = CreateEvent(NULL, TRUE, FALSE, NULL);
+            pImpl->hShutdown = CreateEvent(NULL, TRUE, FALSE, NULL);
 #elif defined(__linux__)
             // allocate and initialise POSIX event object
-            p_Impl->eh = new FT_Event;
-            if (pthread_mutex_init(&p_Impl->eh->eMutex, NULL) != 0) {
+            pImpl->eh = new FT_Event;
+            if (pthread_mutex_init(&pImpl->eh->eMutex, NULL) != 0) {
                 // handle error...
             }
-            if (pthread_cond_init(&p_Impl->eh->eCondVar, NULL) != 0) {
+            if (pthread_cond_init(&pImpl->eh->eCondVar, NULL) != 0) {
                 // handle error...
             }
 
-            ftStatus = FT_SetEventNotification(p_Impl->ftdiDevice, EventMask, (PVOID)p_Impl->eh);
+            ftStatus = FT_SetEventNotification(pImpl->ftdiDevice, EventMask, (PVOID)pImpl->eh);
             // FT_SetEventNotification returns immediately.  When RXCHAR arrives, D2XX should signal the condvar.
 #endif
 			// Clear Message Lists
@@ -273,10 +282,10 @@ namespace iMS {
 			parserThread = std::thread(&CM_FTDI::MessageListManager, this);
 
 			// Start Memory Transferer Thread
-			p_Impl->memoryTransferThread = std::thread(&CM_FTDI::MemoryTransfer, this);
+			pImpl->memoryTransferThread = std::thread(&CM_FTDI::MemoryTransfer, this);
 
 			// Start Interrupt receiving thread
-			p_Impl->interruptThread = std::thread(&CM_FTDI::InterruptReceiver, this);
+			pImpl->interruptThread = std::thread(&CM_FTDI::InterruptReceiver, this);
 		}
 	}
 
@@ -331,30 +340,30 @@ namespace iMS {
 			DeviceIsOpen = false;  // must set this to cancel threads
             m_txcond.notify_all();
 #if defined(_WIN32)
-            SetEvent(p_Impl->hShutdown);
+            SetEvent(pImpl->hShutdown);
 #elif defined(__linux__)
-            if (p_Impl->eh) {
+            if (pImpl->eh) {
                 // Wake the waiting ResponseReceiver loop
-                pthread_mutex_lock(&p_Impl->eh->eMutex);
-                pthread_cond_broadcast(&p_Impl->eh->eCondVar);
-                pthread_mutex_unlock(&p_Impl->eh->eMutex);
+                pthread_mutex_lock(&pImpl->eh->eMutex);
+                pthread_cond_broadcast(&pImpl->eh->eCondVar);
+                pthread_mutex_unlock(&pImpl->eh->eMutex);
             }
 #endif
 			senderThread.join();
 			receiverThread.join();
 			parserThread.join();
-			p_Impl->memoryTransferThread.join();  // TODO: need to abort in-flight transfers
-			p_Impl->interruptThread.join();
+			pImpl->memoryTransferThread.join();  // TODO: need to abort in-flight transfers
+			pImpl->interruptThread.join();
 
-			FT_Close(p_Impl->ftdiDevice);
+			FT_Close(pImpl->ftdiDevice);
 
 			// Clear Up
 #if defined(__linux__)
-            if (p_Impl->eh) {
-                pthread_cond_destroy(&p_Impl->eh->eCondVar);
-                pthread_mutex_destroy(&p_Impl->eh->eMutex);
-                delete p_Impl->eh;
-                p_Impl->eh = nullptr;
+            if (pImpl->eh) {
+                pthread_cond_destroy(&pImpl->eh->eCondVar);
+                pthread_mutex_destroy(&pImpl->eh->eMutex);
+                delete pImpl->eh;
+                pImpl->eh = nullptr;
             }
 #endif
 		}
@@ -404,13 +413,13 @@ namespace iMS {
                     int i = 73; // max msg size
                     const char c = 0;
                     do {
-                        ftStatus = FT_Write(p_Impl->ftdiDevice, (LPVOID)&c, 1, (LPDWORD)&numBytesWritten);
+                        ftStatus = FT_Write(pImpl->ftdiDevice, (LPVOID)&c, 1, (LPDWORD)&numBytesWritten);
                         i -= numBytesWritten;
                     } while (!i);
                     break;
                 }
 
-                ftStatus = FT_Write(p_Impl->ftdiDevice, (LPVOID)&b[totalBytesWritten], (static_cast<DWORD>(b.size()) - totalBytesWritten), (LPDWORD)&numBytesWritten);
+                ftStatus = FT_Write(pImpl->ftdiDevice, (LPVOID)&b[totalBytesWritten], (static_cast<DWORD>(b.size()) - totalBytesWritten), (LPDWORD)&numBytesWritten);
                 totalBytesWritten += numBytesWritten;
                 if (ftStatus != FT_OK)
                 {
@@ -436,7 +445,7 @@ namespace iMS {
 	{
         unsigned char RxBuffer[4096]; // same size as on-chip buffer
 #if defined(_WIN32)
-        HANDLE waitHandles[2] = { p_Impl->hEvent, p_Impl->hShutdown };
+        HANDLE waitHandles[2] = { pImpl->hEvent, pImpl->hShutdown };
 
         while (DeviceIsOpen)
 		{
@@ -447,13 +456,13 @@ namespace iMS {
             if (waitResult == WAIT_OBJECT_0) {
                 DWORD BytesAvailable = 0, eventStatus, txBytes;
 
-			    FT_STATUS status = FT_GetStatus(p_Impl->ftdiDevice, &BytesAvailable, &txBytes, &eventStatus);
+			    FT_STATUS status = FT_GetStatus(pImpl->ftdiDevice, &BytesAvailable, &txBytes, &eventStatus);
                 if (status != FT_OK || BytesAvailable == 0) continue;
 
                 DWORD BytesRead = 0;
                 if (BytesAvailable > sizeof(RxBuffer)) BytesAvailable = sizeof(RxBuffer);
 
-                if (FT_Read(p_Impl->ftdiDevice, RxBuffer, BytesAvailable, &BytesRead) == FT_OK && BytesRead > 0) {
+                if (FT_Read(pImpl->ftdiDevice, RxBuffer, BytesAvailable, &BytesRead) == FT_OK && BytesRead > 0) {
                     {
                         std::scoped_lock lock(m_rxmutex);
                         for (DWORD i = 0; i < BytesRead; i++) {
@@ -467,7 +476,7 @@ namespace iMS {
 #elif defined(__linux__)
 
         // Linux: wait on the FT_Event condvar which FTDI will signal
-        FT_Event *eh = p_Impl->eh;
+        FT_Event *eh = pImpl->eh;
 
         while (DeviceIsOpen) {
             // lock and wait until we are signalled or shutdown
@@ -486,7 +495,7 @@ namespace iMS {
 
             // Now check FTDI status and read any available bytes
             DWORD BytesAvailable = 0, eventStatus = 0, txBytes = 0;
-            FT_STATUS status = FT_GetStatus(p_Impl->ftdiDevice, &BytesAvailable, &txBytes, &eventStatus);
+            FT_STATUS status = FT_GetStatus(pImpl->ftdiDevice, &BytesAvailable, &txBytes, &eventStatus);
             if (status != FT_OK) {
                 // handle error (optionally break)
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -500,7 +509,7 @@ namespace iMS {
             DWORD BytesRead = 0;
             if (BytesAvailable > sizeof(RxBuffer)) BytesAvailable = sizeof(RxBuffer);
 
-            if (FT_Read(p_Impl->ftdiDevice, RxBuffer, BytesAvailable, &BytesRead) == FT_OK && BytesRead > 0) {
+            if (FT_Read(pImpl->ftdiDevice, RxBuffer, BytesAvailable, &BytesRead) == FT_OK && BytesRead > 0) {
                 {
                     std::scoped_lock lock(m_rxmutex);
                     for (DWORD i = 0; i < BytesRead; ++i) m_rxCharQueue.push(RxBuffer[i]);
@@ -512,10 +521,14 @@ namespace iMS {
 #endif
 	}
 
-	bool CM_FTDI::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
+	bool CM_RS422::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
+		(void)uuid;
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "Starting memory download idx = " << image_index << ", " << arr.size() << " bytes at address 0x" 
+            << std::hex << std::setfill('0') << std::setw(2) << start_addr;
+
 		// Only proceed if idle
-		if (p_Impl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
+		if (pImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
 			return false;
 		}
@@ -526,21 +539,26 @@ namespace iMS {
 		length = (((length - 1) / FastTransfer::TRANSFER_GRANULARITY) + 1) * FastTransfer::TRANSFER_GRANULARITY;
 		arr.resize(length);  // Increase the buffer size to the transfer granularity
 		{
-			std::unique_lock<std::mutex> tfr_lck{ p_Impl->m_tfrmutex };
-			p_Impl->fti = new FastTransfer(arr, start_addr, length, image_index);
+			std::unique_lock<std::mutex> tfr_lck{ pImpl->m_tfrmutex };
+			pImpl->fti = new FastTransfer(arr, start_addr, length, image_index);
 		}
 
 		// Signal thread to do the grunt work
-		p_Impl->FastTransferStatus.store(_FastTransferStatus::DOWNLOADING);
-		p_Impl->m_tfrcond.notify_one();
+		pImpl->FastTransferStatus.store(_FastTransferStatus::DOWNLOADING);
+		pImpl->m_tfrcond.notify_one();
 
 		return true;
 	}
 
-	bool CM_FTDI::MemoryUpload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int len, int image_index, const std::array<uint8_t, 16>& uuid)
+	bool CM_RS422::MemoryUpload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int len, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
+		(void)uuid;
+
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "Starting memory upload idx = " << image_index << ", " << len << " bytes at address 0x" 
+            << std::hex << std::setfill('0') << std::setw(2) << start_addr;
+
 		// Only proceed if idle
-		if (p_Impl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
+		if (pImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
 			return false;
 		}
@@ -561,134 +579,173 @@ namespace iMS {
 		}
 
 		{
-			std::unique_lock<std::mutex> tfr_lck{ p_Impl->m_tfrmutex };
-			p_Impl->fti = new FastTransfer(arr, start_addr, len, image_index);
+			std::unique_lock<std::mutex> tfr_lck{ pImpl->m_tfrmutex };
+			pImpl->fti = new FastTransfer(arr, start_addr, len, image_index);
 		}
 
 		// Signal thread to do the grunt work
-		p_Impl->FastTransferStatus.store(_FastTransferStatus::UPLOADING);
-		p_Impl->m_tfrcond.notify_one();
+		pImpl->FastTransferStatus.store(_FastTransferStatus::UPLOADING);
+		pImpl->m_tfrcond.notify_one();
 
 		return true;
 	}
 
-	void CM_FTDI::MemoryTransfer()
+	void CM_RS422::MemoryTransfer()
 	{
-		while (DeviceIsOpen == true)
+        unsigned int dl_max_in_flight = FastTransfer::DMA_MAX_TRANSACTION_SIZE / std::max<unsigned int>(1,FastTransfer::DL_TRANSFER_SIZE); 
+        unsigned int ul_max_in_flight = FastTransfer::DMA_MAX_TRANSACTION_SIZE / std::max<unsigned int>(1,FastTransfer::UL_TRANSFER_SIZE); 
+        std::deque<MessageHandle> inflight;
+
+        // Lambda to wait for any in-flight message to complete
+        auto waitForCompletion = [&](std::deque<MessageHandle>& inflight, unsigned int max_in_flight) {
+            std::vector<std::vector<uint8_t>> completedPayloads;
+
+            std::unique_lock<std::mutex> lock(m_listmutex);
+            m_listcv.wait(lock, [&]() {
+                bool anyRemoved = false;
+
+                for (auto it = inflight.begin(); it != inflight.end(); ) {
+                    auto handle = *it;
+                    bool done = false;
+                    std::vector<uint8_t> payload;
+
+                    for (const auto& msg : m_list) {
+                        if (msg->getMessageHandle() == handle) {
+                            auto resp = msg->Response();
+                            if (resp->Done()) {
+                                if (pImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
+                                    payload = resp->Payload<std::vector<uint8_t>>(); // collect locally
+                                }
+                                done = true;
+                                break;
+                            }
+                            auto status = msg->getStatus();
+                            if (status != Message::Status::UNSENT &&
+                                status != Message::Status::SENT &&
+                                status != Message::Status::RX_PARTIAL &&
+                                status != Message::Status::RX_OK &&
+                                status != Message::Status::RX_ERROR_VALID)
+                            {
+                                done = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (done) {
+                        if (!payload.empty()) completedPayloads.push_back(std::move(payload));
+                        it = inflight.erase(it);
+                        anyRemoved = true;
+                    } else {
+                        ++it;
+                    }
+                }
+
+                return anyRemoved || inflight.size() < max_in_flight;
+            });
+                lock.unlock();
+
+            // Append upload payloads after releasing the lock
+            for (auto& p : completedPayloads) {
+                pImpl->fti->m_data.insert(pImpl->fti->m_data.end(), p.begin(), p.end());
+            }
+        };       
+
+
+		while (DeviceIsOpen)
 		{
 			{
-				std::unique_lock<std::mutex> lck{ p_Impl->m_tfrmutex };
-				while (!p_Impl->m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return p_Impl->fti != nullptr; }))
-				{
-					if (p_Impl->FastTransferStatus.load() != _FastTransferStatus::IDLE)
-					{
-						break;
-					}
-					// Timeout every 100ms to allow threads to terminate on disconnect
-					if (DeviceIsOpen == false) break;
-				}
-				if (DeviceIsOpen == false)
-				{
-					// End thread
-					lck.unlock();
-					break;
-				}
-				//PUCHAR dataBuffer;
-				//try
-				//{
-				/*if (FastTransfer::DL_TRANSFER_SIZE > FastTransfer::UL_TRANSFER_SIZE)
-				dataBuffer = new UCHAR[FastTransfer::DL_TRANSFER_SIZE];
-				else
-				dataBuffer = new UCHAR[FastTransfer::UL_TRANSFER_SIZE];*/
-				//}
-				//catch (std::bad_alloc& exc)
-				//{
-				//					std::cout << exc.what() << std::endl;
-				//}
+				std::unique_lock<std::mutex> lck{ pImpl->m_tfrmutex };
+				pImpl->m_tfrcond.wait(lck, [&] {return !DeviceIsOpen || pImpl->fti != nullptr; });
+                if (!DeviceIsOpen || (pImpl->FastTransferStatus.load() == _FastTransferStatus::IDLE)) continue;
+
 				LONG bytesTransferred = 0;
 
-				if (p_Impl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) p_Impl->fti->m_data.clear();
+				if (pImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) pImpl->fti->m_data.clear();
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 				boost::chrono::steady_clock::time_point start = boost::chrono::steady_clock::now();
-				boost::chrono::duration<double, boost::milli> copy_time(0.0);
-				boost::chrono::duration<double, boost::milli> xfer_time(0.0);
+				boost::chrono::duration<double, boost::milli> sending_time(0.0);
+                auto t_pre_xfer = boost::chrono::steady_clock::now();
 #endif
 
-				for (unsigned int i = 0; i < p_Impl->fti->m_transCount; i++) {
-					// Prime DMA Transfer
-					HostReport *iorpt;
-					//uint32_t len = static_cast<uint32_t>(p_Impl->fti->m_transBytesRemaining);
-					uint32_t addr = p_Impl->fti->m_addr + i * FastTransfer::TRANSFER_GRANULARITY;
-					if (p_Impl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
-						iorpt = new HostReport(HostReport::Actions::CTRLR_IMAGE, HostReport::Dir::WRITE, ((p_Impl->fti->m_currentTrans - 1) & 0xFFFF));
-						if (p_Impl->fti->m_currentTrans > 0x10000) {
-							ReportFields f = iorpt->Fields();
-							f.context = ((p_Impl->fti->m_currentTrans - 1) >> 16);
-							iorpt->Fields(f);
-						}
-						LONG len = FastTransfer::DL_TRANSFER_SIZE;
-						if (p_Impl->fti->m_transBytesRemaining < FastTransfer::DL_TRANSFER_SIZE) len = p_Impl->fti->m_transBytesRemaining;
-						auto buf_start = p_Impl->fti->m_data_it;
-						auto buf_end = p_Impl->fti->m_data_it + len;
-						std::vector<uint8_t> dataBuffer(buf_start, buf_end);
-						//						std::copy(buf_start, buf_end, dataBuffer);
-						p_Impl->fti->m_data_it += len;
-						p_Impl->fti->m_transBytesRemaining -= len;
-						iorpt->Payload<std::vector<uint8_t>>(dataBuffer);
-						DeviceReport resp = this->SendMsgBlocking(*iorpt);
-						delete iorpt;
-						if (!resp.Done()) {
-							break;
-						}
-						bytesTransferred += len;
-					}
-					else if (p_Impl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
-						uint16_t len = FastTransfer::UL_TRANSFER_SIZE;
-						if (p_Impl->fti->m_transBytesRemaining < FastTransfer::UL_TRANSFER_SIZE) len = p_Impl->fti->m_transBytesRemaining;
-						iorpt = new HostReport(HostReport::Actions::CTRLR_IMAGE, HostReport::Dir::READ, ((p_Impl->fti->m_currentTrans - 1) & 0xFFFF));
-						ReportFields f = iorpt->Fields();
-						if (p_Impl->fti->m_currentTrans > 0x10000) {
-							f.context = ((p_Impl->fti->m_currentTrans - 1) >> 16);
-						}
-						f.len = len;
-						iorpt->Fields(f);
-						DeviceReport resp = this->SendMsgBlocking(*iorpt);
-						if (resp.Done()) {
-							//							std::copy(resp.Payload<std::vector<uint8_t>>().cbegin(), resp.Payload<std::vector<uint8_t>>().cend(), dataBuffer);
-							std::vector<uint8_t> vfy_data = resp.Payload<std::vector<uint8_t>>();
-							p_Impl->fti->m_data.insert(p_Impl->fti->m_data.end(), vfy_data.begin(), vfy_data.end());
-							//							p_Impl->fti->m_data_it += len;
-							p_Impl->fti->m_transBytesRemaining -= len;
-							bytesTransferred += len;
-						}
-						else {
-							break;
-						}
-						delete iorpt;
-					}
-					// Set up index data for next DMA Transaction
-					p_Impl->fti->startNextTransaction();
-				}
+                bool downloading = pImpl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING;
+                unsigned int max_in_flight = downloading ? dl_max_in_flight : ul_max_in_flight;
+                for (unsigned int i = 0; i < pImpl->fti->m_transCount; i++) {
+                    if (pImpl->FastTransferStatus.load() == _FastTransferStatus::IDLE)
+                        break;
+
+                    HostReport::Dir dir = downloading ? HostReport::Dir::WRITE : HostReport::Dir::READ;
+                    uint32_t transfer_size = downloading ? FastTransfer::DL_TRANSFER_SIZE : FastTransfer::UL_TRANSFER_SIZE;
+
+                    LONG len = std::min<LONG>(static_cast<LONG>(pImpl->fti->m_transBytesRemaining),
+                                        static_cast<LONG>(transfer_size));
+
+                    HostReport* iorpt = new HostReport(
+                        HostReport::Actions::CTRLR_IMAGE,
+                        dir,
+                        ((pImpl->fti->m_currentTrans - 1) & 0xFFFF));
+
+                    ReportFields f = iorpt->Fields();
+                    if (pImpl->fti->m_currentTrans > 0x10000) {
+                        f.context = static_cast<std::uint8_t>((pImpl->fti->m_currentTrans - 1) >> 16);
+                    }
+                    if (!downloading) f.len = static_cast<uint16_t>(len);
+                    iorpt->Fields(f);
+
+                    if (downloading) {
+                        auto buf_start = pImpl->fti->m_data_it;
+                        auto buf_end   = pImpl->fti->m_data_it + len;
+                        std::vector<uint8_t> dataBuffer(buf_start, buf_end);
+                        iorpt->Payload<std::vector<uint8_t>>(dataBuffer);
+                        pImpl->fti->m_data_it += len;
+                    }
+
+                    pImpl->fti->m_transBytesRemaining -= len;
+                    bytesTransferred += len;
+
+                    // Send asynchronously
+                    auto handle = this->SendMsg(*iorpt);
+                    inflight.push_back(handle);
+
+                    delete iorpt;
+
+                    pImpl->fti->startNextTransaction();
+
+                    if (inflight.size() >= max_in_flight) {
+#if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
+                        auto t_final = boost::chrono::steady_clock::now();
+                        sending_time += (t_final - t_pre_xfer);
+#endif
+                        waitForCompletion(inflight, max_in_flight);
+#if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
+                        t_pre_xfer = boost::chrono::steady_clock::now();
+#endif
+                    }
+                }
+
+                // Drain remaining messages
+                while (!inflight.empty()) {
+                    waitForCompletion(inflight, max_in_flight);
+                }
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 				auto end = boost::chrono::steady_clock::now();
 				auto diff = end - start;
 				double transferTime = boost::chrono::duration <double, boost::milli>(diff).count();
 				double transferSpeed = (double)bytesTransferred / ((transferTime / 1000.0) * 1024 * 1024);
-				std::cout << "DMA Overall Execution time " << transferTime << " ms. Calculated Transfer speed " << transferSpeed << " MB/s" << std::endl;
-				std::cout << "   Time spent in data management " << copy_time.count() << " ms." << std::endl;
-				std::cout << "   Time spent on USB transfer activity " << xfer_time.count() << " ms." << std::endl;
-				std::cout << "   Calculated overhead " << transferTime - copy_time.count() - xfer_time.count() << " ms." << std::endl;
-				transferSpeed = (double)bytesTransferred / ((xfer_time.count() / 1000.0) * 1024 * 1024);
-				std::cout << "   USB sustained transfer speed " << transferSpeed << " MB/s" << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::info) << "DMA Overall Execution time " << transferTime << " ms. Calculated Transfer speed " << transferSpeed << " MB/s";
+				BOOST_LOG_SEV(lg::get(), sev::info) << "   Time spent in blocked send " << sending_time.count() << " ms.";
+				BOOST_LOG_SEV(lg::get(), sev::info) << "   Calculated overhead " << transferTime - sending_time.count() << " ms.";
+				transferSpeed = (double)bytesTransferred / ((sending_time.count() / 1000.0) * 1024 * 1024);
+				BOOST_LOG_SEV(lg::get(), sev::info) << "   USB sustained transfer speed " << transferSpeed << " MB/s";
 #endif
 
 				//delete[] dataBuffer;
-				delete p_Impl->fti;
-				p_Impl->fti = nullptr;
+				delete pImpl->fti;
+				pImpl->fti = nullptr;
 
-				p_Impl->FastTransferStatus.store(_FastTransferStatus::IDLE);
+				pImpl->FastTransferStatus.store(_FastTransferStatus::IDLE);
 				mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_COMPLETE, bytesTransferred);
 			}
 		}

@@ -248,7 +248,7 @@ namespace iMS {
 	}
 
 	// Default Constructor
-	CM_RS422::CM_RS422() : mImpl(new CM_RS422::Impl(this))
+	CM_RS422::CM_RS422() : pImpl(new CM_RS422::Impl(this))
 	{
 		sendTimeout = std::chrono::milliseconds(1000);  // needs to be a bit longer than some of the other CMs otherwise connection attempt can fail
 		rxTimeout = std::chrono::milliseconds(5000);
@@ -259,21 +259,21 @@ namespace iMS {
 	{
 		this->Disconnect();
 		 
-		delete mImpl;
-		mImpl = NULL;
+		delete pImpl;
+		pImpl = NULL;
 	}
 
 	const std::string& CM_RS422::Ident() const
 	{
-		return mImpl->Ident;
+		return pImpl->Ident;
 	}
 
 	std::vector<IMSSystem> CM_RS422::Discover(const ListBase<std::string>& PortMask)
 	{
 //		std::cout << "CM_RS422::Discover()" << std::endl;
-		mImpl->PortMask = PortMask;
-		mImpl->rs422_list = new std::map<std::string, std::string>();
-		std::vector<IMSSystem> v = mImpl->ListConnectedDevices();
+		pImpl->PortMask = PortMask;
+		pImpl->rs422_list = new std::map<std::string, std::string>();
+		std::vector<IMSSystem> v = pImpl->ListConnectedDevices();
 		return v;
 	}
 
@@ -282,12 +282,12 @@ namespace iMS {
 		if (!DeviceIsOpen)
 		{
 			// If connecting without first performing a scan, carry it out here
-			if (mImpl->rs422_list == nullptr) {
-				mImpl->rs422_list = new std::map<std::string, std::string>();
-                mImpl->ListConnectedDevices();
+			if (pImpl->rs422_list == nullptr) {
+				pImpl->rs422_list = new std::map<std::string, std::string>();
+                pImpl->ListConnectedDevices();
             }
 
-			if (mImpl->fp != NULL)
+			if (pImpl->fp != NULL)
 				this->Disconnect();
 
 			std::string portname;
@@ -295,9 +295,9 @@ namespace iMS {
 			std::string serial_ = serial.substr(0, serial.find_first_of(":"));
 
 			// Look for serial number in internal list
-			if (mImpl->rs422_list->count(serial_) > 0) {
+			if (pImpl->rs422_list->count(serial_) > 0) {
 				// Found it
-				portname = (*mImpl->rs422_list)[serial_];
+				portname = (*pImpl->rs422_list)[serial_];
 			}
 			else {
 				// search for the word "COM" and if found, substring from it to the end of the string.
@@ -321,7 +321,7 @@ namespace iMS {
 			const char* port = portname.c_str();
 #endif
 
-			mImpl->fp = CreateFile(port,
+			pImpl->fp = CreateFile(port,
 				GENERIC_READ | GENERIC_WRITE,
 				0, /* exclusive access */
 				NULL, /* no security attrs */
@@ -331,26 +331,26 @@ namespace iMS {
 				);
 
             // Used to unblock the waiting threads
-            mImpl->hShutdown = CreateEvent(NULL, TRUE, FALSE, NULL);
+            pImpl->hShutdown = CreateEvent(NULL, TRUE, FALSE, NULL);
 
 #ifdef UNICODE
 			delete[] port;
 #endif
 
-			if (mImpl->fp == INVALID_HANDLE_VALUE) return; //Not present on this port
+			if (pImpl->fp == INVALID_HANDLE_VALUE) return; //Not present on this port
 
 			COMMTIMEOUTS ctmoNew = { 0 };
 
-			GetCommTimeouts(mImpl->fp, &ctmoNew);
+			GetCommTimeouts(pImpl->fp, &ctmoNew);
 			ctmoNew.ReadIntervalTimeout = 1;
 			ctmoNew.ReadTotalTimeoutConstant = 1;
 			ctmoNew.ReadTotalTimeoutMultiplier = 1;
 			ctmoNew.WriteTotalTimeoutMultiplier = 20;
 			ctmoNew.WriteTotalTimeoutConstant = 250;
-			if (!SetCommTimeouts(mImpl->fp, &ctmoNew))
+			if (!SetCommTimeouts(pImpl->fp, &ctmoNew))
 			{
 				// We need timeouts.
-				CloseHandle(mImpl->fp);
+				CloseHandle(pImpl->fp);
 				return;
 			}
 
@@ -358,7 +358,7 @@ namespace iMS {
 			DCB stDeviceControl = { 0 };
 			stDeviceControl.DCBlength = sizeof(stDeviceControl);
 
-			if (GetCommState(mImpl->fp, &stDeviceControl))
+			if (GetCommState(pImpl->fp, &stDeviceControl))
 			{
 				stDeviceControl.BaudRate = CBR_115200;
 				stDeviceControl.Parity = NOPARITY;
@@ -366,14 +366,14 @@ namespace iMS {
 				stDeviceControl.StopBits = ONESTOPBIT;
 			}
 			else {
-				CloseHandle(mImpl->fp);
+				CloseHandle(pImpl->fp);
 				return;
 			}
 
-			if (!SetCommState(mImpl->fp, &stDeviceControl))
+			if (!SetCommState(pImpl->fp, &stDeviceControl))
 			{
 				// We cannot set the serial port parameters, so close it
-				CloseHandle(mImpl->fp);
+				CloseHandle(pImpl->fp);
 				return;
 			}
 
@@ -394,10 +394,10 @@ namespace iMS {
 			parserThread = std::thread(&CM_RS422::MessageListManager, this);
 
 			// Start Memory Transferer Thread
-			mImpl->memoryTransferThread = std::thread(&CM_RS422::MemoryTransfer, this);
+			pImpl->memoryTransferThread = std::thread(&CM_RS422::MemoryTransfer, this);
 
 			// Start Interrupt receiving thread
-			mImpl->interruptThread = std::thread(&CM_RS422::InterruptReceiver, this);
+			pImpl->interruptThread = std::thread(&CM_RS422::InterruptReceiver, this);
 		}
 	}
 
@@ -405,11 +405,11 @@ namespace iMS {
 	{
 		if (DeviceIsOpen)
 		{
-			if (mImpl->fp == NULL) {
+			if (pImpl->fp == NULL) {
 				DeviceIsOpen = false;
                 m_txcond.notify_all();
-                mImpl->m_tfrcond.notify_one();
-                SetEvent(mImpl->hShutdown);
+                pImpl->m_tfrcond.notify_one();
+                SetEvent(pImpl->hShutdown);
 				return;
 			}
 
@@ -459,19 +459,19 @@ namespace iMS {
 			// Stop Threads
 			DeviceIsOpen = false;  // must set this to cancel threads
             m_txcond.notify_all();
-            mImpl->m_tfrcond.notify_one();
-            SetEvent(mImpl->hShutdown);
+            pImpl->m_tfrcond.notify_one();
+            SetEvent(pImpl->hShutdown);
 
 			senderThread.join();
 			receiverThread.join();
 			parserThread.join();
-			mImpl->memoryTransferThread.join();  // TODO: need to abort in-flight transfers
-			mImpl->interruptThread.join();
+			pImpl->memoryTransferThread.join();  // TODO: need to abort in-flight transfers
+			pImpl->interruptThread.join();
 
-			if (mImpl->fp != NULL)
+			if (pImpl->fp != NULL)
 			{
-				CloseHandle(mImpl->fp);
-				mImpl->fp = NULL;
+				CloseHandle(pImpl->fp);
+				pImpl->fp = NULL;
 			}
 		}
 
@@ -523,20 +523,20 @@ namespace iMS {
                 }
 
                 // Timeout allows thread to cancel message
-                std::unique_lock<std::timed_mutex> wrlck(mImpl->m_rdwrmutex, std::chrono::milliseconds(10));
+                std::unique_lock<std::timed_mutex> wrlck(pImpl->m_rdwrmutex, std::chrono::milliseconds(10));
                 if (!wrlck.owns_lock()) {
                     continue;
                 }
 
                 DWORD bytesWritten = 0;
-                if (!WriteFile(mImpl->fp, &b[totalBytesWritten], (DWORD)(b.size() - totalBytesWritten), &bytesWritten, &osWrite)) {
+                if (!WriteFile(pImpl->fp, &b[totalBytesWritten], (DWORD)(b.size() - totalBytesWritten), &bytesWritten, &osWrite)) {
                     if (GetLastError() == ERROR_IO_PENDING) {
                         dwRes = WaitForSingleObject(osWrite.hEvent, INFINITE);
                         switch (dwRes)
                         {
                             // Event occurred.
                         case WAIT_OBJECT_0: {
-                            if (!GetOverlappedResult(mImpl->fp, &osWrite, &bytesWritten, FALSE)) {
+                            if (!GetOverlappedResult(pImpl->fp, &osWrite, &bytesWritten, FALSE)) {
                                 m->setStatus(Message::Status::SEND_ERROR);
                             }
                             break;
@@ -596,11 +596,11 @@ namespace iMS {
         OVERLAPPED osReader = { 0 };
         osReader.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-        HANDLE waitHandles[2] = { osReader.hEvent, mImpl->hShutdown };
+        HANDLE waitHandles[2] = { osReader.hEvent, pImpl->hShutdown };
 
 #if USE_WAITCOMM_EVENT
         // Configure event mask so we get notified when chars arrive
-        if (!SetCommMask(mImpl->fp, EV_RXCHAR)) {
+        if (!SetCommMask(pImpl->fp, EV_RXCHAR)) {
             BOOST_LOG_SEV(lg::get(), sev::error) << "SetCommMask failed";
             CloseHandle(osReader.hEvent);
             return;
@@ -617,21 +617,21 @@ namespace iMS {
             // MODE A: WaitCommEvent signals us when data arrives
             //----------------------------------------------------
             DWORD evtMask = 0;
-            BOOL ok = WaitCommEvent(mImpl->fp, &evtMask, &osReader);
+            BOOL ok = WaitCommEvent(pImpl->fp, &evtMask, &osReader);
             if (!ok && GetLastError() == ERROR_IO_PENDING) {
                 // Wait until event signalled
                 if (WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE) != WAIT_OBJECT_0) continue;
 
 //                if (WaitForSingleObject(osReader.hEvent, INFINITE) != WAIT_OBJECT_0) continue;
-                if (!GetOverlappedResult(mImpl->fp, &osReader, &evtMask, FALSE)) continue;
+                if (!GetOverlappedResult(pImpl->fp, &osReader, &evtMask, FALSE)) continue;
             }
 
             if (evtMask & EV_RXCHAR) {
-                std::unique_lock<std::timed_mutex> rdlck(mImpl->m_rdwrmutex, std::chrono::milliseconds(10));
+                std::unique_lock<std::timed_mutex> rdlck(pImpl->m_rdwrmutex, std::chrono::milliseconds(10));
                 if (!rdlck.owns_lock()) continue;
 
                 // Now read what's available
-                ReadFile(mImpl->fp, chRead, sizeof(chRead), &bytesRead, NULL);
+                ReadFile(pImpl->fp, chRead, sizeof(chRead), &bytesRead, NULL);
             }
 
 #else            
@@ -640,10 +640,10 @@ namespace iMS {
             //----------------------------------------------------
             {
                 // Timeout allows thread to terminate
-                std::unique_lock<std::timed_mutex> rdlck(mImpl->m_rdwrmutex, std::chrono::milliseconds(10));
+                std::unique_lock<std::timed_mutex> rdlck(pImpl->m_rdwrmutex, std::chrono::milliseconds(10));
                 if (!rdlck.owns_lock()) continue;
 
-                BOOL ok = ReadFile(mImpl->fp, chRead, sizeof(chRead), &bytesRead, &osReader);
+                BOOL ok = ReadFile(pImpl->fp, chRead, sizeof(chRead), &bytesRead, &osReader);
                 if (!ok) {
                     if (GetLastError() == ERROR_IO_PENDING) {
                         // Wait for read completion
@@ -653,7 +653,7 @@ namespace iMS {
             
                         if (waitResult != WAIT_OBJECT_0) continue;
 
-                        if (!GetOverlappedResult(mImpl->fp, &osReader, &bytesRead, FALSE)) continue;
+                        if (!GetOverlappedResult(pImpl->fp, &osReader, &bytesRead, FALSE)) continue;
                     } else {
                         continue;
                     }
@@ -688,7 +688,7 @@ namespace iMS {
             << std::hex << std::setfill('0') << std::setw(2) << start_addr;
 
 		// Only proceed if idle
-		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
+		if (pImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
 			return false;
 		}
@@ -699,13 +699,13 @@ namespace iMS {
 		length = (((length - 1) / FastTransfer::TRANSFER_GRANULARITY) + 1) * FastTransfer::TRANSFER_GRANULARITY;
 		arr.resize(length);  // Increase the buffer size to the transfer granularity
 		{
-			std::unique_lock<std::mutex> tfr_lck{ mImpl->m_tfrmutex };
-			mImpl->fti = new FastTransfer(arr, start_addr, length, image_index);
+			std::unique_lock<std::mutex> tfr_lck{ pImpl->m_tfrmutex };
+			pImpl->fti = new FastTransfer(arr, start_addr, length, image_index);
 		}
 
 		// Signal thread to do the grunt work
-		mImpl->FastTransferStatus.store(_FastTransferStatus::DOWNLOADING);
-		mImpl->m_tfrcond.notify_one();
+		pImpl->FastTransferStatus.store(_FastTransferStatus::DOWNLOADING);
+		pImpl->m_tfrcond.notify_one();
 
 		return true;
 	}
@@ -718,7 +718,7 @@ namespace iMS {
             << std::hex << std::setfill('0') << std::setw(2) << start_addr;
 
 		// Only proceed if idle
-		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
+		if (pImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
 			return false;
 		}
@@ -739,13 +739,13 @@ namespace iMS {
 		}
 
 		{
-			std::unique_lock<std::mutex> tfr_lck{ mImpl->m_tfrmutex };
-			mImpl->fti = new FastTransfer(arr, start_addr, len, image_index);
+			std::unique_lock<std::mutex> tfr_lck{ pImpl->m_tfrmutex };
+			pImpl->fti = new FastTransfer(arr, start_addr, len, image_index);
 		}
 
 		// Signal thread to do the grunt work
-		mImpl->FastTransferStatus.store(_FastTransferStatus::UPLOADING);
-		mImpl->m_tfrcond.notify_one();
+		pImpl->FastTransferStatus.store(_FastTransferStatus::UPLOADING);
+		pImpl->m_tfrcond.notify_one();
 
 		return true;
 	}
@@ -773,7 +773,7 @@ namespace iMS {
                         if (msg->getMessageHandle() == handle) {
                             auto resp = msg->Response();
                             if (resp->Done()) {
-                                if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
+                                if (pImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
                                     payload = resp->Payload<std::vector<uint8_t>>(); // collect locally
                                 }
                                 done = true;
@@ -807,7 +807,7 @@ namespace iMS {
 
             // Append upload payloads after releasing the lock
             for (auto& p : completedPayloads) {
-                mImpl->fti->m_data.insert(mImpl->fti->m_data.end(), p.begin(), p.end());
+                pImpl->fti->m_data.insert(pImpl->fti->m_data.end(), p.begin(), p.end());
             }
         };       
 
@@ -815,13 +815,13 @@ namespace iMS {
 		while (DeviceIsOpen)
 		{
 			{
-				std::unique_lock<std::mutex> lck{ mImpl->m_tfrmutex };
-				mImpl->m_tfrcond.wait(lck, [&] {return !DeviceIsOpen || mImpl->fti != nullptr; });
-                if (!DeviceIsOpen || (mImpl->FastTransferStatus.load() == _FastTransferStatus::IDLE)) continue;
+				std::unique_lock<std::mutex> lck{ pImpl->m_tfrmutex };
+				pImpl->m_tfrcond.wait(lck, [&] {return !DeviceIsOpen || pImpl->fti != nullptr; });
+                if (!DeviceIsOpen || (pImpl->FastTransferStatus.load() == _FastTransferStatus::IDLE)) continue;
 
 				LONG bytesTransferred = 0;
 
-				if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) mImpl->fti->m_data.clear();
+				if (pImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) pImpl->fti->m_data.clear();
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 				boost::chrono::steady_clock::time_point start = boost::chrono::steady_clock::now();
@@ -829,39 +829,39 @@ namespace iMS {
                 auto t_pre_xfer = boost::chrono::steady_clock::now();
 #endif
 
-                bool downloading = mImpl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING;
+                bool downloading = pImpl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING;
                 unsigned int max_in_flight = downloading ? dl_max_in_flight : ul_max_in_flight;
-                for (unsigned int i = 0; i < mImpl->fti->m_transCount; i++) {
-                    if (mImpl->FastTransferStatus.load() == _FastTransferStatus::IDLE)
+                for (unsigned int i = 0; i < pImpl->fti->m_transCount; i++) {
+                    if (pImpl->FastTransferStatus.load() == _FastTransferStatus::IDLE)
                         break;
 
                     HostReport::Dir dir = downloading ? HostReport::Dir::WRITE : HostReport::Dir::READ;
                     uint32_t transfer_size = downloading ? FastTransfer::DL_TRANSFER_SIZE : FastTransfer::UL_TRANSFER_SIZE;
 
-                    LONG len = std::min<LONG>(static_cast<LONG>(mImpl->fti->m_transBytesRemaining),
+                    LONG len = std::min<LONG>(static_cast<LONG>(pImpl->fti->m_transBytesRemaining),
                                         static_cast<LONG>(transfer_size));
 
                     HostReport* iorpt = new HostReport(
                         HostReport::Actions::CTRLR_IMAGE,
                         dir,
-                        ((mImpl->fti->m_currentTrans - 1) & 0xFFFF));
+                        ((pImpl->fti->m_currentTrans - 1) & 0xFFFF));
 
                     ReportFields f = iorpt->Fields();
-                    if (mImpl->fti->m_currentTrans > 0x10000) {
-                        f.context = static_cast<std::uint8_t>((mImpl->fti->m_currentTrans - 1) >> 16);
+                    if (pImpl->fti->m_currentTrans > 0x10000) {
+                        f.context = static_cast<std::uint8_t>((pImpl->fti->m_currentTrans - 1) >> 16);
                     }
                     if (!downloading) f.len = static_cast<uint16_t>(len);
                     iorpt->Fields(f);
 
                     if (downloading) {
-                        auto buf_start = mImpl->fti->m_data_it;
-                        auto buf_end   = mImpl->fti->m_data_it + len;
+                        auto buf_start = pImpl->fti->m_data_it;
+                        auto buf_end   = pImpl->fti->m_data_it + len;
                         std::vector<uint8_t> dataBuffer(buf_start, buf_end);
                         iorpt->Payload<std::vector<uint8_t>>(dataBuffer);
-                        mImpl->fti->m_data_it += len;
+                        pImpl->fti->m_data_it += len;
                     }
 
-                    mImpl->fti->m_transBytesRemaining -= len;
+                    pImpl->fti->m_transBytesRemaining -= len;
                     bytesTransferred += len;
 
                     // Send asynchronously
@@ -870,7 +870,7 @@ namespace iMS {
 
                     delete iorpt;
 
-                    mImpl->fti->startNextTransaction();
+                    pImpl->fti->startNextTransaction();
 
                     if (inflight.size() >= max_in_flight) {
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
@@ -902,10 +902,10 @@ namespace iMS {
 #endif
 
 				//delete[] dataBuffer;
-				delete mImpl->fti;
-				mImpl->fti = nullptr;
+				delete pImpl->fti;
+				pImpl->fti = nullptr;
 
-				mImpl->FastTransferStatus.store(_FastTransferStatus::IDLE);
+				pImpl->FastTransferStatus.store(_FastTransferStatus::IDLE);
 				mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_COMPLETE, bytesTransferred);
 			}
 		}
