@@ -73,7 +73,7 @@ namespace iMS {
 		static const int DL_TRANSFER_SIZE = 64;
 		static const int UL_TRANSFER_SIZE = 64;
 		static const int TRANSFER_GRANULARITY = 64;
-		//static const long DMA_MAX_TRANSACTION_SIZE = 1048576;
+		static const long DMA_MAX_TRANSACTION_SIZE = 1024;
 		//static const int TRANSFER_QUEUE_SZ = 16;
 
 		boost::container::deque<uint8_t>& m_data;
@@ -500,7 +500,7 @@ namespace iMS {
             osWrite.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
             if (!osWrite.hEvent) continue;
             
-            std::chrono::time_point<HRClock> tm_start = HRClock::now();
+            auto tm_start = HRClock::now();
             while (totalBytesWritten < b.size() && (m->getStatus() != Message::Status::SEND_ERROR))
             {
                 if ((std::chrono::duration_cast<std::chrono::milliseconds>(HRClock::now() - tm_start)) > sendTimeout)
@@ -670,6 +670,8 @@ namespace iMS {
 	bool CM_RS422::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
 		(void)uuid;
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "Starting memory download idx = " << image_index << ", " << arr.size() << " bytes at address 0x" 
+            << std::hex << std::setfill('0') << std::setw(2) << start_addr;
 
 		// Only proceed if idle
 		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
@@ -697,6 +699,9 @@ namespace iMS {
 	bool CM_RS422::MemoryUpload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int len, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
 		(void)uuid;
+
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "Starting memory upload idx = " << image_index << ", " << len << " bytes at address 0x" 
+            << std::hex << std::setfill('0') << std::setw(2) << start_addr;
 
 		// Only proceed if idle
 		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
@@ -733,6 +738,66 @@ namespace iMS {
 
 	void CM_RS422::MemoryTransfer()
 	{
+        unsigned int dl_max_in_flight = FastTransfer::DMA_MAX_TRANSACTION_SIZE / std::max<unsigned int>(1,FastTransfer::DL_TRANSFER_SIZE); 
+        unsigned int ul_max_in_flight = FastTransfer::DMA_MAX_TRANSACTION_SIZE / std::max<unsigned int>(1,FastTransfer::UL_TRANSFER_SIZE); 
+        std::deque<MessageHandle> inflight;
+
+        // Lambda to wait for any in-flight message to complete
+        auto waitForCompletion = [&](std::deque<MessageHandle>& inflight, unsigned int max_in_flight) {
+            std::vector<std::vector<uint8_t>> completedPayloads;
+
+            std::unique_lock<std::mutex> lock(m_listmutex);
+            m_listcv.wait(lock, [&]() {
+                bool anyRemoved = false;
+
+                for (auto it = inflight.begin(); it != inflight.end(); ) {
+                    auto handle = *it;
+                    bool done = false;
+                    std::vector<uint8_t> payload;
+
+                    for (const auto& msg : m_list) {
+                        if (msg->getMessageHandle() == handle) {
+                            auto resp = msg->Response();
+                            if (resp->Done()) {
+                                if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
+                                    payload = resp->Payload<std::vector<uint8_t>>(); // collect locally
+                                }
+                                done = true;
+                                break;
+                            }
+                            auto status = msg->getStatus();
+                            if (status != Message::Status::UNSENT &&
+                                status != Message::Status::SENT &&
+                                status != Message::Status::RX_PARTIAL &&
+                                status != Message::Status::RX_OK &&
+                                status != Message::Status::RX_ERROR_VALID)
+                            {
+                                done = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (done) {
+                        if (!payload.empty()) completedPayloads.push_back(std::move(payload));
+                        it = inflight.erase(it);
+                        anyRemoved = true;
+                    } else {
+                        ++it;
+                    }
+                }
+
+                return anyRemoved || inflight.size() < max_in_flight;
+            });
+                lock.unlock();
+
+            // Append upload payloads after releasing the lock
+            for (auto& p : completedPayloads) {
+                mImpl->fti->m_data.insert(mImpl->fti->m_data.end(), p.begin(), p.end());
+            }
+        };       
+
+
 		while (DeviceIsOpen == true)
 		{
 			{
@@ -752,18 +817,7 @@ namespace iMS {
 					lck.unlock();
 					break;
 				}
-				//PUCHAR dataBuffer;
-				//try
-				//{
-				/*if (FastTransfer::DL_TRANSFER_SIZE > FastTransfer::UL_TRANSFER_SIZE)
-					dataBuffer = new UCHAR[FastTransfer::DL_TRANSFER_SIZE];
-				else
-					dataBuffer = new UCHAR[FastTransfer::UL_TRANSFER_SIZE];*/
-				//}
-				//catch (std::bad_alloc& exc)
-				//{
-				//					std::cout << exc.what() << std::endl;
-				//}
+
 				LONG bytesTransferred = 0;
 
 				if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) mImpl->fti->m_data.clear();
@@ -771,70 +825,68 @@ namespace iMS {
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 				boost::chrono::steady_clock::time_point start = boost::chrono::steady_clock::now();
 				boost::chrono::duration<double, boost::milli> sending_time(0.0);
+                auto t_pre_xfer = boost::chrono::steady_clock::now();
 #endif
 
-				for (unsigned int i = 0; i < mImpl->fti->m_transCount; i++) {
-					// Prime DMA Transfer
-					HostReport *iorpt;
-					//uint32_t len = static_cast<uint32_t>(mImpl->fti->m_transBytesRemaining);
-					//uint32_t addr = mImpl->fti->m_addr + i * FastTransfer::TRANSFER_GRANULARITY;
-					if (mImpl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
-						iorpt = new HostReport(HostReport::Actions::CTRLR_IMAGE, HostReport::Dir::WRITE, ((mImpl->fti->m_currentTrans-1) & 0xFFFF));
-						if (mImpl->fti->m_currentTrans > 0x10000) {
-							ReportFields f = iorpt->Fields();
-							f.context = static_cast<std::uint8_t>((mImpl->fti->m_currentTrans-1) >> 16);
-							iorpt->Fields(f);
-						}
-						LONG len = FastTransfer::DL_TRANSFER_SIZE;
-						if (mImpl->fti->m_transBytesRemaining < FastTransfer::DL_TRANSFER_SIZE) len = mImpl->fti->m_transBytesRemaining;
-						auto buf_start = mImpl->fti->m_data_it;
-						auto buf_end = mImpl->fti->m_data_it + len;
-						std::vector<uint8_t> dataBuffer(buf_start, buf_end);
-//						std::copy(buf_start, buf_end, dataBuffer);
-						mImpl->fti->m_data_it += len;
-						mImpl->fti->m_transBytesRemaining -= len;
-						iorpt->Payload<std::vector<uint8_t>>(dataBuffer);
+                bool downloading = mImpl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING;
+                unsigned int max_in_flight = downloading ? dl_max_in_flight : ul_max_in_flight;
+                for (unsigned int i = 0; i < mImpl->fti->m_transCount; i++) {
+                    if (mImpl->FastTransferStatus.load() == _FastTransferStatus::IDLE)
+                        break;
+
+                    HostReport::Dir dir = downloading ? HostReport::Dir::WRITE : HostReport::Dir::READ;
+                    uint32_t transfer_size = downloading ? FastTransfer::DL_TRANSFER_SIZE : FastTransfer::UL_TRANSFER_SIZE;
+
+                    LONG len = std::min<LONG>(static_cast<LONG>(mImpl->fti->m_transBytesRemaining),
+                                        static_cast<LONG>(transfer_size));
+
+                    HostReport* iorpt = new HostReport(
+                        HostReport::Actions::CTRLR_IMAGE,
+                        dir,
+                        ((mImpl->fti->m_currentTrans - 1) & 0xFFFF));
+
+                    ReportFields f = iorpt->Fields();
+                    if (mImpl->fti->m_currentTrans > 0x10000) {
+                        f.context = static_cast<std::uint8_t>((mImpl->fti->m_currentTrans - 1) >> 16);
+                    }
+                    if (!downloading) f.len = static_cast<uint16_t>(len);
+                    iorpt->Fields(f);
+
+                    if (downloading) {
+                        auto buf_start = mImpl->fti->m_data_it;
+                        auto buf_end   = mImpl->fti->m_data_it + len;
+                        std::vector<uint8_t> dataBuffer(buf_start, buf_end);
+                        iorpt->Payload<std::vector<uint8_t>>(dataBuffer);
+                        mImpl->fti->m_data_it += len;
+                    }
+
+                    mImpl->fti->m_transBytesRemaining -= len;
+                    bytesTransferred += len;
+
+                    // Send asynchronously
+                    auto handle = this->SendMsg(*iorpt);
+                    inflight.push_back(handle);
+
+                    delete iorpt;
+
+                    mImpl->fti->startNextTransaction();
+
+                    if (inflight.size() >= max_in_flight) {
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
-                        boost::chrono::steady_clock::time_point t_pre_xfer = boost::chrono::steady_clock::now();
-#endif
-						DeviceReport resp = this->SendMsgBlocking(*iorpt);
-#if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
-                        boost::chrono::steady_clock::time_point t_final = boost::chrono::steady_clock::now();
+                        auto t_final = boost::chrono::steady_clock::now();
                         sending_time += (t_final - t_pre_xfer);
 #endif
-						delete iorpt;
-						if (!resp.Done()) {
-							break;
-						}
-						bytesTransferred += len;
-					}
-					else if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
-						uint16_t len = FastTransfer::UL_TRANSFER_SIZE;
-						if (mImpl->fti->m_transBytesRemaining < FastTransfer::UL_TRANSFER_SIZE) len = static_cast<std::uint16_t>(mImpl->fti->m_transBytesRemaining);
-						iorpt = new HostReport(HostReport::Actions::CTRLR_IMAGE, HostReport::Dir::READ, ((mImpl->fti->m_currentTrans - 1) & 0xFFFF));
-						ReportFields f = iorpt->Fields();
-						if (mImpl->fti->m_currentTrans > 0x10000) {
-							f.context = static_cast<std::uint8_t>((mImpl->fti->m_currentTrans - 1) >> 16);
-						}
-						f.len = len;
-						iorpt->Fields(f);
-						DeviceReport resp = this->SendMsgBlocking(*iorpt);
-						if (resp.Done()) {
-//							std::copy(resp.Payload<std::vector<uint8_t>>().cbegin(), resp.Payload<std::vector<uint8_t>>().cend(), dataBuffer);
-							std::vector<uint8_t> vfy_data = resp.Payload<std::vector<uint8_t>>();
-							mImpl->fti->m_data.insert(mImpl->fti->m_data.end(), vfy_data.begin(), vfy_data.end());
-//							mImpl->fti->m_data_it += len;
-							mImpl->fti->m_transBytesRemaining -= len;
-							bytesTransferred += len;
-						}
-						else {
-							break;
-						}
-						delete iorpt;
-					}
-					// Set up index data for next DMA Transaction
-					mImpl->fti->startNextTransaction();
-				}
+                        waitForCompletion(inflight, max_in_flight);
+#if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
+                        t_pre_xfer = boost::chrono::steady_clock::now();
+#endif
+                    }
+                }
+
+                // Drain remaining messages
+                while (!inflight.empty()) {
+                    waitForCompletion(inflight, max_in_flight);
+                }
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 				auto end = boost::chrono::steady_clock::now();
