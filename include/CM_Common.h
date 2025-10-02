@@ -82,7 +82,9 @@ namespace iMS {
 		std::chrono::milliseconds rxTimeout;
 		std::chrono::milliseconds autoFreeTimeout;
 		mutable std::mutex m_listmutex;
+		std::condition_variable m_listcv;
 		virtual void MessageListManager();
+        void AddMsgToListWithNotify(std::shared_ptr<Message>& msg);
 	};
 
 	enum class _FastTransferStatus {

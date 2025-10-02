@@ -1134,7 +1134,10 @@ namespace iMS
 				}
 				int tfr_len = (int)m_imgdata->size();
 
-				if (*m_vfydata == *m_imgdata) m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_SUCCESS, 0);
+				if (*m_vfydata == *m_imgdata) {
+                    BOOST_LOG_SEV(lg::get(), sev::info) << "Verify passed";
+                    m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_SUCCESS, 0);
+                }
 				else {
 					int first_error = 0;
 					for (int i = 0; i < tfr_len; i++) {
@@ -1143,6 +1146,7 @@ namespace iMS
 							break;
 						}
 					}
+                    BOOST_LOG_SEV(lg::get(), sev::info) << "Verify FAILED at " << first_error;
 					m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_FAIL, first_error); break;
 				}
 

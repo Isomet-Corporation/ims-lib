@@ -317,6 +317,7 @@ namespace iMS {
 
 			// Stop Threads
 			DeviceIsOpen = false;  // must set this to cancel threads
+            m_txcond.notify_all();
 			senderThread.join();
 			receiverThread.join();
 			parserThread.join();
@@ -345,71 +346,62 @@ namespace iMS {
 	{
 		while (DeviceIsOpen == true)
 		{
-			std::unique_lock<std::mutex> lck{ m_txmutex };
-			m_txcond.wait_for(lck, std::chrono::milliseconds(100));
-			// Unblock every 100ms to allow thread to terminate or to process any missed notifications
-			if (DeviceIsOpen == false)
-			{
-				lck.unlock();
-				break;
-			}
+            std::shared_ptr<Message> m;
+            {
+                std::unique_lock<std::mutex> lck{ m_txmutex };
+                m_txcond.wait(lck, [&] {return !DeviceIsOpen || !m_queue.empty(); });
 
-			while (!m_queue.empty())
-			{
-				std::shared_ptr<Message> m = m_queue.front();
-				m_queue.pop();  // delete from queue
+                // Allow thread to terminate or to process any notifications
+                if (!DeviceIsOpen) break;
 
-				// Get HostReport bytes and send to device
-				DWORD numBytesWritten = 0, totalBytesWritten = 0;
-				const std::vector<uint8_t>& b = m->SerialStream();
-				FT_STATUS ftStatus;
-				//			ftStatus = FT_Purge(ftdiDevice, FT_PURGE_RX | FT_PURGE_TX); // Purge both Rx and Tx buffers
+                m = m_queue.front();
+                m_queue.pop();  // delete from queue
+            }
 
-				std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
-				do
-				{
-					if ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout)
-					{
-						// Do something with timeout
-						m->setStatus(Message::Status::TIMEOUT_ON_SEND);
-						mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
+            // Get HostReport bytes and send to device
+            DWORD numBytesWritten = 0, totalBytesWritten = 0;
+            const std::vector<uint8_t>& b = m->SerialStream();
+            FT_STATUS ftStatus;
+            //			ftStatus = FT_Purge(ftdiDevice, FT_PURGE_RX | FT_PURGE_TX); // Purge both Rx and Tx buffers
 
-						// If there is anything connected still, we need to flush through the buffer
-						int i = 73; // max msg size
-						const char c = 0;
-						do {
-							ftStatus = FT_Write(p_Impl->ftdiDevice, (LPVOID)&c, 1, (LPDWORD)&numBytesWritten);
-							i -= numBytesWritten;
-						} while (!i);
-						break;
-					}
+            std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
+            do
+            {
+                if ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout)
+                {
+                    // Do something with timeout
+                    m->setStatus(Message::Status::TIMEOUT_ON_SEND);
+                    mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
 
-					ftStatus = FT_Write(p_Impl->ftdiDevice, (LPVOID)&b[totalBytesWritten], (static_cast<DWORD>(b.size()) - totalBytesWritten), (LPDWORD)&numBytesWritten);
-					totalBytesWritten += numBytesWritten;
-					if (ftStatus != FT_OK)
-					{
-						// Do something with FTDI failure
-						m->setStatus(Message::Status::SEND_ERROR);
-						mMsgEvent.Trigger<int>(this, MessageEvents::SEND_ERROR, m->getMessageHandle());
-						break;
-					}
-				} while (totalBytesWritten < b.size());
+                    // If there is anything connected still, we need to flush through the buffer
+                    int i = 73; // max msg size
+                    const char c = 0;
+                    do {
+                        ftStatus = FT_Write(p_Impl->ftdiDevice, (LPVOID)&c, 1, (LPDWORD)&numBytesWritten);
+                        i -= numBytesWritten;
+                    } while (!i);
+                    break;
+                }
 
-				if (m->getStatus() == Message::Status::UNSENT) {
-					m->setStatus(Message::Status::SENT);
-				}
+                ftStatus = FT_Write(p_Impl->ftdiDevice, (LPVOID)&b[totalBytesWritten], (static_cast<DWORD>(b.size()) - totalBytesWritten), (LPDWORD)&numBytesWritten);
+                totalBytesWritten += numBytesWritten;
+                if (ftStatus != FT_OK)
+                {
+                    // Do something with FTDI failure
+                    m->setStatus(Message::Status::SEND_ERROR);
+                    mMsgEvent.Trigger<int>(this, MessageEvents::SEND_ERROR, m->getMessageHandle());
+                    break;
+                }
+            } while (totalBytesWritten < b.size());
 
-				m->MarkSendTime();
-				
-				// Place in list for processing by receive thread
-				{
-					std::unique_lock<std::mutex> list_lck{ m_listmutex };
-					m_list.push_back(m);
-					list_lck.unlock();
-				}
+            if (m->getStatus() == Message::Status::UNSENT) {
+                m->setStatus(Message::Status::SENT);
+            }
 
-			}
-			lck.unlock();
+            m->MarkSendTime();
+            
+            // Place in list for processing by receive thread
+            AddMsgToListWithNotify(m);
 		}
 	}
 

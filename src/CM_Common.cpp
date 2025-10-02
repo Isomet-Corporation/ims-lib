@@ -94,34 +94,36 @@ namespace iMS {
 
 	DeviceReport CM_Common::SendMsgBlocking(HostReport const& Rpt)
 	{
-		DeviceReport Resp;
 		MessageHandle handle = this->SendMsg(Rpt);
-		while (1) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			Resp = this->Response(handle);
-			if (Resp.Done()) break;
-			/*if (Resp.Fields().ID == ReportTypes::NULL_REPORT) {
-				return DeviceReport();
-			}*/
-			//elapsed_tm = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start);
-			std::unique_lock<std::mutex> list_lck{ m_listmutex };
-			for (std::list<std::shared_ptr<Message>>::const_iterator it = m_list.begin(); it != m_list.end(); ++it)
-			{
-				if ((*it)->getMessageHandle() == handle)
-				{
-					if (((*it)->getStatus() != Message::Status::UNSENT) &&
-						((*it)->getStatus() != Message::Status::SENT) &&
-						((*it)->getStatus() != Message::Status::RX_PARTIAL) &&
-						((*it)->getStatus() != Message::Status::RX_OK) &&
-						((*it)->getStatus() != Message::Status::RX_ERROR_VALID))
-					{
-						return Resp;
-					}
-				}
-			}
-			list_lck.unlock();
-		}
-		return Resp;
+
+        std::unique_lock<std::mutex> lock(m_listmutex);
+
+        m_listcv.wait(lock, [&] {
+            for (const auto& msg : m_list)
+            {
+                if (msg->getMessageHandle() == handle)
+                {
+                    auto resp = msg->Response();
+                    if (resp->Done()) {
+                        return true;
+                    }
+                    auto status = msg->getStatus();
+                    if (status != Message::Status::UNSENT &&
+                        status != Message::Status::SENT &&
+                        status != Message::Status::RX_PARTIAL &&
+                        status != Message::Status::RX_OK &&
+                        status != Message::Status::RX_ERROR_VALID)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+        lock.unlock();
+
+        DeviceReport Resp = this->Response(handle);
+        return Resp;
 	}
 
 	template <typename T, typename T2 = int>
@@ -134,6 +136,14 @@ namespace iMS {
 		triggerEvents(MessageEvents::Events e, T p) : e(e), p(p), p2(0), count(1) {};
 		triggerEvents(MessageEvents::Events e, T p, T2 p2) : e(e), p(p), p2(p2), count(2) {};
 	};
+
+    void CM_Common::AddMsgToListWithNotify(std::shared_ptr<Message>& msg) {
+        {
+            std::lock_guard<std::mutex> lock(m_listmutex);
+            m_list.push_back(msg);
+        }
+        m_listcv.notify_all();
+    }
 
 	void CM_Common::MessageListManager()
 	{
@@ -152,7 +162,9 @@ namespace iMS {
 			// Grab any outstanding characters from the queue
 			std::unique_lock<std::mutex> lck{ m_rxmutex };
 
-			m_rxcond.wait_for(lck, std::chrono::milliseconds(100));
+			m_rxcond.wait_for(lck, std::chrono::milliseconds(10), [&] {
+                return (!m_rxCharQueue.empty());
+            });
 			while (!m_rxCharQueue.empty()) {
 				glbl_rx.push_back(m_rxCharQueue.front());
 				m_rxCharQueue.pop();
@@ -386,6 +398,9 @@ namespace iMS {
 					mMsgEvent.Trigger<int>(this, (*it).e, (*it).p);
 				}
 				events.clear();
+
+                // And update any blocked sends
+                m_listcv.notify_all();
 			}
 
 		}

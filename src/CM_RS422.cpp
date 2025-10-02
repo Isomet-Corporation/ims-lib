@@ -48,6 +48,16 @@
 #define new DEBUG_NEW
 #endif
 
+#define DMA_PERFORMANCE_MEASUREMENT_MODE
+
+#if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
+#include "PrivateUtil.h"
+#include "boost/chrono.hpp"
+#endif
+
+using HRClock = std::chrono::high_resolution_clock;
+using us = std::chrono::microseconds;
+
 namespace iMS {
 
 	class CM_RS422::FastTransfer
@@ -122,6 +132,8 @@ namespace iMS {
 		// Interrupt receiving thread
 		std::thread interruptThread;
 		std::shared_ptr<std::vector<uint8_t>> interruptData;
+
+        long long t0, t1, t2, t3, t4;
 	private:
 		IConnectionManager * m_parent;
 	};
@@ -324,9 +336,9 @@ namespace iMS {
 			COMMTIMEOUTS ctmoNew = { 0 };
 
 			GetCommTimeouts(mImpl->fp, &ctmoNew);
-			ctmoNew.ReadIntervalTimeout = 50;
-			ctmoNew.ReadTotalTimeoutConstant = 20;
-			ctmoNew.ReadTotalTimeoutMultiplier = 250;
+			ctmoNew.ReadIntervalTimeout = 1;
+			ctmoNew.ReadTotalTimeoutConstant = 1;
+			ctmoNew.ReadTotalTimeoutMultiplier = 1;
 			ctmoNew.WriteTotalTimeoutMultiplier = 20;
 			ctmoNew.WriteTotalTimeoutConstant = 250;
 			if (!SetCommTimeouts(mImpl->fp, &ctmoNew))
@@ -389,6 +401,7 @@ namespace iMS {
 		{
 			if (mImpl->fp == NULL) {
 				DeviceIsOpen = false;
+                m_txcond.notify_all();
 				return;
 			}
 
@@ -437,6 +450,8 @@ namespace iMS {
 
 			// Stop Threads
 			DeviceIsOpen = false;  // must set this to cancel threads
+            m_txcond.notify_all();
+
 			senderThread.join();
 			receiverThread.join();
 			parserThread.join();
@@ -462,241 +477,194 @@ namespace iMS {
 
 	void CM_RS422::MessageSender()
 	{
-		while (DeviceIsOpen == true)
+		while (DeviceIsOpen)
 		{
-			std::unique_lock<std::mutex> lck{ m_txmutex };
-			m_txcond.wait_for(lck, std::chrono::milliseconds(100));
-			// Unblock every 100ms to allow thread to terminate or to process any missed notifications
-			if (DeviceIsOpen == false)
-			{
-				lck.unlock();
-				break;
-			}
+            std::shared_ptr<Message> m;
+            {
+                std::unique_lock<std::mutex> lck{ m_txmutex };
+                m_txcond.wait(lck, [&] {return !DeviceIsOpen || !m_queue.empty(); });
 
-			while (!m_queue.empty())
-			{
-				std::shared_ptr<Message> m = m_queue.front();
+                // Allow thread to terminate or to process any notifications
+                if (!DeviceIsOpen) break;
 
-				// Get HostReport bytes and send to device
-				DWORD numBytesWritten = 0, totalBytesWritten = 0;
-				DWORD dwRes;
-				std::vector<uint8_t> b = m->SerialStream();
-				int status = 0;
+                m = m_queue.front();
+                m_queue.pop();  // delete from queue
+            }
 
-				std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
-				do
-				{
-					if ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout)
-					{
-						// Do something with timeout
-						m->setStatus(Message::Status::TIMEOUT_ON_SEND);
-						mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
+            // Get HostReport bytes and send to device
+            DWORD totalBytesWritten = 0;
+            DWORD dwRes;
+            std::vector<uint8_t> b = m->SerialStream();
 
-						break;
-					}
+            OVERLAPPED osWrite = { 0 };
+            osWrite.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+            if (!osWrite.hEvent) continue;
+            
+            std::chrono::time_point<HRClock> tm_start = HRClock::now();
+            while (totalBytesWritten < b.size() && (m->getStatus() != Message::Status::SEND_ERROR))
+            {
+                if ((std::chrono::duration_cast<std::chrono::milliseconds>(HRClock::now() - tm_start)) > sendTimeout)
+                {
+                    // Do something with timeout
+                    m->setStatus(Message::Status::TIMEOUT_ON_SEND);
+                    mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
 
-					// Timeout allows thread to cancel message
-					std::unique_lock<std::timed_mutex> rdwrlck(mImpl->m_rdwrmutex, std::chrono::milliseconds(10));
-					if (!rdwrlck.owns_lock()) {
-						status = 1;
-						continue;
-					}
+                    break;
+                }
 
-					// Send Data
-					OVERLAPPED osWrite = { 0 };
+                // Timeout allows thread to cancel message
+                std::unique_lock<std::timed_mutex> wrlck(mImpl->m_rdwrmutex, std::chrono::milliseconds(10));
+                if (!wrlck.owns_lock()) {
+                    continue;
+                }
 
-					// Create this writes OVERLAPPED structure hEvent.
-					osWrite.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-					if (osWrite.hEvent != NULL) {
-						// Issue write.
-						if (!WriteFile(mImpl->fp, &b[totalBytesWritten], (b.size() - totalBytesWritten), &numBytesWritten, &osWrite)) {
-							if (GetLastError() != ERROR_IO_PENDING) {
-								// WriteFile failed, but it isn't delayed. Report error and abort.
-								status = 0;
-							}
-							else {
-								dwRes = WaitForSingleObject(osWrite.hEvent, INFINITE);
-								switch (dwRes)
-								{
-									// Event occurred.
-								case WAIT_OBJECT_0: {
-									if (!GetOverlappedResult(mImpl->fp, &osWrite, &numBytesWritten, FALSE)) {
-										status = 1;
-									}
-									else {
-										// Write operation completed successfully.
-										status = 1;
-										totalBytesWritten += numBytesWritten;
-										//std::cout << "W ";
-									}
-									break;
-								}
-								case WAIT_TIMEOUT: {	
-									status = 1;
-									break;
-								}
-								case WAIT_FAILED: {
-								default:
-									status = 0;
-									break;
-								}
-								}
-							}
-						}
-						else {
-							// WriteFile completed immediately.
-							status = 1;
-							totalBytesWritten += numBytesWritten;
-						}
+                DWORD bytesWritten = 0;
+                if (!WriteFile(mImpl->fp, &b[totalBytesWritten], (DWORD)(b.size() - totalBytesWritten), &bytesWritten, &osWrite)) {
+                    if (GetLastError() == ERROR_IO_PENDING) {
+                        dwRes = WaitForSingleObject(osWrite.hEvent, INFINITE);
+                        switch (dwRes)
+                        {
+                            // Event occurred.
+                        case WAIT_OBJECT_0: {
+                            if (!GetOverlappedResult(mImpl->fp, &osWrite, &bytesWritten, FALSE)) {
+                                m->setStatus(Message::Status::SEND_ERROR);
+                            }
+                            break;
+                        }
+                        case WAIT_TIMEOUT: {	
+                            break;
+                        }
+                        case WAIT_FAILED: 
+                        default: {
+                            m->setStatus(Message::Status::SEND_ERROR);
+                            break;
+                        }
+                        }
+                    }
+                    else {
+                        // WriteFile failed, but it isn't delayed. Report error and abort.
+                        m->setStatus(Message::Status::SEND_ERROR);
+                    }
+                }
 
-						CloseHandle(osWrite.hEvent);
-					}
+                // WriteFile completed immediately.
+                totalBytesWritten += bytesWritten;
+           
+                if (!bytesWritten)
+                {
+                    m->setStatus(Message::Status::SEND_ERROR);
+                }
 
-					rdwrlck.unlock();
+            } 
+            CloseHandle(osWrite.hEvent);
 
-					if (!status || !numBytesWritten)
-					{
-						// Do something with failure
-						m->setStatus(Message::Status::SEND_ERROR);
-						mMsgEvent.Trigger<int>(this, MessageEvents::SEND_ERROR, m->getMessageHandle());
-						break;
-					}
+            if (m->getStatus() == Message::Status::UNSENT) {
+                m->setStatus(Message::Status::SENT);
+            } else if (m->getStatus() == Message::Status::SEND_ERROR) {
+                mMsgEvent.Trigger<int>(this, MessageEvents::SEND_ERROR, m->getMessageHandle());
+            }
 
-				} while (totalBytesWritten < b.size() && status);
+            m->MarkSendTime();
 
-				if (m->getStatus() == Message::Status::UNSENT) {
-					m->setStatus(Message::Status::SENT);
-				}
+            // std::stringstream ss;
+            // for (auto&& c : b)
+			// {
+			// 	ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(c) << " ";
+			// }
+			// BOOST_LOG_SEV(lg::get(), sev::trace) << "SENT: " << ss.str();
 
-				m->MarkSendTime();
-
-				// Place in list for processing by receive thread
-				{
-					std::unique_lock<std::mutex> list_lck{ m_listmutex };
-					m_list.push_back(m);
-					list_lck.unlock();
-				}
-
-				m_queue.pop();  // delete from queue
-			}
-			lck.unlock();
+            // Place in list for processing by receive thread
+            AddMsgToListWithNotify(m);
 		}
 	}
 
+#define USE_WAITCOMM_EVENT (0)
+
 	void CM_RS422::ResponseReceiver()
 	{
-		DWORD dwRead;
-		DWORD dwRes;
 		unsigned char  chRead[Impl::RxBufferSize];
-		BOOL fWaitingOnRead = FALSE;
-		BOOL fHandleError = FALSE;
-		OVERLAPPED osReader = { 0 };
-		int retries = 0;
+        OVERLAPPED osReader = { 0 };
+        osReader.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-		//if (!SetCommMask(mImpl->fp, EV_RXCHAR)) {
-			// Error setting communications event mask
-		//}
-		
-		while ((DeviceIsOpen == true) && (retries++<10))
-		{
-			osReader.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-			if (osReader.hEvent == NULL)
-				// error creating event; abort
-				return;
+#if USE_WAITCOMM_EVENT
+        // Configure event mask so we get notified when chars arrive
+        if (!SetCommMask(mImpl->fp, EV_RXCHAR)) {
+            BOOST_LOG_SEV(lg::get(), sev::error) << "SetCommMask failed";
+            CloseHandle(osReader.hEvent);
+            return;
+        }
+#endif
 
-			while (!fHandleError && (DeviceIsOpen == true))
-			{
-				// Timeout allows thread to terminate
-				std::unique_lock<std::timed_mutex> rdwrlck(mImpl->m_rdwrmutex, std::chrono::milliseconds(10));
-				if (!rdwrlck.owns_lock()) continue;
+        while (DeviceIsOpen)
+        {
+    		DWORD bytesRead = 0;
+            ResetEvent(osReader.hEvent);
 
-				if (!fWaitingOnRead) {
-					
-					if (!ReadFile(mImpl->fp, chRead, Impl::RxBufferSize, &dwRead, &osReader)) {
-						if (GetLastError() == ERROR_IO_PENDING)
-							fWaitingOnRead = TRUE;
-						else {
-							// error in WaitCommEvent; abort
-							fHandleError = TRUE;
-							break;
-						}
-					}
-					else {
-						// ReadFile returned immediately.
-						std::unique_lock<std::mutex> rxlck{ m_rxmutex };
-						//std::cout << "A: ";
-						for (DWORD i = 0; i < dwRead; i++) {
-							m_rxCharQueue.push(chRead[i]);
-							//std::cout << std::hex;
-							//std::cout << std::setfill('0') << std::setw(2) << static_cast<unsigned int>(chRead[i]) << " ";
-						}
-						rxlck.unlock();
-						m_rxcond.notify_one();
-					}
-//					rdwrlck.unlock();
-				}
+#if USE_WAITCOMM_EVENT
+            //----------------------------------------------------
+            // MODE A: WaitCommEvent signals us when data arrives
+            //----------------------------------------------------
+            DWORD evtMask = 0;
+            BOOL ok = WaitCommEvent(mImpl->fp, &evtMask, &osReader);
+            if (!ok && GetLastError() == ERROR_IO_PENDING) {
+                // Wait until event signalled
+                if (WaitForSingleObject(osReader.hEvent, INFINITE) != WAIT_OBJECT_0) continue;
+                if (!GetOverlappedResult(mImpl->fp, &osReader, &evtMask, FALSE)) continue;
+            }
 
-				// Check on overlapped operation.
-				if (fWaitingOnRead) {
-					// Wait a little while for an event to occur.
-					dwRes = WaitForSingleObject(osReader.hEvent, 5);
-					//std::unique_lock<std::mutex> rdwrlck{ mImpl->m_rdwrmutex };
-					switch (dwRes)
-					{
-						// Event occurred.
-					case WAIT_OBJECT_0:
-						if (!GetOverlappedResult(mImpl->fp, &osReader, &dwRead, FALSE)) {
-							// An error occurred in the overlapped operation;
-							// call GetLastError to find out what it was
-							// and abort if it is fatal.
-							if (GetLastError() == ERROR_OPERATION_ABORTED) {
-								fHandleError = TRUE;
-								break;
-							}
-							fHandleError = TRUE;
-							break;
-						}
-						else {
-							std::unique_lock<std::mutex> rxlck{ m_rxmutex };
-							//std::cout << "B(" << dwRead << "): ";
-							for (DWORD i = 0; i < dwRead; i++) {
-								m_rxCharQueue.push(chRead[i]);
-								//std::cout << std::hex;
-								//std::cout << std::setfill('0') << std::setw(2) << static_cast<unsigned int>(chRead[i]) << " ";
-							}
-							rxlck.unlock();
-							m_rxcond.notify_one();
-						}
+            if (evtMask & EV_RXCHAR) {
+                std::unique_lock<std::timed_mutex> rdlck(mImpl->m_rdwrmutex, std::chrono::milliseconds(10));
+                if (!rdlck.owns_lock()) continue;
 
-						// Set fWaitingOnRead flag to indicate that a new
-						// ReadFile is to be issued.
-						fWaitingOnRead = FALSE;
-						break;
+                // Now read what's available
+                ReadFile(mImpl->fp, chRead, sizeof(chRead), &bytesRead, NULL);
+            }
 
-					case WAIT_TIMEOUT:
-						// Operation isn't complete yet. fWaitingOnStatusHandle flag 
-						// isn't changed since I'll loop back around and I don't want
-						// to issue another WaitCommEvent until the first one finishes.
-						break;
+#else            
+            //----------------------------------------------------
+            // MODE B: Direct overlapped ReadFile
+            //----------------------------------------------------
+            {
+                // Timeout allows thread to terminate
+                std::unique_lock<std::timed_mutex> rdlck(mImpl->m_rdwrmutex, std::chrono::milliseconds(10));
+                if (!rdlck.owns_lock()) continue;
 
-					default:
-						// Error in the WaitForSingleObject; abort
-						// This indicates a problem with the OVERLAPPED structure's
-						// event handle.
-						//CloseHandle(osStatus.hEvent);
-						fHandleError = TRUE;
-						break;
-						//return;
-					}
-				}
-				rdwrlck.unlock();
+                BOOL ok = ReadFile(mImpl->fp, chRead, sizeof(chRead), &bytesRead, &osReader);
+                if (!ok) {
+                    if (GetLastError() == ERROR_IO_PENDING) {
+                        // Wait for read completion
+                        rdlck.unlock();  // Allow MessageSender to write while we wait
+                        DWORD waitResult = WaitForSingleObject(osReader.hEvent, INFINITE);
+                        rdlck.lock();
+            
+                        if (waitResult != WAIT_OBJECT_0) continue;
 
-			}
-			if (fHandleError) {
-				fHandleError = FALSE;
-			}
-			CloseHandle(osReader.hEvent);
-		}
+                        if (!GetOverlappedResult(mImpl->fp, &osReader, &bytesRead, FALSE)) continue;
+                    } else {
+                        continue;
+                    }
+                }
+            }
+#endif
+            
+            if (bytesRead > 0)
+            {
+                {
+                    std::unique_lock<std::mutex> rxlck{ m_rxmutex };
+                    for (DWORD i = 0; i < bytesRead; i++) {
+                        m_rxCharQueue.push(chRead[i]);
+                    }
+                }
+                m_rxcond.notify_one();
+
+                // // Logging
+                // std::stringstream ss;
+                // for (DWORD i = 0; i < bytesRead; i++)
+                //     ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(chRead[i]) << " ";
+                // BOOST_LOG_SEV(lg::get(), sev::trace) << "RECD: " << ss.str();
+            }
+        }
+        CloseHandle(osReader.hEvent);		
 	}
 
 	bool CM_RS422::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
@@ -802,8 +770,7 @@ namespace iMS {
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 				boost::chrono::steady_clock::time_point start = boost::chrono::steady_clock::now();
-				boost::chrono::duration<double, boost::milli> copy_time(0.0);
-				boost::chrono::duration<double, boost::milli> xfer_time(0.0);
+				boost::chrono::duration<double, boost::milli> sending_time(0.0);
 #endif
 
 				for (unsigned int i = 0; i < mImpl->fti->m_transCount; i++) {
@@ -827,7 +794,14 @@ namespace iMS {
 						mImpl->fti->m_data_it += len;
 						mImpl->fti->m_transBytesRemaining -= len;
 						iorpt->Payload<std::vector<uint8_t>>(dataBuffer);
+#if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
+                        boost::chrono::steady_clock::time_point t_pre_xfer = boost::chrono::steady_clock::now();
+#endif
 						DeviceReport resp = this->SendMsgBlocking(*iorpt);
+#if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
+                        boost::chrono::steady_clock::time_point t_final = boost::chrono::steady_clock::now();
+                        sending_time += (t_final - t_pre_xfer);
+#endif
 						delete iorpt;
 						if (!resp.Done()) {
 							break;
@@ -867,12 +841,11 @@ namespace iMS {
 				auto diff = end - start;
 				double transferTime = boost::chrono::duration <double, boost::milli>(diff).count();
 				double transferSpeed = (double)bytesTransferred / ((transferTime / 1000.0) * 1024 * 1024);
-				std::cout << "DMA Overall Execution time " << transferTime << " ms. Calculated Transfer speed " << transferSpeed << " MB/s" << std::endl;
-				std::cout << "   Time spent in data management " << copy_time.count() << " ms." << std::endl;
-				std::cout << "   Time spent on USB transfer activity " << xfer_time.count() << " ms." << std::endl;
-				std::cout << "   Calculated overhead " << transferTime - copy_time.count() - xfer_time.count() << " ms." << std::endl;
-				transferSpeed = (double)bytesTransferred / ((xfer_time.count() / 1000.0) * 1024 * 1024);
-				std::cout << "   USB sustained transfer speed " << transferSpeed << " MB/s" << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::info) << "DMA Overall Execution time " << transferTime << " ms. Calculated Transfer speed " << transferSpeed << " MB/s";
+				BOOST_LOG_SEV(lg::get(), sev::info) << "   Time spent in blocked send " << sending_time.count() << " ms.";
+				BOOST_LOG_SEV(lg::get(), sev::info) << "   Calculated overhead " << transferTime - sending_time.count() << " ms.";
+				transferSpeed = (double)bytesTransferred / ((sending_time.count() / 1000.0) * 1024 * 1024);
+				BOOST_LOG_SEV(lg::get(), sev::info) << "   USB sustained transfer speed " << transferSpeed << " MB/s";
 #endif
 
 				//delete[] dataBuffer;

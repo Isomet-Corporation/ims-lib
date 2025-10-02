@@ -869,6 +869,7 @@ static std::string logErrorString(int err = INT_MAX) {
 			// Stop Threads
 			BOOST_LOG_SEV(lg::get(), sev::info) << "Stopping threads" << std::endl;
 			DeviceIsOpen = false;  // must set this to cancel threads
+            m_txcond.notify_all();
 			senderThread.join();
 			BOOST_LOG_SEV(lg::get(), sev::debug) << "sender thread joined" << std::endl;
 			receiverThread.join();
@@ -917,160 +918,151 @@ static std::string logErrorString(int err = INT_MAX) {
 	{
 		while (DeviceIsOpen == true)
 		{
-			std::unique_lock<std::mutex> lck{ m_txmutex };
-			m_txcond.wait_for(lck, std::chrono::milliseconds(100));
-			// Unblock every 100ms to allow thread to terminate or to process any missed notifications
-			if (DeviceIsOpen == false)
-			{
-				lck.unlock();
-				break;
-			}
+            std::shared_ptr<Message> m;
+            {
+                std::unique_lock<std::mutex> lck{ m_txmutex };
+                m_txcond.wait(lck, [&] {return !DeviceIsOpen || !m_queue.empty(); });
 
-			while (!m_queue.empty())
-			{
-				std::shared_ptr<Message> m = m_queue.front();
+                // Allow thread to terminate or to process any notifications
+                if (!DeviceIsOpen) break;
 
-				//std::shared_ptr<CM_ENET::MsgContext> inContext = std::make_shared<CM_ENET::MsgContext>();
-				//inContext->handle = m->getMessageHandle();
-				
-				std::shared_ptr<CM_ENET::MsgContext> outContext = std::make_shared<CM_ENET::MsgContext>();
-				outContext->handle = m->getMessageHandle();
-				// Get HostReport bytes and send to device
-				*outContext->Buffer = m->SerialStream();
+                m = m_queue.front();
+                m_queue.pop();  // delete from queue
+            }
 
-				int err;
-				m->setStatus(Message::Status::UNSENT);
-				std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
+            //std::shared_ptr<CM_ENET::MsgContext> inContext = std::make_shared<CM_ENET::MsgContext>();
+            //inContext->handle = m->getMessageHandle();
+            
+            std::shared_ptr<CM_ENET::MsgContext> outContext = std::make_shared<CM_ENET::MsgContext>();
+            outContext->handle = m->getMessageHandle();
+            // Get HostReport bytes and send to device
+            *outContext->Buffer = m->SerialStream();
+
+            int err;
+            m->setStatus(Message::Status::UNSENT);
+            std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
 
 #ifdef WIN32
-				outContext->bufLen = (LONG)outContext->Buffer->size();
-				outContext->DataBuf.buf = (CHAR *)&outContext->Buffer->at(0);
-				outContext->DataBuf.len = outContext->bufLen;
-				int ret = WSASend(mImpl->msgSock, &outContext->DataBuf, 1, NULL, 0, &outContext->OvLap, NULL);
+            outContext->bufLen = (LONG)outContext->Buffer->size();
+            outContext->DataBuf.buf = (CHAR *)&outContext->Buffer->at(0);
+            outContext->DataBuf.len = outContext->bufLen;
+            int ret = WSASend(mImpl->msgSock, &outContext->DataBuf, 1, NULL, 0, &outContext->OvLap, NULL);
 
-				if ((ret == SOCKET_ERROR) && (WSA_IO_PENDING != (err = WSAGetLastError()))) {
-					// Handle Error
-					m->setStatus(Message::Status::SEND_ERROR);
-				}
+            if ((ret == SOCKET_ERROR) && (WSA_IO_PENDING != (err = WSAGetLastError()))) {
+                // Handle Error
+                m->setStatus(Message::Status::SEND_ERROR);
+            }
 
-				while (m->getStatus() == Message::Status::UNSENT)
-				{
-					if ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout)
-					{
-						// Do something with timeout
-						m->setStatus(Message::Status::TIMEOUT_ON_SEND);
-						mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
-					}
+            while (m->getStatus() == Message::Status::UNSENT)
+            {
+                if ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout)
+                {
+                    // Do something with timeout
+                    m->setStatus(Message::Status::TIMEOUT_ON_SEND);
+                    mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
+                }
 
-					ret = WSAWaitForMultipleEvents(1, &outContext->OvLap.hEvent, TRUE, 10, FALSE);
-					if (ret == WSA_WAIT_FAILED) {
-						//std::cout << "Wait Failed with error " << WSAGetLastError() << std::endl;
-						// Handle Error
-						m->setStatus(Message::Status::SEND_ERROR);
-					}
-					else if (ret == WSA_WAIT_EVENT_0) {
-						break;
-					}
-				} 
+                ret = WSAWaitForMultipleEvents(1, &outContext->OvLap.hEvent, TRUE, 10, FALSE);
+                if (ret == WSA_WAIT_FAILED) {
+                    //std::cout << "Wait Failed with error " << WSAGetLastError() << std::endl;
+                    // Handle Error
+                    m->setStatus(Message::Status::SEND_ERROR);
+                }
+                else if (ret == WSA_WAIT_EVENT_0) {
+                    break;
+                }
+            } 
 
-				DWORD Flags;
-				ret = WSAGetOverlappedResult(mImpl->msgSock, &outContext->OvLap, &outContext->BytesXfer, FALSE, &Flags);
-				if (ret == FALSE || outContext->BytesXfer == 0)
-				{
-					// Handle Error
-					m->setStatus(Message::Status::SEND_ERROR);
-				}
+            DWORD Flags;
+            ret = WSAGetOverlappedResult(mImpl->msgSock, &outContext->OvLap, &outContext->BytesXfer, FALSE, &Flags);
+            if (ret == FALSE || outContext->BytesXfer == 0)
+            {
+                // Handle Error
+                m->setStatus(Message::Status::SEND_ERROR);
+            }
 
-				if (outContext->BytesXfer != outContext->bufLen)
-				{
-					// Handle Error
-					m->setStatus(Message::Status::SEND_ERROR);
-				}
+            if (outContext->BytesXfer != outContext->bufLen)
+            {
+                // Handle Error
+                m->setStatus(Message::Status::SEND_ERROR);
+            }
 
 
-				if (m->getStatus() == Message::Status::UNSENT) {
-					m->setStatus(Message::Status::SENT);
-				}
+            if (m->getStatus() == Message::Status::UNSENT) {
+                m->setStatus(Message::Status::SENT);
+            }
 
 #else
-				outContext->bufLen = (unsigned long)outContext->Buffer->size();
+            outContext->bufLen = (unsigned long)outContext->Buffer->size();
 
-				/*int ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(0), outContext->bufLen, 0);
-				err = errno;
+            /*int ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(0), outContext->bufLen, 0);
+            err = errno;
 
-				if (0 > ret) {
-					if ((err != EWOULDBLOCK) && (err != EAGAIN)) {
-						// Handle Error
-						m->setStatus(Message::Status::SEND_ERROR);
-					}
-				} else {
-					outContext->BytesXfer += ret;
-				}*/
+            if (0 > ret) {
+                if ((err != EWOULDBLOCK) && (err != EAGAIN)) {
+                    // Handle Error
+                    m->setStatus(Message::Status::SEND_ERROR);
+                }
+            } else {
+                outContext->BytesXfer += ret;
+            }*/
 
-				int ret;
-				while (m->getStatus() == Message::Status::UNSENT) {
-					struct pollfd fds;
-					fds.fd = mImpl->msgSock;
-					fds.events = POLLOUT;
+            int ret;
+            while (m->getStatus() == Message::Status::UNSENT) {
+                struct pollfd fds;
+                fds.fd = mImpl->msgSock;
+                fds.events = POLLOUT;
 
-					if (-1 == (ret = poll(&fds, 1, sendTimeout.count())))
-					{
-						BOOST_LOG_SEV(lg::get(), sev::error) << "Send Error (poll): " <<  logErrorString() << std::endl;
-						m->setStatus(Message::Status::SEND_ERROR);
-						break;
-					}
-					else if ( (!ret) ||
-						 ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout) )
-					{
-						// Do something with timeout
-						m->setStatus(Message::Status::TIMEOUT_ON_SEND);
-						mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
-						break;
-					} else {
-						if ((fds.revents & (POLLERR | POLLHUP)) != 0)
-						{
-							m->setStatus(Message::Status::SEND_ERROR);
-							break;
-						}
-						else if ((fds.revents & POLLOUT) != 0) {
-							ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(outContext->BytesXfer), (outContext->bufLen-outContext->BytesXfer), 0);
-							err = errno;
+                if (-1 == (ret = poll(&fds, 1, sendTimeout.count())))
+                {
+                    BOOST_LOG_SEV(lg::get(), sev::error) << "Send Error (poll): " <<  logErrorString() << std::endl;
+                    m->setStatus(Message::Status::SEND_ERROR);
+                    break;
+                }
+                else if ( (!ret) ||
+                        ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout) )
+                {
+                    // Do something with timeout
+                    m->setStatus(Message::Status::TIMEOUT_ON_SEND);
+                    mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
+                    break;
+                } else {
+                    if ((fds.revents & (POLLERR | POLLHUP)) != 0)
+                    {
+                        m->setStatus(Message::Status::SEND_ERROR);
+                        break;
+                    }
+                    else if ((fds.revents & POLLOUT) != 0) {
+                        ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(outContext->BytesXfer), (outContext->bufLen-outContext->BytesXfer), 0);
+                        err = errno;
 
-							if (0 > ret) {
-								if ((err != EWOULDBLOCK) && (err != EAGAIN)) {
-									// Handle Error
-									BOOST_LOG_SEV(lg::get(), sev::error) << "Send Error (send): " << logErrorString() << std::endl;
-									m->setStatus(Message::Status::SEND_ERROR);
-									break;
+                        if (0 > ret) {
+                            if ((err != EWOULDBLOCK) && (err != EAGAIN)) {
+                                // Handle Error
+                                BOOST_LOG_SEV(lg::get(), sev::error) << "Send Error (send): " << logErrorString() << std::endl;
+                                m->setStatus(Message::Status::SEND_ERROR);
+                                break;
 
-								}
-							}
-							outContext->BytesXfer += ret;
-						}
-					}
+                            }
+                        }
+                        outContext->BytesXfer += ret;
+                    }
+                }
 
-					if (outContext->BytesXfer >= outContext->bufLen) {
-						m->setStatus(Message::Status::SENT);
-					}
-				}
+                if (outContext->BytesXfer >= outContext->bufLen) {
+                    m->setStatus(Message::Status::SENT);
+                }
+            }
 #endif
 
-				m->MarkSendTime();
+            m->MarkSendTime();
 
-				// Place in list for processing by receive thread
-				{
-					std::unique_lock<std::mutex> list_lck{ m_listmutex };
-					m_list.push_back(m);
-					list_lck.unlock();
-				}
-				// Indicate to receive thread that a receive transfer has been started
-				//if (m->getStatus() == Message::Status::SENT) {
+            // Place in list for processing by receive thread
+            AddMsgToListWithNotify(m);
+            // Indicate to receive thread that a receive transfer has been started
+            //if (m->getStatus() == Message::Status::SENT) {
 //					mImpl->m_rxBufcond.notify_one();
-				//}
-
-				m_queue.pop();  // delete from queue
-			}
-			lck.unlock();
+            //}
 		}
 	}
 
@@ -1294,12 +1286,9 @@ static std::string logErrorString(int err = INT_MAX) {
 						m->AddBuffer(interruptData);
 
 						// Place in list for processing by receive thread
-						{
-							std::unique_lock<std::mutex> list_lck{ m_listmutex };
-							m_list.push_back(m);
-							list_lck.unlock();
-						}
-						// Signal Parser thread
+                        AddMsgToListWithNotify(m);
+
+                        // Signal Parser thread
 						m_rxcond.notify_one();
 
 						errorLogged = false;

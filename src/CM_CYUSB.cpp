@@ -474,6 +474,7 @@ namespace iMS {
 
 			// Stop Threads
 			DeviceIsOpen = false;  // must set this to cancel threads
+            m_txcond.notify_all();
 			senderThread.join();
 			receiverThread.join();
 			parserThread.join();
@@ -498,95 +499,87 @@ namespace iMS {
 	{
 		while (DeviceIsOpen == true)
 		{
-			std::unique_lock<std::mutex> lck{ m_txmutex };
-			m_txcond.wait_for(lck, std::chrono::milliseconds(100));
-			// Unblock every 100ms to allow thread to terminate or to process any missed notifications
-			if (DeviceIsOpen == false)
-			{
-				lck.unlock();
-				break;
-			}
+            std::shared_ptr<Message> m;
+            {
+                std::unique_lock<std::mutex> lck{ m_txmutex };
+                m_txcond.wait(lck, [&] {return !DeviceIsOpen || !m_queue.empty(); });
 
-			while (!m_queue.empty())
-			{
-				std::shared_ptr<Message> m = m_queue.front();
+                // Allow thread to terminate or to process any notifications
+                if (!DeviceIsOpen) break;
 
-				// Get HostReport bytes and send to device
-				std::vector<uint8_t> b = m->SerialStream();
-				mImpl->expandBuffer(b);
+                m = m_queue.front();
+                m_queue.pop();  // delete from queue
+            }
 
-				std::shared_ptr<USBContext> inContext = std::make_shared<USBContext>();
-				inContext->handle = m->getMessageHandle();
-				inContext->Buffer = new std::vector<uint8_t>(USBContext::MaxPacketSize, 0);  // Create a default buffer to write received data to
-				inContext->bufLen = USBContext::MaxPacketSize;
+            // Get HostReport bytes and send to device
+            std::vector<uint8_t> b = m->SerialStream();
+            mImpl->expandBuffer(b);
 
-				{
-					std::unique_lock<std::mutex> rxlck{ mImpl->m_rxBufmutex };
-					inContext->context = mImpl->Ept.cInEpt->BeginDataXfer((PUCHAR)&((*(inContext->Buffer))[0]), inContext->bufLen, inContext->OvLap);
-					mImpl->m_rxBuf.push_back(inContext);
-				}
+            std::shared_ptr<USBContext> inContext = std::make_shared<USBContext>();
+            inContext->handle = m->getMessageHandle();
+            inContext->Buffer = new std::vector<uint8_t>(USBContext::MaxPacketSize, 0);  // Create a default buffer to write received data to
+            inContext->bufLen = USBContext::MaxPacketSize;
 
-				USBContext outContext;
-				outContext.Buffer = &b;
-				outContext.bufLen = b.size();
-				outContext.context = mImpl->Ept.cOutEpt->BeginDataXfer((PUCHAR)&((*(outContext.Buffer))[0]), outContext.bufLen, outContext.OvLap);
-				
-				std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
-				do
-				{
-					if (mImpl->Ept.cOutEpt->NtStatus || mImpl->Ept.cOutEpt->UsbdStatus)
-					{
-						m->setStatus(Message::Status::SEND_ERROR);
-						mMsgEvent.Trigger<int>(this, MessageEvents::SEND_ERROR, m->getMessageHandle());
-						break;
-					}
+            {
+                std::unique_lock<std::mutex> rxlck{ mImpl->m_rxBufmutex };
+                inContext->context = mImpl->Ept.cInEpt->BeginDataXfer((PUCHAR)&((*(inContext->Buffer))[0]), inContext->bufLen, inContext->OvLap);
+                mImpl->m_rxBuf.push_back(inContext);
+            }
 
-					if ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout)
-					{
-						// Do something with timeout
-						m->setStatus(Message::Status::TIMEOUT_ON_SEND);
-						mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
+            USBContext outContext;
+            outContext.Buffer = &b;
+            outContext.bufLen = b.size();
+            outContext.context = mImpl->Ept.cOutEpt->BeginDataXfer((PUCHAR)&((*(outContext.Buffer))[0]), outContext.bufLen, outContext.OvLap);
+            
+            std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
+            do
+            {
+                if (mImpl->Ept.cOutEpt->NtStatus || mImpl->Ept.cOutEpt->UsbdStatus)
+                {
+                    m->setStatus(Message::Status::SEND_ERROR);
+                    mMsgEvent.Trigger<int>(this, MessageEvents::SEND_ERROR, m->getMessageHandle());
+                    break;
+                }
 
-						// Abort transfer
-						mImpl->Ept.cOutEpt->Abort();
-						if (mImpl->Ept.cOutEpt->LastError == ERROR_IO_PENDING)
-							WaitForSingleObject(outContext.OvLap->hEvent, 100);
+                if ((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - tm_start)) > sendTimeout)
+                {
+                    // Do something with timeout
+                    m->setStatus(Message::Status::TIMEOUT_ON_SEND);
+                    mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
 
-						// If there is anything connected still, we need to flush through the buffer
-						std::vector<uint8_t> flush (USBContext::MaxPacketSize);
-						LONG flush_size = USBContext::MaxPacketSize;
-						mImpl->Ept.cOutEpt->XferData((PUCHAR)&(flush[0]), flush_size);
-						break;
-					}
+                    // Abort transfer
+                    mImpl->Ept.cOutEpt->Abort();
+                    if (mImpl->Ept.cOutEpt->LastError == ERROR_IO_PENDING)
+                        WaitForSingleObject(outContext.OvLap->hEvent, 100);
 
-					if (!mImpl->Ept.cOutEpt->WaitForXfer(outContext.OvLap, 10))
-					{
-						// Xfer returned without completing, loop around and retry
-					}
-				} while (!HasOverlappedIoCompleted(outContext.OvLap));
+                    // If there is anything connected still, we need to flush through the buffer
+                    std::vector<uint8_t> flush (USBContext::MaxPacketSize);
+                    LONG flush_size = USBContext::MaxPacketSize;
+                    mImpl->Ept.cOutEpt->XferData((PUCHAR)&(flush[0]), flush_size);
+                    break;
+                }
 
-				mImpl->Ept.cOutEpt->FinishDataXfer((PUCHAR)&((*(outContext.Buffer))[0]), outContext.bufLen, outContext.OvLap, outContext.context);
-				if (m->getStatus() == Message::Status::UNSENT) {
-					m->setStatus(Message::Status::SENT);
-				}
-				ResetEvent(outContext.OvLap->hEvent);
+                if (!mImpl->Ept.cOutEpt->WaitForXfer(outContext.OvLap, 10))
+                {
+                    // Xfer returned without completing, loop around and retry
+                }
+            } while (!HasOverlappedIoCompleted(outContext.OvLap));
 
-				m->MarkSendTime();
+            mImpl->Ept.cOutEpt->FinishDataXfer((PUCHAR)&((*(outContext.Buffer))[0]), outContext.bufLen, outContext.OvLap, outContext.context);
+            if (m->getStatus() == Message::Status::UNSENT) {
+                m->setStatus(Message::Status::SENT);
+            }
+            ResetEvent(outContext.OvLap->hEvent);
 
-				// Place in list for processing by receive thread
-				{
-					std::unique_lock<std::mutex> list_lck{ m_listmutex };
-					m_list.push_back(m);
-					list_lck.unlock();
-				}
-				// Indicate to receive thread that a receive transfer has been started
-				if (m->getStatus() == Message::Status::SENT) {
-					mImpl->m_rxBufcond.notify_one();
-				}
+            m->MarkSendTime();
 
-				m_queue.pop();  // delete from queue
-			}
-			lck.unlock();
+            // Place in list for processing by receive thread
+            AddMsgToListWithNotify(m);  
+
+            // Indicate to receive thread that a receive transfer has been started
+            if (m->getStatus() == Message::Status::SENT) {
+                mImpl->m_rxBufcond.notify_one();
+            }
 		}
 	}
 
@@ -925,12 +918,9 @@ namespace iMS {
 			m->AddBuffer(interruptData);
 
 			// Place in list for processing by receive thread
-			{
-				std::unique_lock<std::mutex> list_lck{ m_listmutex };
-				m_list.push_back(m);
-				list_lck.unlock();
-			}
-			// Signal Parser thread
+            AddMsgToListWithNotify(m);            
+
+            // Signal Parser thread
 			m_rxcond.notify_one();
 		}
 	}
