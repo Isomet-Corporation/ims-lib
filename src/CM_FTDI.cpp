@@ -70,7 +70,7 @@ namespace iMS {
 		static const int DL_TRANSFER_SIZE = 64;
 		static const int UL_TRANSFER_SIZE = 64;
 		static const int TRANSFER_GRANULARITY = 64;
-		//static const long DMA_MAX_TRANSACTION_SIZE = 1048576;
+		static const long DMA_MAX_TRANSACTION_SIZE = 1024;
 		//static const int TRANSFER_QUEUE_SZ = 16;
 
 		boost::container::deque<uint8_t>& m_data;
@@ -339,6 +339,7 @@ namespace iMS {
 			// Stop Threads
 			DeviceIsOpen = false;  // must set this to cancel threads
             m_txcond.notify_all();
+            pImpl->m_tfrcond.notify_one();
 #if defined(_WIN32)
             SetEvent(pImpl->hShutdown);
 #elif defined(__linux__)
@@ -349,6 +350,7 @@ namespace iMS {
                 pthread_mutex_unlock(&pImpl->eh->eMutex);
             }
 #endif
+
 			senderThread.join();
 			receiverThread.join();
 			parserThread.join();
@@ -521,7 +523,7 @@ namespace iMS {
 #endif
 	}
 
-	bool CM_RS422::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
+	bool CM_FTDI::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
 		(void)uuid;
         BOOST_LOG_SEV(lg::get(), sev::trace) << "Starting memory download idx = " << image_index << ", " << arr.size() << " bytes at address 0x" 
@@ -550,7 +552,7 @@ namespace iMS {
 		return true;
 	}
 
-	bool CM_RS422::MemoryUpload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int len, int image_index, const std::array<uint8_t, 16>& uuid)
+	bool CM_FTDI::MemoryUpload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int len, int image_index, const std::array<uint8_t, 16>& uuid)
 	{
 		(void)uuid;
 
@@ -590,7 +592,7 @@ namespace iMS {
 		return true;
 	}
 
-	void CM_RS422::MemoryTransfer()
+	void CM_FTDI::MemoryTransfer()
 	{
         unsigned int dl_max_in_flight = FastTransfer::DMA_MAX_TRANSACTION_SIZE / std::max<unsigned int>(1,FastTransfer::DL_TRANSFER_SIZE); 
         unsigned int ul_max_in_flight = FastTransfer::DMA_MAX_TRANSACTION_SIZE / std::max<unsigned int>(1,FastTransfer::UL_TRANSFER_SIZE); 
