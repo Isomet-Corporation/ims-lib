@@ -33,6 +33,7 @@
 
 #include "CM_FTDI.h"
 #include "IMSSystem.h"
+#include "PrivateUtil.h"
 
 // Workaround because FTDI Driver is not compatible with VC14.0 (2015)
 #if (_MSC_VER >= 1900)
@@ -99,13 +100,13 @@ namespace iMS {
 		// Event used to receive notification from FTDI Device
 #if defined(_WIN32)
 		HANDLE hEvent;
+        HANDLE hShutdown;
 #elif defined(__linux__)
-		struct FT_Event
-		{
-			std::condition_variable eCondVar;
-			mutable std::mutex eMutex;
-		};
-		typedef FT_Event* FT_Event_Handle;
+        struct FT_Event {
+            pthread_cond_t eCondVar;
+            pthread_mutex_t eMutex;
+        };
+        typedef FT_Event* FT_Event_Handle;
 		FT_Event_Handle eh;
 #endif
 		std::atomic<_FastTransferStatus> FastTransferStatus{ _FastTransferStatus::IDLE };
@@ -229,6 +230,8 @@ namespace iMS {
 
 			ftStatus = FT_Purge(p_Impl->ftdiDevice, FT_PURGE_RX | FT_PURGE_TX); // Purge both Rx and Tx buffers
 
+            FT_SetLatencyTimer(p_Impl->ftdiDevice, 1); // in ms
+
 			// Assign Event Handle to receive notifications from device
 			DWORD EventMask = FT_EVENT_RXCHAR;
 #if defined(_WIN32)
@@ -239,12 +242,21 @@ namespace iMS {
 				NULL
 				);
 			ftStatus = FT_SetEventNotification(p_Impl->ftdiDevice, EventMask, (PVOID)p_Impl->hEvent);
-#elif defined(__linux__)
-			eh = new FT_Event;
 
-			pthread_mutex_init(eh->eMutex, NULL);
-			pthread_cond_init(eh->eCondVar, NULL);
-			ftStatus = FT_SetEventNotification(ftdiDevice, EventMask, (PVOID)eh)
+            // Used to unblock the waiting threads
+            p_Impl->hShutdown = CreateEvent(NULL, TRUE, FALSE, NULL);
+#elif defined(__linux__)
+            // allocate and initialise POSIX event object
+            p_Impl->eh = new FT_Event;
+            if (pthread_mutex_init(&p_Impl->eh->eMutex, NULL) != 0) {
+                // handle error...
+            }
+            if (pthread_cond_init(&p_Impl->eh->eCondVar, NULL) != 0) {
+                // handle error...
+            }
+
+            ftStatus = FT_SetEventNotification(p_Impl->ftdiDevice, EventMask, (PVOID)p_Impl->eh);
+            // FT_SetEventNotification returns immediately.  When RXCHAR arrives, D2XX should signal the condvar.
 #endif
 			// Clear Message Lists
 			m_list.clear();
@@ -318,6 +330,16 @@ namespace iMS {
 			// Stop Threads
 			DeviceIsOpen = false;  // must set this to cancel threads
             m_txcond.notify_all();
+#if defined(_WIN32)
+            SetEvent(p_Impl->hShutdown);
+#elif defined(__linux__)
+            if (p_Impl->eh) {
+                // Wake the waiting ResponseReceiver loop
+                pthread_mutex_lock(&p_Impl->eh->eMutex);
+                pthread_cond_broadcast(&p_Impl->eh->eCondVar);
+                pthread_mutex_unlock(&p_Impl->eh->eMutex);
+            }
+#endif
 			senderThread.join();
 			receiverThread.join();
 			parserThread.join();
@@ -328,7 +350,12 @@ namespace iMS {
 
 			// Clear Up
 #if defined(__linux__)
-			delete eh;
+            if (p_Impl->eh) {
+                pthread_cond_destroy(&p_Impl->eh->eCondVar);
+                pthread_mutex_destroy(&p_Impl->eh->eMutex);
+                delete p_Impl->eh;
+                p_Impl->eh = nullptr;
+            }
 #endif
 		}
 	}
@@ -407,77 +434,82 @@ namespace iMS {
 
 	void CM_FTDI::ResponseReceiver()
 	{
-		while (DeviceIsOpen == true)
-		{
-			DWORD RxBytes;
-			DWORD TxBytes;
-			DWORD EventStatus;
-			unsigned char RxBuffer[4096]; // same size as on-chip buffer
-			DWORD BytesReceived;
-
-			// Wait for something to happen
+        unsigned char RxBuffer[4096]; // same size as on-chip buffer
 #if defined(_WIN32)
-			while (WAIT_TIMEOUT == WaitForSingleObject(p_Impl->hEvent, 100))
-			{
-				// Timeout every 100ms to allow threads to terminate on disconnect
-				if (DeviceIsOpen == false) break;
-				FT_GetStatus(p_Impl->ftdiDevice, &RxBytes, &TxBytes, &EventStatus);
-				if (RxBytes > 0) break;
-			}
-#elif defined(__linux__)
-			pthread_mutex_lock(&eh.eMutex);
-			pthread_cond_wait(&eh.eCondVar, &eh.eMutex);
-			pthread_mutex_unlock(&eh.eMutex);
+        HANDLE waitHandles[2] = { p_Impl->hEvent, p_Impl->hShutdown };
 
-			//std::unique_lock<std::mutex> lck{ eh->eMutex };
-			//while (eh->eCondVar.wait_for(lck, std::chrono::milliseconds(100)) == std::cv_status::timeout)
-			//{
-			//	// Timeout every 100ms to allow threads to terminate on disconnect
-			//	if (DeviceIsOpen == false) break;
-			//}
-			//if (DeviceIsOpen == false)
-			//{
-			//	lck.unlock();
-			//	break;
-			//}
-#endif
+        while (DeviceIsOpen)
+		{
+			// Wait for something to happen
+            DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+            if (!DeviceIsOpen) break;  // check shutdown
 
-			FT_GetStatus(p_Impl->ftdiDevice, &RxBytes, &TxBytes, &EventStatus);
-			if ((EventStatus & FT_EVENT_RXCHAR) || (RxBytes > 0))
-			{
-				//lck.unlock();
-				std::unique_lock<std::mutex> rxlck{ m_rxmutex };
-				DWORD TfrBytes;
-				while (RxBytes > 0)
-				{
-					TfrBytes = RxBytes;
-					// Never request more bytes than the size of the buffer in the FTDI device (4kB)
-					if (TfrBytes > 4096) TfrBytes = 4096; 
-					FT_STATUS ftStatus = FT_Read(p_Impl->ftdiDevice, RxBuffer, TfrBytes, &BytesReceived);
-					//std::cout << "Received: " << RxBytes << " bytes" << std::endl;
-					if (ftStatus == FT_OK)  {
-						if (BytesReceived)
-						{
-							// FT_Read OK
-							for (unsigned int i = 0; i < BytesReceived; i++)
-							{
-								m_rxCharQueue.push(RxBuffer[i]);
-								//std::cout << std::hex;
-								//std::cout << std::setfill('0') << std::setw(2) << static_cast<int>(RxBuffer[i]) << " ";
-							}
-						}
-					}
-					else {
-						// FT_Read Failed
-						break;
-					}
-					RxBytes -= BytesReceived;
-				}
-				// Signal Parser thread
-				rxlck.unlock();
-				m_rxcond.notify_one();
-			}
+            if (waitResult == WAIT_OBJECT_0) {
+                DWORD BytesAvailable = 0, eventStatus, txBytes;
+
+			    FT_STATUS status = FT_GetStatus(p_Impl->ftdiDevice, &BytesAvailable, &txBytes, &eventStatus);
+                if (status != FT_OK || BytesAvailable == 0) continue;
+
+                DWORD BytesRead = 0;
+                if (BytesAvailable > sizeof(RxBuffer)) BytesAvailable = sizeof(RxBuffer);
+
+                if (FT_Read(p_Impl->ftdiDevice, RxBuffer, BytesAvailable, &BytesRead) == FT_OK && BytesRead > 0) {
+                    {
+                        std::scoped_lock lock(m_rxmutex);
+                        for (DWORD i = 0; i < BytesRead; i++) {
+                            m_rxCharQueue.push(RxBuffer[i]);
+                        }
+                    }
+                    m_rxcond.notify_one();
+                }
+            }            
 		}
+#elif defined(__linux__)
+
+        // Linux: wait on the FT_Event condvar which FTDI will signal
+        FT_Event *eh = p_Impl->eh;
+
+        while (DeviceIsOpen) {
+            // lock and wait until we are signalled or shutdown
+            pthread_mutex_lock(&eh->eMutex);
+
+            // Wait (unblocked either by FTDI signalling or by Disconnect() calling pthread_cond_broadcast)
+            pthread_cond_wait(&eh->eCondVar, &eh->eMutex);
+
+            // If DeviceIsOpen was cleared during shutdown and Disconnect() called broadcast, exit loop.
+            if (!DeviceIsOpen) {
+                pthread_mutex_unlock(&eh->eMutex);
+                break;
+            }
+
+            pthread_mutex_unlock(&eh->eMutex);
+
+            // Now check FTDI status and read any available bytes
+            DWORD BytesAvailable = 0, eventStatus = 0, txBytes = 0;
+            FT_STATUS status = FT_GetStatus(p_Impl->ftdiDevice, &BytesAvailable, &txBytes, &eventStatus);
+            if (status != FT_OK) {
+                // handle error (optionally break)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+            if (BytesAvailable == 0) {
+                // nothing to read — go back to waiting
+                continue;
+            }
+
+            DWORD BytesRead = 0;
+            if (BytesAvailable > sizeof(RxBuffer)) BytesAvailable = sizeof(RxBuffer);
+
+            if (FT_Read(p_Impl->ftdiDevice, RxBuffer, BytesAvailable, &BytesRead) == FT_OK && BytesRead > 0) {
+                {
+                    std::scoped_lock lock(m_rxmutex);
+                    for (DWORD i = 0; i < BytesRead; ++i) m_rxCharQueue.push(RxBuffer[i]);
+                }
+                m_rxcond.notify_one();
+            }
+        } // while(DeviceIsOpen)
+
+#endif
 	}
 
 	bool CM_FTDI::MemoryDownload(boost::container::deque<uint8_t>& arr, uint32_t start_addr, int image_index, const std::array<uint8_t, 16>& uuid)
