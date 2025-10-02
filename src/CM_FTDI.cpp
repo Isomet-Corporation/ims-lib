@@ -124,7 +124,7 @@ namespace iMS {
 		IConnectionManager * m_parent;
 	};
 
-	const std::list<std::string> CM_FTDI::Impl::SerialNumberPrefix = std::list<std::string>({ "iMS", "iDDS" });
+	const std::list<std::string> CM_FTDI::Impl::SerialNumberPrefix = std::list<std::string>({ "iMS", "iDDS", "iCSA" });
 
 	// Default Constructor
 	CM_FTDI::CM_FTDI() : p_Impl(new CM_FTDI::Impl(this))
