@@ -133,7 +133,9 @@ namespace iMS {
 		std::thread interruptThread;
 		std::shared_ptr<std::vector<uint8_t>> interruptData;
 
-        long long t0, t1, t2, t3, t4;
+#ifdef WIN32
+        HANDLE hShutdown;
+#endif
 	private:
 		IConnectionManager * m_parent;
 	};
@@ -327,6 +329,10 @@ namespace iMS {
 				FILE_FLAG_OVERLAPPED,   /* Or NULL for non-overlapped */
 				NULL
 				);
+
+            // Used to unblock the waiting threads
+            mImpl->hShutdown = CreateEvent(NULL, TRUE, FALSE, NULL);
+
 #ifdef UNICODE
 			delete[] port;
 #endif
@@ -402,6 +408,8 @@ namespace iMS {
 			if (mImpl->fp == NULL) {
 				DeviceIsOpen = false;
                 m_txcond.notify_all();
+                mImpl->m_tfrcond.notify_one();
+                SetEvent(mImpl->hShutdown);
 				return;
 			}
 
@@ -451,6 +459,8 @@ namespace iMS {
 			// Stop Threads
 			DeviceIsOpen = false;  // must set this to cancel threads
             m_txcond.notify_all();
+            mImpl->m_tfrcond.notify_one();
+            SetEvent(mImpl->hShutdown);
 
 			senderThread.join();
 			receiverThread.join();
@@ -586,6 +596,8 @@ namespace iMS {
         OVERLAPPED osReader = { 0 };
         osReader.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
+        HANDLE waitHandles[2] = { osReader.hEvent, mImpl->hShutdown };
+
 #if USE_WAITCOMM_EVENT
         // Configure event mask so we get notified when chars arrive
         if (!SetCommMask(mImpl->fp, EV_RXCHAR)) {
@@ -608,7 +620,9 @@ namespace iMS {
             BOOL ok = WaitCommEvent(mImpl->fp, &evtMask, &osReader);
             if (!ok && GetLastError() == ERROR_IO_PENDING) {
                 // Wait until event signalled
-                if (WaitForSingleObject(osReader.hEvent, INFINITE) != WAIT_OBJECT_0) continue;
+                if (WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE) != WAIT_OBJECT_0) continue;
+
+//                if (WaitForSingleObject(osReader.hEvent, INFINITE) != WAIT_OBJECT_0) continue;
                 if (!GetOverlappedResult(mImpl->fp, &osReader, &evtMask, FALSE)) continue;
             }
 
@@ -634,7 +648,7 @@ namespace iMS {
                     if (GetLastError() == ERROR_IO_PENDING) {
                         // Wait for read completion
                         rdlck.unlock();  // Allow MessageSender to write while we wait
-                        DWORD waitResult = WaitForSingleObject(osReader.hEvent, INFINITE);
+                        DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
                         rdlck.lock();
             
                         if (waitResult != WAIT_OBJECT_0) continue;
@@ -798,25 +812,12 @@ namespace iMS {
         };       
 
 
-		while (DeviceIsOpen == true)
+		while (DeviceIsOpen)
 		{
 			{
 				std::unique_lock<std::mutex> lck{ mImpl->m_tfrmutex };
-				while (!mImpl->m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return mImpl->fti != nullptr; }))
-				{
-					if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE)
-					{
-						break;
-					}
-					// Timeout every 100ms to allow threads to terminate on disconnect
-					if (DeviceIsOpen == false) break;
-				}
-				if (DeviceIsOpen == false)
-				{
-					// End thread
-					lck.unlock();
-					break;
-				}
+				mImpl->m_tfrcond.wait(lck, [&] {return !DeviceIsOpen || mImpl->fti != nullptr; });
+                if (!DeviceIsOpen || (mImpl->FastTransferStatus.load() == _FastTransferStatus::IDLE)) continue;
 
 				LONG bytesTransferred = 0;
 
