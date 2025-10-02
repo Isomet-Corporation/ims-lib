@@ -63,7 +63,7 @@ namespace iMS
 		const CM_FTDI &operator =(const CM_FTDI &);
 
 		class Impl;
-		Impl * p_Impl;
+		Impl * pImpl;
 
 		void MessageSender();
 		void ResponseReceiver();

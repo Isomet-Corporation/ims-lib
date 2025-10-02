@@ -58,7 +58,7 @@ namespace iMS
 		const CM_RS422 &operator =(const CM_RS422 &);
 
 		class Impl;
-		Impl *mImpl;
+		Impl *pImpl;
 
 		void MessageSender();
 		void ResponseReceiver();
