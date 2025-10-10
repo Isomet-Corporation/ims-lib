@@ -53,40 +53,73 @@ namespace iMS
 		"SEND_ERROR",
 		"TIMEOUT_ON_SEND",
 		"RX_PARTIAL",
+		"INTERRUPT",
 		"RX_OK",
 		"CANCELLED",
 		"TIMEOUT_ON_RXCV",
 		"RX_ERROR_VALID",
 		"RX_ERROR_INVALID",
-		"INTERRUPT",
 		"PROCESSED_INTERRUPT"
 	};
 
 	// Initialise ID Counter
 	MessageHandle Message::mIDCount = 1;
 	
-	void Message::MarkSendTime()
+	void Message::markSendTime()
 	{
 		m_tm_sent = std::chrono::high_resolution_clock::now();
 	}
 
-	void Message::MarkRecdTime()
+	void Message::markRecdTime()
 	{
 		m_tm_recd = std::chrono::high_resolution_clock::now();
 	}
 
 	void Message::setStatus(const Message::Status s)
 	{
-		m_status = s;
+        if ((m_status == Status::UNSENT) && (s > Status::UNSENT)) {
+            this->markSendTime();
+        }
+        bool c = this->isComplete();
+        {
+            std::unique_lock lock(m_mutex);
+            m_status = s;
+        }
+        if (!c && this->isComplete()) {
+            this->markRecdTime();
+            m_cv.notify_all();
+        }
 	}
 
 	Message::Status Message::getStatus() const
 	{
-		return m_status;
+        std::shared_lock lock(m_mutex);
+        return m_status;
 	}
+
+    bool Message::isComplete() const {
+        auto s = this->getStatus();
+        return (s != Status::UNSENT && s != Status::SENT && s != Status::RX_PARTIAL && s != Status::INTERRUPT);
+    }
+
+    // Wait until status changes to RX_OK or timeout
+    bool Message::waitForCompletion(std::chrono::milliseconds timeout) {
+        std::shared_lock lock(m_mutex);
+        return m_cv.wait_for(lock, timeout, [&]{ 
+            return isComplete();
+        });
+    }
+
+    void Message::waitForCompletion() {
+        std::shared_lock lock(m_mutex);
+        m_cv.wait(lock, [&]{ 
+            return isComplete();
+        });
+    }
 
 	std::string Message::getStatusText() const
 	{
+        std::shared_lock lock(m_mutex);        
 		return std::string(Message::StatusEnumStrings[(int)m_status]);
 	}
 
@@ -118,7 +151,10 @@ namespace iMS
 
 	void Message::Parse(const std::uint8_t rxchar)
 	{
-		m_resp.Parse(rxchar);
+        {
+            std::unique_lock lock(m_mutex);
+            m_resp.Parse(rxchar);
+        }
 	}
 
 	char Message::Parse()
@@ -140,9 +176,11 @@ namespace iMS
 
 	const DeviceReport* Message::Response() const
 	{
+        std::shared_lock lock(m_mutex);           
 		return &m_resp;
 	}
 
+    // AddBuffer is not synchronised so it must be called from the same thread that does the parsing
 	void Message::AddBuffer(const std::vector<std::uint8_t>& buf)
 	{
 		// Add the input buffer to the internal queue

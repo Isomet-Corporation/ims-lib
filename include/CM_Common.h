@@ -25,6 +25,7 @@
 #define IMS_CM_COMMON_H__
 
 #include "IConnectionManager.h"
+#include "MessageRegistry.h"
 
 #include <list>
 #include <mutex>
@@ -34,9 +35,18 @@
 #include <queue>
 #include <array>
 
+using HRClock = std::chrono::high_resolution_clock;
+using us = std::chrono::microseconds;
+
 namespace iMS {
 
-	// This is another ABC that inherits its interface and adds some data and member functions
+	enum class _FastTransferStatus {
+		IDLE,
+		DOWNLOADING,
+		UPLOADING
+	};
+
+    // This is another ABC that inherits its interface and adds some data and member functions
 	//	that are common to all CM types
 	class CM_Common : public IConnectionManager
 	{
@@ -47,6 +57,7 @@ namespace iMS {
 		void MessageEventUnsubscribe(const int message, const IEventHandler* handler);
 		bool MemoryDownload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int image_index, const std::array<std::uint8_t, 16>& uuid);
 		bool MemoryUpload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int len, int image_index, const std::array<std::uint8_t, 16>& uuid);
+        void MemoryTransfer();
 		int MemoryProgress();
 
 		// Send an I/O Report
@@ -57,6 +68,53 @@ namespace iMS {
 		const bool& Open() const;
 
 	protected:
+        struct DefaultPolicy {
+            DefaultPolicy(uint32_t _addr, int _index) : addr(_addr), index(_index) {}
+
+            static constexpr int DL_TRANSFER_SIZE = 64;
+            static constexpr int UL_TRANSFER_SIZE = 64;
+            static constexpr int TRANSFER_UNIT    = 64;
+            static constexpr long DMA_MAX_TRANSACTION_SIZE = 1024;
+
+            // Optional extra fields
+            uint32_t addr = 0;
+            int index = 0;
+        };
+        // Declare a class that stores information pertaining to the status of any fast memory transfers
+		template <typename Policy = DefaultPolicy> 
+        class FastTransfer {
+        public:
+            FastTransfer(boost::container::deque<uint8_t>& data, int len,
+                        const Policy& policy = Policy{})
+                : m_data(data), m_len(len), m_policy(policy),
+                m_transCount(((m_len - 1) / Policy::TRANSFER_UNIT) + 1) 
+            {
+                m_data_it = m_data.cbegin();
+                m_currentTrans = 0;
+                startNextTransaction();
+            }
+
+            void startNextTransaction() {
+                if (m_currentTrans < m_transCount) {
+                    m_currentTrans++;
+                    m_transBytesRemaining = (m_currentTrans == m_transCount)
+                        ? (m_len - ((m_currentTrans - 1) * Policy::TRANSFER_UNIT))
+                        : Policy::TRANSFER_UNIT;
+                }
+            }
+
+            // Common members
+            boost::container::deque<uint8_t>& m_data;
+            const int m_len;
+            typename boost::container::deque<uint8_t>::const_iterator m_data_it;
+
+            const unsigned int m_transCount;
+            unsigned int m_currentTrans;
+            unsigned int m_transBytesRemaining;
+
+            Policy m_policy;  // holds addr, index, uuid, etc.
+        };
+
 		MessageEventTrigger mMsgEvent;
 
 		bool DeviceIsOpen{ false };
@@ -71,8 +129,7 @@ namespace iMS {
 
 		// Message Receiving Thread
 		std::thread receiverThread;
-		std::queue<char> m_rxCharQueue;
-		std::list<std::shared_ptr<Message>> m_list;
+		std::deque<char> m_rxCharQueue;
 		mutable std::mutex m_rxmutex;
 		std::condition_variable m_rxcond;
 		virtual void ResponseReceiver() = 0;
@@ -81,16 +138,15 @@ namespace iMS {
 		std::thread parserThread;
 		std::chrono::milliseconds rxTimeout;
 		std::chrono::milliseconds autoFreeTimeout;
-		mutable std::mutex m_listmutex;
-		std::condition_variable m_listcv;
+        MessageRegistry<MessageHandle, Message> m_msgRegistry;
 		virtual void MessageListManager();
-        void AddMsgToListWithNotify(std::shared_ptr<Message>& msg);
-	};
 
-	enum class _FastTransferStatus {
-		IDLE,
-		DOWNLOADING,
-		UPLOADING
+		// Memory Transfer Thread
+        std::atomic<_FastTransferStatus> FastTransferStatus{ _FastTransferStatus::IDLE };
+		FastTransfer<DefaultPolicy> *fti = nullptr;
+		std::thread memoryTransferThread;
+		mutable std::mutex m_tfrmutex;
+		std::condition_variable m_tfrcond;
 	};
 
 

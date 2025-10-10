@@ -888,11 +888,13 @@ namespace iMS
 					else {
 						// Problem with DMA Transfer
 						m_Event->Trigger<int>((void *)this, ImageDownloadEvents::DOWNLOAD_FAIL_TRANSFER_ABORT, 0);
+                        BOOST_LOG_SEV(lg::get(), sev::error) << "Image Download DMA Transfer Failed.";
 					}
 				}
 				else {
 					// Problem setting up transfer, abort
 					m_Event->Trigger<int>((void *)this, ImageDownloadEvents::DOWNLOAD_FAIL_MEMORY_FULL, 0);
+                    BOOST_LOG_SEV(lg::get(), sev::error) << "Failed to setup Image Download. Memory or Index Table Full?";
 				}
 				//if (m_imgdata->size()) m_imgdata->clear();
 				delete iorpt;

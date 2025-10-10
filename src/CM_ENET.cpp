@@ -165,25 +165,6 @@ static std::string logErrorString(int err = INT_MAX) {
 		delete this->Buffer;
 	}
 
-	class CM_ENET::FastTransfer
-	{
-	public:
-		FastTransfer(boost::container::deque<std::uint8_t>& data, const std::array<std::uint8_t, 16>& uuid, int len) :
-			m_data(data), m_uuid(uuid), m_len(len) {
-			m_data_it = m_data.cbegin();
-		}
-
-		static const int TRANSFER_GRANULARITY = 512;
-		static const int TRANSFER_QUEUE_SZ = 16;
-
-		boost::container::deque<std::uint8_t>& m_data;
-		std::array<std::uint8_t, 16> m_uuid;
-		int m_len;
-
-		boost::container::deque<std::uint8_t>::const_iterator m_data_it;
-	};
-
-
 	// All private data and member functions contained within Impl class
 	class CM_ENET::Impl
 	{
@@ -223,9 +204,6 @@ static std::string logErrorString(int err = INT_MAX) {
 #endif
 		SOCKET msgSock, intrSock;
 
-		std::atomic<_FastTransferStatus> FastTransferStatus{ _FastTransferStatus::IDLE };
-		FastTransfer *fti = nullptr;
-
 		SOCKADDR ConnectedServer;
 
 		//std::deque<std::shared_ptr<CM_ENET::MsgContext>> m_rxBuf;
@@ -233,10 +211,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		//mutable std::mutex m_rxBufmutex;
 		//std::condition_variable m_rxBufcond;
 
-		// Memory Transfer Thread
-		std::thread memoryTransferThread;
-		mutable std::mutex m_tfrmutex;
-		std::condition_variable m_tfrcond;
+        FastTransfer* m_fti = nullptr;
 
 		// Interrupt receiving thread
 		std::thread interruptThread;
@@ -791,10 +766,14 @@ static std::string logErrorString(int err = INT_MAX) {
 			mImpl->ConnectedServer = *((SOCKADDR*)&ServerAddr);
 
 			// Clear Message Lists
-			m_list.clear();
+			m_msgRegistry.clear();
 			while (!m_queue.empty()) m_queue.pop();
 			//while (!mImpl->m_rxBuf.empty()) mImpl->m_rxBuf.pop_front();
-			while (!m_rxCharQueue.empty()) m_rxCharQueue.pop();
+
+            {
+                std::lock_guard<std::mutex> lock(m_rxmutex);
+                m_rxCharQueue.clear();
+            }
 
 			// Start Report Sending Thread
 			senderThread = std::thread(&CM_ENET::MessageSender, this);
@@ -806,7 +785,7 @@ static std::string logErrorString(int err = INT_MAX) {
 			parserThread = std::thread(&CM_ENET::MessageListManager, this);
 
 			// Start Memory Transferer Thread
-			mImpl->memoryTransferThread = std::thread(&CM_ENET::MemoryTransfer, this);
+			memoryTransferThread = std::thread(&CM_ENET::MemoryTransfer, this);
 
 			// Start Interrupt receiving thread
 			mImpl->interruptThread = std::thread(&CM_ENET::InterruptReceiver, this);
@@ -845,20 +824,15 @@ static std::string logErrorString(int err = INT_MAX) {
 			bool msg_waiting{ false };
 			do
 			{
-				std::unique_lock<std::mutex> list_lck{ m_listmutex };
-				for (std::list<std::shared_ptr<Message>>::iterator it = m_list.begin(); it != m_list.end(); ++it)
-				{
-					std::shared_ptr<Message> msg = (*it);
-					if ((msg->getStatus() == Message::Status::SENT) ||
-						(msg->getStatus() == Message::Status::RX_PARTIAL))
+                m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& msg) {
+                    if (!msg->isComplete())
 					{
 						msg_waiting = true;
 					}
-				}
-				list_lck.unlock();
+                });
 				if (msg_waiting)
 				{
-					std::this_thread::sleep_for(std::chrono::milliseconds(250));
+					std::this_thread::sleep_for(std::chrono::milliseconds(25));
 					msg_waiting = false;
 				}
 				else {
@@ -876,7 +850,7 @@ static std::string logErrorString(int err = INT_MAX) {
 			BOOST_LOG_SEV(lg::get(), sev::debug) << "receiver thread joined" << std::endl;
 			parserThread.join();
 			BOOST_LOG_SEV(lg::get(), sev::debug) << "parser thread joined" << std::endl;
-			mImpl->memoryTransferThread.join();  // TODO: need to abort in-flight transfers
+			memoryTransferThread.join();  // TODO: need to abort in-flight transfers
 			BOOST_LOG_SEV(lg::get(), sev::debug) << "memory transfer thread joined" << std::endl;
 			mImpl->interruptThread.join();
 			BOOST_LOG_SEV(lg::get(), sev::debug) << "interrupt thread joined" << std::endl;
@@ -1054,15 +1028,6 @@ static std::string logErrorString(int err = INT_MAX) {
                 }
             }
 #endif
-
-            m->MarkSendTime();
-
-            // Place in list for processing by receive thread
-            AddMsgToListWithNotify(m);
-            // Indicate to receive thread that a receive transfer has been started
-            //if (m->getStatus() == Message::Status::SENT) {
-//					mImpl->m_rxBufcond.notify_one();
-            //}
 		}
 	}
 
@@ -1104,15 +1069,17 @@ static std::string logErrorString(int err = INT_MAX) {
 					}
 				}
 				else if (ret > 0) {
-					std::unique_lock<std::mutex> rxlck{ m_rxmutex };
-					for (int i = 0; i < ret; i++)
-					{
-						m_rxCharQueue.push(szBuffer[i]);
-						//std::cout << std::hex;
-						//std::cout << std::setfill('0') << std::setw(2) << static_cast<int>(szBuffer[i]) << " ";
-					}
+                    {
+                        std::scoped_lock<std::mutex> rxlck{ m_rxmutex };
+                        m_rxCharQueue.insert(m_rxCharQueue.end(), szBuffer, szBuffer + ret);
+                        // for (int i = 0; i < ret; i++)
+                        // {
+                        //     m_rxCharQueue.push_back(szBuffer[i]);
+                        //     //std::cout << std::hex;
+                        //     //std::cout << std::setfill('0') << std::setw(2) << static_cast<int>(szBuffer[i]) << " ";
+                        // }
+                    }
 					// Signal Parser thread
-					rxlck.unlock();
 					m_rxcond.notify_one();
 				}
 				lastRet = ret;
@@ -1124,23 +1091,24 @@ static std::string logErrorString(int err = INT_MAX) {
 	{
 		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_ENET::MemoryDownload addr = " << start_addr << " index = " << image_index << " size = " << arr.size() << std::endl;
 		// Only proceed if idle
-		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
+		if (FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
 			BOOST_LOG_SEV(lg::get(), sev::error) << "Memory Transfer not idle" << std::endl;
 			return false;
 		}
 		// Setup transfer
 		int length = (int)arr.size();
-		length = (((length - 1) / FastTransfer::TRANSFER_GRANULARITY) + 1) * FastTransfer::TRANSFER_GRANULARITY;
+		length = (((length - 1) / ENET_Policy::TRANSFER_UNIT) + 1) * ENET_Policy::TRANSFER_UNIT;
 		arr.resize(length);  // Increase the buffer size to the transfer granularity
 		{
-			std::unique_lock<std::mutex> tfr_lck{ mImpl->m_tfrmutex };
-			mImpl->fti = new FastTransfer(arr, uuid, length);
+            ENET_Policy policy(uuid);
+			std::unique_lock<std::mutex> tfr_lck{ m_tfrmutex };
+			mImpl->m_fti = new FastTransfer(arr, length, policy);
 		}
 
 		// Signal thread to do the grunt work
-		mImpl->FastTransferStatus.store(_FastTransferStatus::DOWNLOADING);
-		mImpl->m_tfrcond.notify_one();
+		FastTransferStatus.store(_FastTransferStatus::DOWNLOADING);
+		m_tfrcond.notify_one();
 
 		return true;
 	}
@@ -1149,20 +1117,21 @@ static std::string logErrorString(int err = INT_MAX) {
 	{
 		BOOST_LOG_SEV(lg::get(), sev::debug) << "CM_ENET::MemoryUpload addr = " << start_addr << " index = " << image_index << " size = " << len << std::endl;
 		// Only proceed if idle
-		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
+		if (FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
 			BOOST_LOG_SEV(lg::get(), sev::error) << "Memory Transfer not idle" << std::endl;
 			return false;
 		}
 
 		{
-			std::unique_lock<std::mutex> tfr_lck{ mImpl->m_tfrmutex };
-			mImpl->fti = new FastTransfer(arr, uuid, 0);
+            ENET_Policy policy(uuid);
+			std::unique_lock<std::mutex> tfr_lck{ m_tfrmutex };
+			mImpl->m_fti = new FastTransfer(arr, 0, policy);
 		}
 
 		// Signal thread to do the grunt work
-		mImpl->FastTransferStatus.store(_FastTransferStatus::UPLOADING);
-		mImpl->m_tfrcond.notify_one();
+		FastTransferStatus.store(_FastTransferStatus::UPLOADING);
+		m_tfrcond.notify_one();
 
 		return true;
 	}
@@ -1173,10 +1142,10 @@ static std::string logErrorString(int err = INT_MAX) {
 		while (DeviceIsOpen == true)
 		{
 			{
-				std::unique_lock<std::mutex> lck{ mImpl->m_tfrmutex };
-				while (!mImpl->m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return mImpl->fti != nullptr; }))
+				std::unique_lock<std::mutex> lck{ m_tfrmutex };
+				while (!m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return mImpl->m_fti != nullptr; }))
 				{
-					if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE)
+					if (FastTransferStatus.load() != _FastTransferStatus::IDLE)
 					{
 						break;
 					}
@@ -1205,25 +1174,25 @@ static std::string logErrorString(int err = INT_MAX) {
 					continue;
 				}
 
-				if (mImpl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
-					if (!client->sendFile(mImpl->fti->m_data, UUIDToStr(mImpl->fti->m_uuid).c_str()))
+				if (FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
+					if (!client->sendFile(mImpl->m_fti->m_data, UUIDToStr(mImpl->m_fti->m_policy.uuid).c_str()))
 					{
 						mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_ERROR, -1);
 					}
 				}
-				else if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
-					if (!client->getFile(UUIDToStr(mImpl->fti->m_uuid).c_str(), mImpl->fti->m_data))
+				else if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
+					if (!client->getFile(UUIDToStr(mImpl->m_fti->m_policy.uuid).c_str(), mImpl->m_fti->m_data))
 					{
 						mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_ERROR, -1);
 					}
 				}
 				delete client;
 
-				int bytesTransferred = (int)mImpl->fti->m_data.size();
-				delete mImpl->fti;
-				mImpl->fti = nullptr;
+				int bytesTransferred = (int)mImpl->m_fti->m_data.size();
+				delete mImpl->m_fti;
+				mImpl->m_fti = nullptr;
 
-				mImpl->FastTransferStatus.store(_FastTransferStatus::IDLE);
+				FastTransferStatus.store(_FastTransferStatus::IDLE);
 				mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_COMPLETE, bytesTransferred);
 			}
 		}
@@ -1280,13 +1249,12 @@ static std::string logErrorString(int err = INT_MAX) {
 					}
 					else if (ret > 0) {
 						std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
-						m->MarkSendTime();
 						m->setStatus(Message::Status::INTERRUPT);
 						interruptData.resize(ret);
 						m->AddBuffer(interruptData);
 
 						// Place in list for processing by receive thread
-                        AddMsgToListWithNotify(m);
+                        m_msgRegistry.addMessage(m->getMessageHandle(), m);
 
                         // Signal Parser thread
 						m_rxcond.notify_one();

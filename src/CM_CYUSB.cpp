@@ -79,41 +79,6 @@ namespace iMS {
 		delete OvLap;
 	}
 
-	class CM_CYUSB::FastTransfer
-	{
-	public:
-		FastTransfer::FastTransfer(boost::container::deque<uint8_t>& data, const uint32_t addr, const int len) :
-			m_data(data), m_addr(addr), m_len(len), m_transCount ( ((m_len - 1) / DMA_MAX_TRANSACTION_SIZE) + 1 ) {
-			m_data_it = m_data.cbegin();
-			m_currentTrans = 0;
-			startNextTransaction();
-		}
-
-		static const int DL_TRANSFER_SIZE = 131072;
-		static const int UL_TRANSFER_SIZE = 8192;
-		static const int TRANSFER_GRANULARITY = 1024;
-		static const long DMA_MAX_TRANSACTION_SIZE = 1048576;
-		static const int TRANSFER_QUEUE_SZ = 16;
-
-		boost::container::deque<uint8_t>& m_data;
-		const uint32_t m_addr;
-		const int m_len;
-		
-		boost::container::deque<uint8_t>::const_iterator m_data_it;
-
-		void startNextTransaction() {
-			if (m_currentTrans < m_transCount) {
-				m_currentTrans++;
-				m_transBytesRemaining = (m_currentTrans == m_transCount) ?
-					(m_len - ((m_currentTrans-1) * DMA_MAX_TRANSACTION_SIZE)) : DMA_MAX_TRANSACTION_SIZE ;
-			}
-		}
-
-		const int m_transCount;
-		int m_currentTrans;
-		int m_transBytesRemaining;
-	};
-
 	// All private data and member functions contained within Impl class
 	class CM_CYUSB::Impl
 	{
@@ -147,13 +112,7 @@ namespace iMS {
 		mutable std::mutex m_rxBufmutex;
 		std::condition_variable m_rxBufcond;
 
-		std::atomic<_FastTransferStatus> FastTransferStatus{ _FastTransferStatus::IDLE };
-		FastTransfer *fti = nullptr;
-
-		// Memory Transfer Thread
-		std::thread memoryTransferThread;
-		mutable std::mutex m_tfrmutex;
-		std::condition_variable m_tfrcond;
+        FastTransfer* m_fti = nullptr;
 
 		// Interrupt receiving thread
 		std::thread interruptThread;
@@ -402,10 +361,9 @@ namespace iMS {
 			DeviceIsOpen = true;
 
 			// Clear Message Lists
-			m_list.clear();
+            m_msgRegistry.clear();
 			while (!m_queue.empty()) m_queue.pop();
 			while (!mImpl->m_rxBuf.empty()) mImpl->m_rxBuf.pop_front();
-			while (!m_rxCharQueue.empty()) m_rxCharQueue.pop();
 
 			// Start Report Sending Thread
 			senderThread = std::thread(&CM_CYUSB::MessageSender, this);
@@ -417,7 +375,7 @@ namespace iMS {
 			parserThread = std::thread(&CM_CYUSB::MessageListManager, this);
 
 			// Start Memory Transferer Thread
-			mImpl->memoryTransferThread = std::thread(&CM_CYUSB::MemoryTransfer, this);
+			memoryTransferThread = std::thread(&CM_CYUSB::MemoryTransfer, this);
 
 			// Start Interrupt receiving thread
 			mImpl->interruptThread = std::thread(&CM_CYUSB::InterruptReceiver, this);
@@ -451,17 +409,12 @@ namespace iMS {
 			bool msg_waiting{ false };
 			do
 			{
-				std::unique_lock<std::mutex> list_lck{ m_listmutex };
-				for (std::list<std::shared_ptr<Message>>::iterator it = m_list.begin(); it != m_list.end(); ++it)
-				{
-					std::shared_ptr<Message> msg = (*it);
-					if ((msg->getStatus() == Message::Status::SENT) ||
-						(msg->getStatus() == Message::Status::RX_PARTIAL))
+                m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& msg) {
+                    if (!msg->isComplete())
 					{
 						msg_waiting = true;
 					}
-				}
-				list_lck.unlock();
+                });
 				if (msg_waiting)
 				{
 					std::this_thread::sleep_for(std::chrono::milliseconds(25));
@@ -478,7 +431,7 @@ namespace iMS {
 			senderThread.join();
 			receiverThread.join();
 			parserThread.join();
-			mImpl->memoryTransferThread.join();  // TODO: need to abort in-flight transfers
+			memoryTransferThread.join();  // TODO: need to abort in-flight transfers
 			mImpl->interruptThread.join();
 
 			mImpl->USBDevice->Close();
@@ -571,11 +524,6 @@ namespace iMS {
             }
             ResetEvent(outContext.OvLap->hEvent);
 
-            m->MarkSendTime();
-
-            // Place in list for processing by receive thread
-            AddMsgToListWithNotify(m);  
-
             // Indicate to receive thread that a receive transfer has been started
             if (m->getStatus() == Message::Status::SENT) {
                 mImpl->m_rxBufcond.notify_one();
@@ -648,20 +596,15 @@ namespace iMS {
 						MessageHandle msgHnd = (*usb_it)->handle;
 
 						// Read completed but message may not have been added to list from sender thread yet, look for it first before reading into buffer.
-						std::unique_lock<std::mutex> list_lck{ m_listmutex };
-						std::list<std::shared_ptr<Message>>::iterator msg_it = std::find_if(m_list.begin(), m_list.end(),
-							[=](const std::shared_ptr<Message>& m) {return m->getMessageHandle() == msgHnd; });
-						//for (std::list<std::shared_ptr<Message>>::iterator msg_it = m_list.begin(); msg_it != m_list.end(); ++msg_it)
-						//{
-							//if ((*usb_it)->handle == (*msg_it)->getMessageHandle())
-						if (msg_it != m_list.end())
+                        auto& msg = m_msgRegistry.findMessage(msgHnd);
+						if (msg != nullptr)
 						{
 							mImpl->Ept.cInEpt->FinishDataXfer((PUCHAR)&((*((*usb_it)->Buffer))[0]), (*usb_it)->bufLen, (*usb_it)->OvLap, (*usb_it)->context);
 							ResetEvent((*usb_it)->OvLap->hEvent);
 
 							(*(*usb_it)->Buffer).resize((*usb_it)->bufLen);
 							mImpl->condenseBuffer(*(*usb_it)->Buffer);
-							(*msg_it)->AddBuffer(*(*usb_it)->Buffer);
+							msg->AddBuffer(*(*usb_it)->Buffer);
 
 							delete (*usb_it)->Buffer;
 							usb_it = mImpl->m_rxBuf.erase(usb_it);
@@ -685,7 +628,7 @@ namespace iMS {
 		(void)uuid;
 
  		// Only proceed if idle
-		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
+		if (FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
 			return false;
 		}
@@ -693,16 +636,17 @@ namespace iMS {
 		if (start_addr & 0x7) return false;
 		// Setup transfer
 		int length = arr.size();
-		length = (((length - 1) / FastTransfer::TRANSFER_GRANULARITY) + 1) * FastTransfer::TRANSFER_GRANULARITY;
+		length = (((length - 1) / CYUSB_Policy::TRANSFER_GRANULARITY) + 1) * CYUSB_Policy::TRANSFER_GRANULARITY;
 		arr.resize(length);  // Increase the buffer size to the transfer granularity
 		{
-			std::unique_lock<std::mutex> tfr_lck{ mImpl->m_tfrmutex };
-			mImpl->fti = new FastTransfer(arr, start_addr, length);
+            CYUSB_Policy policy(start_addr);
+			std::unique_lock<std::mutex> tfr_lck{ m_tfrmutex };
+			mImpl->m_fti = new FastTransfer(arr, length, policy);
 		}
 
 		// Signal thread to do the grunt work
-		mImpl->FastTransferStatus.store(_FastTransferStatus::DOWNLOADING);
-		mImpl->m_tfrcond.notify_one();
+		FastTransferStatus.store(_FastTransferStatus::DOWNLOADING);
+		m_tfrcond.notify_one();
 
 		return true; 
 	}
@@ -713,23 +657,24 @@ namespace iMS {
 		(void)uuid;
 
 		// Only proceed if idle
-		if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE) {
+		if (FastTransferStatus.load() != _FastTransferStatus::IDLE) {
 			mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_NOT_IDLE, -1);
 			return false;
 		}
 		// DMA Cannot accept addresses that aren't aligned to 64 bits
 		if (start_addr & 0x7) return false;
 		// Setup transfer
-		int length = (((len - 1) / FastTransfer::TRANSFER_GRANULARITY) + 1) * FastTransfer::TRANSFER_GRANULARITY;
+		int length = (((len - 1) / CYUSB_Policy::TRANSFER_GRANULARITY) + 1) * CYUSB_Policy::TRANSFER_GRANULARITY;
 
 		{
-			std::unique_lock<std::mutex> tfr_lck{ mImpl->m_tfrmutex };
-			mImpl->fti = new FastTransfer(arr, start_addr, length);
+            CYUSB_Policy policy(start_addr);
+			std::unique_lock<std::mutex> tfr_lck{ m_tfrmutex };
+			mImpl->m_fti = new FastTransfer(arr, length, policy);
 		}
 
 		// Signal thread to do the grunt work
-		mImpl->FastTransferStatus.store(_FastTransferStatus::UPLOADING);
-		mImpl->m_tfrcond.notify_one();
+		FastTransferStatus.store(_FastTransferStatus::UPLOADING);
+		m_tfrcond.notify_one();
 
 		return true;
 	}
@@ -744,10 +689,10 @@ namespace iMS {
 		while (DeviceIsOpen == true)
 		{
 			{
-				std::unique_lock<std::mutex> lck{ mImpl->m_tfrmutex };
-				while (!mImpl->m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return mImpl->fti != nullptr; }))
+				std::unique_lock<std::mutex> lck{ m_tfrmutex };
+				while (!m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return mImpl->m_fti != nullptr; }))
 				{
-					if (mImpl->FastTransferStatus.load() != _FastTransferStatus::IDLE)
+					if (FastTransferStatus.load() != _FastTransferStatus::IDLE)
 					{
 						break;
 					}
@@ -763,10 +708,10 @@ namespace iMS {
 				PUCHAR dataBuffer;
 				//try
 				//{
-					if (FastTransfer::DL_TRANSFER_SIZE > FastTransfer::UL_TRANSFER_SIZE)
-						dataBuffer = new UCHAR[FastTransfer::DL_TRANSFER_SIZE];
+					if (CYUSB_Policy::DL_TRANSFER_SIZE > CYUSB_Policy::UL_TRANSFER_SIZE)
+						dataBuffer = new UCHAR[CYUSB_Policy::DL_TRANSFER_SIZE];
 					else
-						dataBuffer = new UCHAR[FastTransfer::UL_TRANSFER_SIZE];
+						dataBuffer = new UCHAR[CYUSB_Policy::UL_TRANSFER_SIZE];
 				//}
 				//catch (std::bad_alloc& exc)
 				//{
@@ -774,7 +719,7 @@ namespace iMS {
 				//}
 				LONG bytesTransferred = 0;
 
-				if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) mImpl->fti->m_data.clear();
+				if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING) mImpl->m_fti->m_data.clear();
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 				boost::chrono::steady_clock::time_point start = boost::chrono::steady_clock::now();
@@ -782,12 +727,12 @@ namespace iMS {
 				boost::chrono::duration<double, boost::milli> xfer_time(0.0);
 #endif
 
-				for (int i = 0; i < mImpl->fti->m_transCount; i++) {
+				for (int i = 0; i < mImpl->m_fti->m_transCount; i++) {
 					// Prime DMA Transfer
 					HostReport *iorpt;
-					uint32_t len = static_cast<uint32_t>(mImpl->fti->m_transBytesRemaining);
-					uint32_t addr = mImpl->fti->m_addr + i * FastTransfer::DMA_MAX_TRANSACTION_SIZE;
-					if (mImpl->FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
+					uint32_t len = static_cast<uint32_t>(mImpl->m_fti->m_transBytesRemaining);
+					uint32_t addr = mImpl->m_fti->m_policy.addr + i * CYUSB_Policy::TRANSFER_UNIT;
+					if (FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
 						iorpt = new HostReport(HostReport::Actions::CTRLR_IMGDMA, HostReport::Dir::WRITE, ImageDMA_Download);
 						iorpt->Payload<std::vector<uint32_t>>({ len, addr });
 						DeviceReport resp = this->SendMsgBlocking(*iorpt);
@@ -795,17 +740,17 @@ namespace iMS {
 						delete iorpt;
 
 						// Copy a buffer's worth of data
-						while (mImpl->fti->m_transBytesRemaining > 0) {
+						while (mImpl->m_fti->m_transBytesRemaining > 0) {
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_pre_copy = boost::chrono::steady_clock::now();
 #endif
-							LONG dl_len = FastTransfer::DL_TRANSFER_SIZE;
-							if (mImpl->fti->m_transBytesRemaining < FastTransfer::DL_TRANSFER_SIZE) dl_len = mImpl->fti->m_transBytesRemaining;
-							auto buf_start = mImpl->fti->m_data_it;
-							auto buf_end = mImpl->fti->m_data_it + dl_len;
+							LONG dl_len = CYUSB_Policy::DL_TRANSFER_SIZE;
+							if (mImpl->m_fti->m_transBytesRemaining < CYUSB_Policy::DL_TRANSFER_SIZE) dl_len = mImpl->m_fti->m_transBytesRemaining;
+							auto buf_start = mImpl->m_fti->m_data_it;
+							auto buf_end = mImpl->m_fti->m_data_it + dl_len;
 							std::copy(buf_start, buf_end, dataBuffer);
-							mImpl->fti->m_data_it += dl_len;
-							mImpl->fti->m_transBytesRemaining -= dl_len;
+							mImpl->m_fti->m_data_it += dl_len;
+							mImpl->m_fti->m_transBytesRemaining -= dl_len;
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_pre_xfer = boost::chrono::steady_clock::now();
 #endif
@@ -813,7 +758,7 @@ namespace iMS {
 							LONG tfr_len;
 							do {
 								tfr_len = dl_len;
-								if (tfr_len < FastTransfer::TRANSFER_GRANULARITY) tfr_len = FastTransfer::TRANSFER_GRANULARITY;
+								if (tfr_len < CYUSB_Policy::TRANSFER_GRANULARITY) tfr_len = CYUSB_Policy::TRANSFER_GRANULARITY;
 								mImpl->Ept.bOutEpt->XferData(tfr_ptr, tfr_len);
 								tfr_ptr += tfr_len;
 								bytesTransferred += tfr_len;
@@ -825,7 +770,7 @@ namespace iMS {
 #endif
 						}
 					}
-					else if (mImpl->FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
+					else if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
 						iorpt = new HostReport(HostReport::Actions::CTRLR_IMGDMA, HostReport::Dir::WRITE, ImageDMA_Upload);
 						iorpt->Payload<std::vector<uint32_t>>({ len, addr });
 						DeviceReport resp = this->SendMsgBlocking(*iorpt);
@@ -833,20 +778,20 @@ namespace iMS {
 						delete iorpt;
 
 						// Retrieve a buffer's worth of data
-						while (mImpl->fti->m_transBytesRemaining > 0) {
+						while (mImpl->m_fti->m_transBytesRemaining > 0) {
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_pre_xfer = boost::chrono::steady_clock::now();
 #endif
-							LONG ul_len = FastTransfer::UL_TRANSFER_SIZE;
-							if (mImpl->fti->m_transBytesRemaining < FastTransfer::UL_TRANSFER_SIZE) ul_len = mImpl->fti->m_transBytesRemaining;
-							mImpl->fti->m_transBytesRemaining -= ul_len;
+							LONG ul_len = CYUSB_Policy::UL_TRANSFER_SIZE;
+							if (mImpl->m_fti->m_transBytesRemaining < CYUSB_Policy::UL_TRANSFER_SIZE) ul_len = mImpl->m_fti->m_transBytesRemaining;
+							mImpl->m_fti->m_transBytesRemaining -= ul_len;
 
 							PUCHAR tfr_ptr = dataBuffer;
 							LONG tfr_len;
 							LONG buf_len = ul_len;
 							do {
 								tfr_len = ul_len;
-								if (tfr_len < FastTransfer::TRANSFER_GRANULARITY) tfr_len = FastTransfer::TRANSFER_GRANULARITY;
+								if (tfr_len < CYUSB_Policy::TRANSFER_GRANULARITY) tfr_len = CYUSB_Policy::TRANSFER_GRANULARITY;
 								mImpl->Ept.bInEpt->XferData(tfr_ptr, tfr_len);
 								tfr_ptr += tfr_len;
 								bytesTransferred += tfr_len;
@@ -854,8 +799,8 @@ namespace iMS {
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_pre_copy = boost::chrono::steady_clock::now();
 #endif
-							mImpl->fti->m_data.insert(mImpl->fti->m_data.end(), dataBuffer, dataBuffer + buf_len);
-							//mImpl->fti->m_data_it += len;
+							mImpl->m_fti->m_data.insert(mImpl->m_fti->m_data.end(), dataBuffer, dataBuffer + buf_len);
+							//mImpl->m_fti->m_data_it += len;
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_final = boost::chrono::steady_clock::now();
 							copy_time += (t_final - t_pre_copy);
@@ -864,7 +809,7 @@ namespace iMS {
 						}
 					}
 					// Set up index data for next DMA Transaction
-					mImpl->fti->startNextTransaction();
+					mImpl->m_fti->startNextTransaction();
 				}
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
@@ -881,10 +826,10 @@ namespace iMS {
 #endif
 
 				delete[] dataBuffer;
-				delete mImpl->fti;
-				mImpl->fti = nullptr;
+				delete mImpl->m_fti;
+				mImpl->m_fti = nullptr;
 
-				mImpl->FastTransferStatus.store(_FastTransferStatus::IDLE);
+				FastTransferStatus.store(_FastTransferStatus::IDLE);
 				mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_COMPLETE, bytesTransferred);
 			}
 		}
@@ -912,13 +857,12 @@ namespace iMS {
 
 			//std::cout << "Received an interrupt!" << std::endl;
 			std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
-			m->MarkSendTime();
 			m->setStatus(Message::Status::INTERRUPT);
 			interruptData.resize(bufLen);
 			m->AddBuffer(interruptData);
 
 			// Place in list for processing by receive thread
-            AddMsgToListWithNotify(m);            
+            m_msgRegistry.addMessage(m->getMessageHandle(), m);        
 
             // Signal Parser thread
 			m_rxcond.notify_one();

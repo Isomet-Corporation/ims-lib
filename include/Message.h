@@ -29,6 +29,8 @@
 
 #include <chrono>
 #include <queue>
+#include <condition_variable>
+#include <shared_mutex>
 
 namespace iMS
 {
@@ -44,17 +46,18 @@ namespace iMS
 		//bool operator == (const Message m);
 
 		// Don't forget to update strings in .cpp
-		enum class Status { UNSENT, SENT, SEND_ERROR, TIMEOUT_ON_SEND, RX_PARTIAL, RX_OK, CANCELLED, TIMEOUT_ON_RXCV, RX_ERROR_VALID, RX_ERROR_INVALID, INTERRUPT, PROCESSED_INTERRUPT };
+		enum class Status { UNSENT, SENT, SEND_ERROR, TIMEOUT_ON_SEND, RX_PARTIAL, INTERRUPT, RX_OK, CANCELLED, TIMEOUT_ON_RXCV, RX_ERROR_VALID, RX_ERROR_INVALID, PROCESSED_INTERRUPT };
 
-		void MarkSendTime();
-		void MarkRecdTime();
 		void setStatus(const Status s);
 		Status getStatus() const;
 		std::string getStatusText() const;
 		MessageHandle getMessageHandle() const;
+        bool isComplete() const;
 		std::chrono::milliseconds TimeElapsed() const;
 		std::chrono::milliseconds MsgDuration() const;
 		std::chrono::milliseconds RxTimeSince(std::chrono::time_point<std::chrono::high_resolution_clock>& t) const;
+        bool Message::waitForCompletion(std::chrono::milliseconds timeout);
+        void Message::waitForCompletion();
 
 		// Mirror Host & Device Report methods
 		const std::vector<std::uint8_t>& SerialStream();
@@ -73,15 +76,22 @@ namespace iMS
 	private:
 		static const char * StatusEnumStrings[] ;
 
+		void markSendTime();
+		void markRecdTime();
+
 		//Message(const Message&);  // Prevent copying
 		HostReport m_rpt;
 		DeviceReport m_resp;
 		MessageHandle m_id;
 		static MessageHandle mIDCount;
-		Status m_status;
+		Status m_status{Status::UNSENT};
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_sent;
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_recd;
 		std::deque<std::uint8_t> unparsed_buf;
+
+        // Synchronisation
+        mutable std::shared_mutex m_mutex;
+        std::condition_variable_any m_cv;
 	};
 
 }

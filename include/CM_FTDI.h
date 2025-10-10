@@ -35,6 +35,7 @@
 
 namespace iMS
 {
+
 	// This is a concrete class that implements ConnectionManager via CM_Common.
 	//	It is used to communicate with underlying hardware that uses the FTDI
 	//	Device Driver
@@ -51,23 +52,34 @@ namespace iMS
 		void Connect(const std::string&);
 		void Disconnect();
 		void SetTimeouts(int send_timeout_ms = 500, int rx_timeout_ms = 5000, int free_timeout_ms = 30000, int discover_timeout_ms = 2500);
-		bool MemoryDownload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int image_index, const std::array<std::uint8_t, 16>& uuid);
-		bool MemoryUpload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int len, int image_index, const std::array<std::uint8_t, 16>& uuid);
-
-		// Declare a class that stores information pertaining to the status of any fast memory transfers
-		class FastTransfer;
+//		bool MemoryDownload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int image_index, const std::array<std::uint8_t, 16>& uuid);
+//		bool MemoryUpload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int len, int image_index, const std::array<std::uint8_t, 16>& uuid);
 
 	private:
 		// Make this object non-copyable
 		CM_FTDI(const CM_FTDI &);
 		const CM_FTDI &operator =(const CM_FTDI &);
 
+        // FTDI Fast Transfer Characteristics
+        struct FTDI_Policy {
+            FTDI_Policy(uint32_t addr, int index) : addr(addr), index(index) {}
+
+            static constexpr int DL_TRANSFER_SIZE = 64;
+            static constexpr int UL_TRANSFER_SIZE = 64;
+            static constexpr int TRANSFER_UNIT    = 64;
+            static constexpr long DMA_MAX_TRANSACTION_SIZE = 1024;
+
+            uint32_t addr;
+            int index;
+        };
+        using FastTransfer = CM_Common::FastTransfer<FTDI_Policy>;
+
 		class Impl;
 		Impl * pImpl;
 
 		void MessageSender();
 		void ResponseReceiver();
-		void MemoryTransfer();
+//		void MemoryTransfer();
 		void InterruptReceiver();
 	};
 }
