@@ -24,7 +24,6 @@
 #pragma once
 
 #include "Message.h"
-#include "PrivateUtil.h"
 
 #include <unordered_map>
 #include <shared_mutex>
@@ -47,7 +46,6 @@ namespace iMS {
         // Add or replace a message by handle
         void addMessage(HandleType handle, MessagePtr msg)
         {
-//            BOOST_LOG_SEV(lg::get(), sev::trace) << "addMessage: " << handle;
             std::unique_lock lock(m_mutex);
             m_messages[handle] = std::move(msg);
         }
@@ -58,10 +56,8 @@ namespace iMS {
             std::shared_lock lock(m_mutex);
             auto it = m_messages.find(handle);
             if (it != m_messages.end()) {
-//                BOOST_LOG_SEV(lg::get(), sev::trace) << "Found Message: " << handle;
                 return it->second;
             }
-//            BOOST_LOG_SEV(lg::get(), sev::trace) << "Couldn't Find Message: " << handle;
             return nullptr;
         }
 
@@ -70,7 +66,6 @@ namespace iMS {
         {
             std::unique_lock lock(m_mutex);
             m_messages.erase(handle);
-//            BOOST_LOG_SEV(lg::get(), sev::trace) << "removeMessage: " << handle;
         }
 
         // Clear all
