@@ -631,14 +631,18 @@ namespace iMS
 		bool lock_pairs_only = false;
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
-		int rev = p_Impl->myiMS.Synth().GetVersion().revision;
-		if (rev < 75) {
-			BOOST_LOG_SEV(lg::get(), sev::error) << "Tried to set Calibration Tone channel lock but f/w version ." << rev << " doesn't support it. Need .75";
-			return false;
-		}
-		else if (rev < 83) {
-			lock_pairs_only = true;
-		}
+        auto model = p_Impl->myiMS.Synth().Model();
+
+        if (!model.compare(0, 3, "iMS")) {
+            int rev = p_Impl->myiMS.Synth().GetVersion().revision;
+            if (rev < 75) {
+                BOOST_LOG_SEV(lg::get(), sev::error) << "Tried to set Calibration Tone channel lock but f/w version ." << rev << " doesn't support it. Need .75";
+                return false;
+            }
+            else if (rev < 83) {
+                lock_pairs_only = true;
+            }
+        }
 
 		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
 
@@ -687,14 +691,18 @@ namespace iMS
 		bool lock_pairs_only = false;
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
-		int rev = p_Impl->myiMS.Synth().GetVersion().revision;
-		if (rev < 75) {
-			BOOST_LOG_SEV(lg::get(), sev::error) << "Tried to clear Calibration Tone channel lock but f/w version ." << rev << " doesn't support it. Need .75";
-			return false;
-		}
-		else if (rev < 83) {
-			lock_pairs_only = true;
-		}
+        auto model = p_Impl->myiMS.Synth().Model();
+
+        if (!model.compare(0, 3, "iMS")) {
+            int rev = p_Impl->myiMS.Synth().GetVersion().revision;
+            if (rev < 75) {
+                BOOST_LOG_SEV(lg::get(), sev::error) << "Tried to set Calibration Tone channel lock but f/w version ." << rev << " doesn't support it. Need .75";
+                return false;
+            }
+            else if (rev < 83) {
+                lock_pairs_only = true;
+            }
+        }
 
 		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
 
@@ -742,10 +750,14 @@ namespace iMS
 		std::uint16_t data;
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
-		int rev = p_Impl->myiMS.Synth().GetVersion().revision;
-		if (rev < 75) {
-			return false;
-		}
+        auto model = p_Impl->myiMS.Synth().Model();
+
+        if (!model.compare(0, 3, "iMS")) {
+            int rev = p_Impl->myiMS.Synth().GetVersion().revision;
+            if (rev < 75) {
+                return false;
+            }
+        }        
 
 		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
 
@@ -1095,7 +1107,7 @@ namespace iMS
 		}
 		else {
 			// Synth doesn't support scripts
-			return false;
+			use_dds_script = false;
 		}
 
 		if (use_dds_script && check_linear_sweep(p_Impl->myiMS))
@@ -1254,7 +1266,7 @@ namespace iMS
 		}
 		else {
 			// Synth doesn't support scripts
-			return false;
+			use_dds_script = false;
 		}
 
 		if (chan.IsAll()) return SetEnhancedToneMode(tone, tone, tone, tone);
@@ -1397,7 +1409,7 @@ namespace iMS
 		}
 		else {
 			// Synth doesn't support scripts
-			return false;
+			use_dds_script = false;
 		}
 
 		if (chan.IsAll()) return ClearEnhancedToneMode();
@@ -1488,7 +1500,7 @@ namespace iMS
 		}
 		else {
 			// Synth doesn't support scripts 
-			return false;
+			use_dds_script = false;
 		}
 
 		if (!use_dds_script)

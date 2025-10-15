@@ -1394,7 +1394,7 @@ namespace iMS
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-		if (myiMS.Ctlr().GetVersion().revision > 46)
+		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46)
 			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 	}
 
@@ -1420,7 +1420,7 @@ namespace iMS
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-		if (myiMS.Ctlr().GetVersion().revision > 46)
+		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46)
 			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 	}
 
@@ -1446,7 +1446,7 @@ namespace iMS
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-		if (myiMS.Ctlr().GetVersion().revision > 46)
+		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46)
 			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 	}
 
@@ -1467,7 +1467,7 @@ namespace iMS
 		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
 		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
 		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-		if (myiMS.Ctlr().GetVersion().revision > 46)
+		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46)
 			myiMSConn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 	}
 
@@ -1674,7 +1674,7 @@ namespace iMS
 
 		// Check to see if we are already playing back or downloading
 		HostReport *iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_Ctrl);
-		DeviceReport resp = myiMSConn->SendMsgBlocking(*iorpt);
+        DeviceReport resp = myiMSConn->SendMsgBlocking(*iorpt);
 		if ((resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_IOS_Busy) ||
 			((cap.SimultaneousPlayback == false) && (resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_DL_Active)) ) {
               if (resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_IOS_Busy)
@@ -1720,7 +1720,7 @@ namespace iMS
 			std::array<std::uint8_t, 16> uuid = p_Impl->uuid;
 			std::vector<std::uint8_t> data(uuid.begin(), uuid.begin() + 16);
 			data.push_back(static_cast<std::uint8_t>(cfg.n_rpts & 0xFF));
-			if (p_Impl->myiMS.Ctlr().GetVersion().major > 1) {
+			if (p_Impl->myiMS.Ctlr().Model() != "iMSP" || p_Impl->myiMS.Ctlr().GetVersion().major > 1) {
 				data.push_back(static_cast<std::uint8_t>((cfg.n_rpts >> 8) & 0xFF));
 				data.push_back(static_cast<std::uint8_t>((cfg.n_rpts >> 16) & 0xFF));
 			}
@@ -1883,7 +1883,7 @@ namespace iMS
 	{
 		while (!m_parent->progressHandle.empty() && 
 			((NullMessage == m_parent->progressHandle.front()) || (param > (m_parent->progressHandle.front())))) m_parent->progressHandle.pop();
-		if (m_parent->myiMS.Ctlr().GetVersion().revision <= 46) {
+		if (m_parent->myiMS.Ctlr().Model() == "iMSP" && m_parent->myiMS.Ctlr().GetVersion().revision <= 46) {
 			while (!m_parent->finishHandle.empty() &&
 				((NullMessage == m_parent->finishHandle.front()) || (param > (m_parent->finishHandle.front())))) m_parent->finishHandle.pop();
 		}
@@ -1924,7 +1924,7 @@ namespace iMS
 					//std::cout << "Recvd " << param << std::endl;
 
 				}
-				if (m_parent->myiMS.Ctlr().GetVersion().revision > 46) break;
+				if (m_parent->myiMS.Ctlr().Model() != "iMSP" || m_parent->myiMS.Ctlr().GetVersion().revision > 46) break;
 				else if ((!m_parent->finishHandle.empty()) && (param == m_parent->finishHandle.front()))
 				{
 					IConnectionManager* object = static_cast<IConnectionManager*>(sender);
@@ -1971,7 +1971,7 @@ namespace iMS
 	void ImagePlayer::ImagePlayerEventSubscribe(const int message, IEventHandler* handler)
 	{
 		p_Impl->m_Event->Subscribe(message, handler);
-		if (p_Impl->myiMS.Ctlr().GetVersion().revision > 46) {
+		if (p_Impl->myiMS.Ctlr().Model() != "iMSP" || p_Impl->myiMS.Ctlr().GetVersion().revision > 46) {
 			int IntrMask;
 			if (message == ImagePlayerEvents::IMAGE_FINISHED) {
 				IntrMask = (int)(1 << CTRLR_INTERRUPT_SINGLE_IMAGE_FINISHED);
@@ -2013,7 +2013,7 @@ namespace iMS
 			//while (std::cv_status::timeout == m_bkcond.wait_for(lck, poll_interval))
 			m_bkcond.wait_for(lck, poll_interval);
 
-			if ((myiMS.Ctlr().GetVersion().revision <= 46) && (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - last_progress_check) > poll_interval))
+			if ((myiMS.Ctlr().Model() == "iMSP" && myiMS.Ctlr().GetVersion().revision <= 46) && (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - last_progress_check) > poll_interval))
 			{
 				// Controllers with FW revision greater than 46 use interrupt driven image notifications
 				if (ImagePlaying) {
@@ -2388,7 +2388,7 @@ namespace iMS
 
 		// Subscribe listener
 		IConnectionManager* const myiMSConn = myiMS.Connection();
-		if (myiMS.Ctlr().GetVersion().revision > 46) {
+		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46) {
 			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 			int IntrMask = (int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
 
@@ -2409,7 +2409,7 @@ namespace iMS
 	{
 		// Unsubscribe listener
 		IConnectionManager* const myiMSConn = myiMS.Connection();
-		if (myiMS.Ctlr().GetVersion().revision > 46) {
+		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46) {
 			myiMSConn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 			int IntrMask = ~(int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
 

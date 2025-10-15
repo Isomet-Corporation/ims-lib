@@ -83,8 +83,8 @@ namespace iMS {
 		{
 			// Create a message, add report, assign it an ID, and place in queue.
 			std::shared_ptr<Message> m = std::make_shared<Message>(Rpt);
-			{
-				std::unique_lock <std::mutex> txlck{ m_txmutex };
+            {
+                std::unique_lock <std::mutex> txlck{ m_txmutex };
 				m_queue.push(m);
 				txlck.unlock();
 
@@ -111,6 +111,7 @@ namespace iMS {
 
             m->waitForCompletion();
             DeviceReport Resp = this->Response(hnd);
+
             return Resp;
 		}
 		else {
@@ -165,7 +166,7 @@ namespace iMS {
             localCopy.clear();
 
 			// Look for first message in list that is waiting for characters
-            m_msgRegistry.forEachMessageMutable([&](std::shared_ptr<Message>& m) {
+            m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
 
                 if (!m->isComplete())
                 {
@@ -317,7 +318,8 @@ namespace iMS {
             vevents.clear();
 
 			// Look for messages in the list that have timed out
-            m_msgRegistry.forEachMessageMutable([&](std::shared_ptr<Message>& m) {
+            std::vector<MessageHandle> messagesToRemove;
+            m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
                 if ((m->getStatus() == Message::Status::SENT) ||
                     (m->getStatus() == Message::Status::RX_PARTIAL))
                 {
@@ -337,12 +339,16 @@ namespace iMS {
                     if (m->TimeElapsed() > autoFreeTimeout)
                     {
                         if (m->isComplete()) {
-                            m_msgRegistry.removeMessage(m->getMessageHandle());
+                            messagesToRemove.push_back(m->getMessageHandle()); // Can't remove while we're consuming the lock, so store for later
                         }
                     }
 #endif
                 }
             });
+
+            for (auto& msg : messagesToRemove) {
+                m_msgRegistry.removeMessage(msg);
+            }
 
             // Trigger all the events that were initiated while we still consumed the lock
             for (std::vector<triggerEvents<int>>::const_iterator it = events.begin(); it != events.end(); ++it)
