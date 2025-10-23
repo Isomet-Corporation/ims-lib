@@ -27,7 +27,7 @@
 #include <vector>
 #include <map>
 #include <cstdint>
-#include <mutex>
+#include <shared_mutex>
 
 namespace iMS {
 
@@ -55,7 +55,7 @@ namespace iMS {
 		typedef std::map<int, EventHandlerList*> EventHandlerMap;
 		EventHandlerMap mMap;
 		int messageCount;
-		std::mutex m_mapMutex;
+		std::shared_mutex m_mapMutex;
 	};
 
 }

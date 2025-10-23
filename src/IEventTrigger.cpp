@@ -32,18 +32,17 @@ namespace iMS {
 
 	IEventTrigger::~IEventTrigger()
 	{
-		std::unique_lock <std::mutex> maplck{ m_mapMutex };
+		std::unique_lock maplck{ m_mapMutex };
 		for (int i = 0; i < messageCount; i++)
 		{
 			mMap[i]->clear();
 			delete mMap[i];
 		}
-		maplck.unlock();
 	}
 
 	void IEventTrigger::Subscribe(const int message, IEventHandler* handler)
 	{
-		std::unique_lock <std::mutex> maplck{ m_mapMutex };
+		std::unique_lock maplck{ m_mapMutex };
 		mMap[message]->push_back(handler);
 		maplck.unlock();
 	}
@@ -53,7 +52,7 @@ namespace iMS {
 		for (int i = 0; i < messageCount; i++) {
 			if (message == i)
 			{
-				std::unique_lock <std::mutex> maplck{ m_mapMutex };
+				std::unique_lock maplck{ m_mapMutex };
 				EventHandlerList* list = mMap[i];
 				for (std::vector<IEventHandler*>::iterator iter = list->begin(); iter != list->end();)
 				{
@@ -65,7 +64,6 @@ namespace iMS {
 						++iter;
 					}
 				}
-				maplck.unlock();
 			}
 		}
 	}
@@ -74,9 +72,8 @@ namespace iMS {
 	{
 		std::size_t count;
 		{
-			std::unique_lock <std::mutex> maplck{ m_mapMutex };
+			std::shared_lock maplck{ m_mapMutex };
 			count = mMap.count(message);
-			maplck.unlock();
 		}
 		return (count);
 	}
@@ -87,14 +84,13 @@ namespace iMS {
 		for (int i = 0; i < messageCount; i++) {
 			if (message == i)
 			{
-				std::unique_lock <std::mutex> maplck{ m_mapMutex };
+				std::shared_lock maplck{ m_mapMutex };
 				EventHandlerList* list = mMap[i];
 				for (EventHandlerList::iterator iter = list->begin(); iter != list->end(); ++iter)
 				{
 					//					std::cout << std::hex << "0x" << iter._Ptr << ": " << std::dec << message << " - " << param << "   " << std::endl;
 					(*iter)->EventAction(sender, message, param);
 				}
-				maplck.unlock();
 			}
 		}
 	}
@@ -105,7 +101,7 @@ namespace iMS {
 		for (int i = 0; i < messageCount; i++) {
 			if (message == i)
 			{
-				std::unique_lock <std::mutex> maplck{ m_mapMutex };
+				std::shared_lock maplck{ m_mapMutex };
 				EventHandlerList * list = mMap[i];
 				for (EventHandlerList::iterator iter = list->begin(); iter != list->end(); ++iter)
 				{
