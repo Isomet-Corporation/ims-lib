@@ -35,6 +35,7 @@
 #include <memory>
 #include <queue>
 #include <array>
+#include <variant>
 
 using HRClock = std::chrono::high_resolution_clock;
 using us = std::chrono::microseconds;
@@ -174,17 +175,35 @@ namespace iMS {
             const std::shared_ptr<Message>& msg,
             const std::string& prefix,
             MessageEvents::Events evType,
-            P param);
+            const P& param);
+
+        struct PendingEvent {
+            MessageEvents::Events type;  // which event
+
+            std::variant<
+                int,
+                std::pair<int, int>,
+                std::pair<int, std::vector<std::uint8_t>>
+            > payload;           // what data to send
+        };
+
+        template <typename P>
+        void PushEvent(MessageEvents::Events e, const P& payload);
+        void PushInterruptEvent(int p, const std::vector<uint8_t>& data);
 
 		std::deque<std::uint8_t> m_glblRx;            
 		// Record any trigger events that occur during processing 
 		std::vector<triggerEvents<int>> m_Events;
 		std::vector<triggerEvents<int, std::vector<std::uint8_t>>> m_Vevents;
+        std::vector<PendingEvent> m_PendingEvents;
 
+        void HandleInterrupts();
+        void HandleMessage(const std::shared_ptr<Message>& m);
         char HandleMessageParse(std::shared_ptr<Message> m);
         void HandleResponseDone(std::shared_ptr<Message> m);
         bool HandleUnexpectedChar(std::shared_ptr<Message> m, char c);
-        void CM_Common::HandleTimeoutsAndCleanup();
+        void HandleTimeoutsAndCleanup();
+        void TriggerPendingEvents();
 	};
 
 

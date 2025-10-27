@@ -142,10 +142,39 @@ namespace iMS {
         const std::shared_ptr<Message>& msg,
         const std::string& prefix,
         MessageEvents::Events evType,
-        P param)
+        const P& param)
     {
-        m_Events.emplace_back(triggerEvents<int>(evType, param));
         LogAndNotify(level, msg, prefix);
+        PushEvent(evType, param);
+    }
+
+    void CM_Common::HandleInterrupts()
+    {
+        if (m_glblRx.empty()) return;
+
+        bool activeMsgFound = false;
+        bool interruptInProgress = false;
+        std::shared_ptr<Message> interruptMsg;
+
+        m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
+            if (!m->Response()->Done() && !m->Response()->Idle())
+                activeMsgFound = true;
+            if (m->getStatus() == Message::Status::INTERRUPT) {
+                interruptInProgress = true;
+                interruptMsg = m;
+            }
+        });
+
+        if (!activeMsgFound && m_glblRx.front() == (uint8_t)ReportTypes::INTERRUPT_REPORT_ID_CTRLR && !interruptInProgress) {
+            interruptMsg = std::make_shared<Message>(HostReport());
+            interruptMsg->setStatus(Message::Status::INTERRUPT);
+            m_msgRegistry.addMessage(interruptMsg->getMessageHandle(), interruptMsg);
+            interruptInProgress = true;
+        }
+
+        if (!interruptInProgress) return;
+
+        HandleMessage(interruptMsg);
     }
 
     char CM_Common::HandleMessageParse(std::shared_ptr<Message> m)
@@ -175,8 +204,8 @@ namespace iMS {
     {
         if (m->Response()->HardwareAlarm())
         {
-            m_Events.emplace_back(triggerEvents<int>(MessageEvents::INTERLOCK_ALARM_SET, m->getMessageHandle()));
-            LogAndNotify(sev::warning, m, ">>> INTERLOCK ALARM <<<");
+            PushEvent<int>(MessageEvents::INTERLOCK_ALARM_SET, m->getMessageHandle());
+            LogAndNotify(sev::warning, m, ">>> INTERLOCK ALARM <<<", false, false);
         }
 
         if (m->Response()->GeneralError() || m->Response()->TxTimeout() || m->Response()->TxCRC())
@@ -196,16 +225,15 @@ namespace iMS {
             unsigned int param2 = 0;
 
             if (m->Response()->Fields().len > 4) {
-                m_Vevents.emplace_back(triggerEvents<int, std::vector<std::uint8_t>>(
-                    MessageEvents::INTERRUPT_RECEIVED, param, m->Response()->Payload<std::vector<std::uint8_t>>()));
+                PushInterruptEvent(param, m->Response()->Payload<std::vector<std::uint8_t>>());
             } else {
                 if (m->Response()->Fields().len >= 2)
                     param |= (m->Response()->Payload<std::vector<std::uint16_t>>().at(0));
                 if (m->Response()->Fields().len >= 4) {
                     param2 = (m->Response()->Payload<std::vector<std::uint16_t>>().at(1));
-                    m_Events.emplace_back(triggerEvents<int, int>(MessageEvents::INTERRUPT_RECEIVED, param, param2));
+                    PushEvent<std::pair<int, int>>(MessageEvents::INTERRUPT_RECEIVED, std::make_pair<int, int>(param, param2));
                 } else {
-                    m_Events.emplace_back(triggerEvents<int>(MessageEvents::INTERRUPT_RECEIVED, param));
+                    PushEvent<int>(MessageEvents::INTERRUPT_RECEIVED, param);
                 }
             }
 
@@ -225,7 +253,7 @@ namespace iMS {
     bool CM_Common::HandleUnexpectedChar(std::shared_ptr<Message> m, char c)
     {
         m->ResetParser();
-        m_Events.emplace_back(triggerEvents<int>(MessageEvents::UNEXPECTED_RX_CHAR, static_cast<int>(c)));
+        PushEvent<int>(MessageEvents::UNEXPECTED_RX_CHAR, static_cast<int>(c));
 
         std::ostringstream ss;
         ss << "Unexpected Char 0x" << std::hex << std::setw(2)
@@ -262,6 +290,61 @@ namespace iMS {
             m_msgRegistry.removeMessage(msg);
     }
 
+    void CM_Common::HandleMessage(const std::shared_ptr<Message>& m)
+    {
+        if (m->isComplete()) return;
+
+        while (!m_glblRx.empty() || m->HasData()) {
+            if (m->Response()->Done()) {
+                m->setStatus(Message::Status::RX_ERROR_INVALID);
+                LogAndNotify(sev::error, m, "Msg Invalid");
+                break;
+            }
+
+            char c = HandleMessageParse(m);
+            if (m->Response()->UnexpectedChar()) {
+                HandleUnexpectedChar(m, c);
+                break;
+            }
+
+            if (m->Response()->Done()) {
+                HandleResponseDone(m);
+                break;
+            }
+        }
+    }
+
+    template <typename P>
+    void CM_Common::PushEvent(MessageEvents::Events e, const P& payload) {
+        static_assert(
+            std::is_same_v<P, int> ||
+            std::is_same_v<P, std::pair<int,int>> ||
+            std::is_same_v<P, std::pair<int,std::vector<std::uint8_t>>>,
+            "PushEvent payload must be int, pair<int,int>, or pair<int,vector<uint8_t>>"
+        );
+        m_PendingEvents.push_back(PendingEvent{ e, payload });
+    }
+
+    void CM_Common::PushInterruptEvent(int p, const std::vector<uint8_t>& data) {
+        m_PendingEvents.push_back({ MessageEvents::Events::INTERRUPT_RECEIVED, std::make_pair(p, data) });
+    }
+
+    void CM_Common::TriggerPendingEvents()
+    {
+        for (auto& ev : m_PendingEvents) {
+            std::visit([&](auto&& arg) {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_same_v<T, int>)
+                    mMsgEvent.Trigger<int>(this, ev.type, arg);
+                else if constexpr (std::is_same_v<T, std::pair<int, int>>)
+                    mMsgEvent.Trigger<int, int>(this, ev.type, arg.first, arg.second);
+                else if constexpr (std::is_same_v<T, std::vector<std::uint8_t>>)
+                    mMsgEvent.Trigger<int,std::vector<uint8_t>>(this, ev.type, arg.first, arg.second);
+            }, ev.payload);
+        }
+        m_PendingEvents.clear();
+    }
+
 	void CM_Common::MessageListManager()
 	{
 		while (DeviceIsOpen)
@@ -287,96 +370,16 @@ namespace iMS {
                std::make_move_iterator(localCopy.end()));
 
             // Test for and parse interrupts in the global rx buffer
-            if (!m_glblRx.empty()) {
-                bool newInterruptCandidate = false;
-                if (m_glblRx.front() == (std::uint8_t)ReportTypes::INTERRUPT_REPORT_ID_CTRLR) {
-                    newInterruptCandidate = true;
+            HandleInterrupts();
 
-                    m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
-                        if (!m->Response()->Done() && !m->Response()->Idle())
-                            newInterruptCandidate = false; // this was actually an intermediate character
-                    });
-                }
-
-                if (newInterruptCandidate) {
-                    std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
-                    m->setStatus(Message::Status::INTERRUPT);
-                    m_msgRegistry.addMessage(m->getMessageHandle(), m);                  
-                }
-
-                bool interruptInProgress = false;
-                std::shared_ptr<Message> interruptMsg;
-                m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
-                    if (m->getStatus() == Message::Status::INTERRUPT) {
-                        interruptInProgress = true;
-                        interruptMsg = m;
-                    }
-                });
-
-                if (interruptInProgress) {
-
-                }
-            }
-
-			// Look for first message in list that is waiting for characters
-            m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
-
-                if (m->isComplete()) return;
-
-                // Do Not add character data to both global queue (rxCharQueue) and message queue
-                // Use one or the other, depending on capabilities of Connection Target
-                while (!m_glblRx.empty() || m->HasData())
-                {
-                    if (m->Response()->Done()) {
-                        m->setStatus(Message::Status::RX_ERROR_INVALID);
-                        LogAndNotify(sev::error, m, "Msg Invalid");
-                        break;
-                    }              
-
-                    char c = HandleMessageParse(m);
-
-                    // Handle parsing errors
-                    if (m->Response()->UnexpectedChar()) {
-                        HandleUnexpectedChar(m, c);
-                        break;
-                    }
-
-                    if (m->Response()->Done())
-                    {
-                        HandleResponseDone(m);
-                        break;
-                    }
-                }
+            // Look for first message in list that is waiting for characters
+            m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) { 
+                HandleMessage(m);
             });
-
-            // Trigger all the events that were initiated while we were iterating
-            for (auto& ev : m_Events)
-            {
-                if (ev.count > 1) {
-                    mMsgEvent.Trigger<int, int>(this, ev.e, ev.p, ev.p2);
-                }
-                else {
-                    mMsgEvent.Trigger<int>(this, ev.e, ev.p);
-                }
-            }
-            m_Events.clear();
-
-            for (auto& ev : m_Vevents)
-            {
-                if (ev.count > 1) {
-                    mMsgEvent.Trigger<int, std::vector<std::uint8_t>>(this, MessageEvents::INTERRUPT_RECEIVED, ev.p, ev.p2);
-                }
-            }
-            m_Vevents.clear();
 
             HandleTimeoutsAndCleanup();            
 
-            // Trigger all the events that were initiated while we still consumed the lock
-            for (auto& ev : m_Events)
-            {
-                mMsgEvent.Trigger<int>(this, ev.e, ev.p);
-            }
-            m_Events.clear();
+            TriggerPendingEvents();
 		}
 	}
 
