@@ -23,7 +23,6 @@
 
 #include "IConnectionManager.h"
 #include "CM_Common.h"
-#include "PrivateUtil.h"  // for logging
 
 #include <iostream>
 #include <iomanip>
@@ -119,29 +118,152 @@ namespace iMS {
         }
 	}
 
-	template <typename T, typename T2 = int>
-	struct triggerEvents
-	{
-		MessageEvents::Events e;
-		T p;
-		T2 p2;
-		int count;
-		triggerEvents(MessageEvents::Events e, T p) : e(e), p(p), p2(0), count(1) {};
-		triggerEvents(MessageEvents::Events e, T p, T2 p2) : e(e), p(p), p2(p2), count(2) {};
-	};
+    void CM_Common::LogAndNotify(
+        sev::severity_level level,
+        const std::shared_ptr<Message>& msg,
+        const std::string& prefix,
+        bool trace /*= true*/,
+        bool notify /*= true*/)
+    {
+        std::ostringstream ss;
+        ss << prefix << " (" << msg->getMessageHandle() << "): ["
+        << msg->getStatusText() << "]";
+        if (msg->isComplete())
+            ss << " " << msg->MsgDuration().count() << "ms";
+
+        BOOST_LOG_SEV(lg::get(), level) << ss.str();
+        if (trace) DebugLogReportTrace(msg);
+        if (notify) m_msgRegistry.notifyAll();
+    }
+
+    template<typename P>
+    void CM_Common::LogNotifyEvent(
+        sev::severity_level level,
+        const std::shared_ptr<Message>& msg,
+        const std::string& prefix,
+        MessageEvents::Events evType,
+        P param)
+    {
+        m_Events.emplace_back(triggerEvents<int>(evType, param));
+        LogAndNotify(level, msg, prefix);
+    }
+
+    char CM_Common::HandleMessageParse(std::shared_ptr<Message> m)
+    {
+        char c;
+//        std::stringstream ss;
+        if (m->HasData()) {
+            c = m->Parse();
+            return c;
+        }
+
+        while (!m_glblRx.empty() && !m->Response()->UnexpectedChar() && !m->Response()->Done()) {
+            c = m_glblRx.front();
+            m_glblRx.pop_front();
+            m->Parse(c);
+//            ss << std::hex << std::setfill('0') << std::setw(2) << (static_cast<unsigned int>(c)&0xFF) << " ";
+        }
+//        BOOST_LOG_SEV(lg::get(), sev::trace) << "PROC: " << ss.str();
+
+        if (m->getStatus() == Message::Status::SENT)
+            m->setStatus(Message::Status::RX_PARTIAL);
+
+        return c;
+    }
+
+    void CM_Common::HandleResponseDone(std::shared_ptr<Message> m)
+    {
+        if (m->Response()->HardwareAlarm())
+        {
+            m_Events.emplace_back(triggerEvents<int>(MessageEvents::INTERLOCK_ALARM_SET, m->getMessageHandle()));
+            LogAndNotify(sev::warning, m, ">>> INTERLOCK ALARM <<<");
+        }
+
+        if (m->Response()->GeneralError() || m->Response()->TxTimeout() || m->Response()->TxCRC())
+        {
+            m->setStatus(Message::Status::RX_ERROR_VALID);
+            LogNotifyEvent(sev::warning, m, "Msg", MessageEvents::RESPONSE_ERROR_VALID, m->getMessageHandle());
+        }
+        else if (m->Response()->RxCRC())
+        {
+            m->setStatus(Message::Status::RX_ERROR_INVALID);
+            LogNotifyEvent(sev::error, m, "Msg", MessageEvents::RESPONSE_ERROR_CRC, m->getMessageHandle());
+        }
+        else if (m->getStatus() == Message::Status::INTERRUPT)
+        {
+            m->setStatus(Message::Status::PROCESSED_INTERRUPT);
+            unsigned int param = (static_cast<unsigned int>(m->Response()->Fields().addr) << 16);
+            unsigned int param2 = 0;
+
+            if (m->Response()->Fields().len > 4) {
+                m_Vevents.emplace_back(triggerEvents<int, std::vector<std::uint8_t>>(
+                    MessageEvents::INTERRUPT_RECEIVED, param, m->Response()->Payload<std::vector<std::uint8_t>>()));
+            } else {
+                if (m->Response()->Fields().len >= 2)
+                    param |= (m->Response()->Payload<std::vector<std::uint16_t>>().at(0));
+                if (m->Response()->Fields().len >= 4) {
+                    param2 = (m->Response()->Payload<std::vector<std::uint16_t>>().at(1));
+                    m_Events.emplace_back(triggerEvents<int, int>(MessageEvents::INTERRUPT_RECEIVED, param, param2));
+                } else {
+                    m_Events.emplace_back(triggerEvents<int>(MessageEvents::INTERRUPT_RECEIVED, param));
+                }
+            }
+
+            std::ostringstream ss;
+            ss << "Processed Interrupt p0:" << param << " p1:" << param2;
+            LogAndNotify(sev::info, m, ss.str());
+        }
+        else
+        {
+            m->setStatus(Message::Status::RX_OK);
+            LogNotifyEvent(sev::info, m, "Msg", MessageEvents::RESPONSE_RECEIVED, m->getMessageHandle());
+        }
+
+        m_msgRegistry.notifyAll();
+    }    
+
+    bool CM_Common::HandleUnexpectedChar(std::shared_ptr<Message> m, char c)
+    {
+        m->ResetParser();
+        m_Events.emplace_back(triggerEvents<int>(MessageEvents::UNEXPECTED_RX_CHAR, static_cast<int>(c)));
+
+        std::ostringstream ss;
+        ss << "Unexpected Char 0x" << std::hex << std::setw(2)
+            << static_cast<unsigned int>(c & 0xFF) << std::dec;
+        LogAndNotify(sev::warning, m, ss.str());
+        return false;
+    }
+
+    void CM_Common::HandleTimeoutsAndCleanup()
+    {
+        std::vector<MessageHandle> messagesToRemove;
+
+        m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m)
+        {
+            if (m->getStatus() == Message::Status::SENT ||
+                m->getStatus() == Message::Status::RX_PARTIAL)
+            {
+                if (m->TimeElapsed() > rxTimeout)
+                {
+                    m->setStatus(Message::Status::TIMEOUT_ON_RXCV);
+                    LogNotifyEvent(sev::warning, m, "Msg RX Timeout",
+                                MessageEvents::RESPONSE_TIMED_OUT, m->getMessageHandle());
+                }
+            }
+    #ifndef DEBUG_PRESERVE_LIST
+            else if (m->TimeElapsed() > autoFreeTimeout && m->isComplete())
+            {
+                messagesToRemove.push_back(m->getMessageHandle());
+            }
+    #endif
+        });
+
+        for (auto& msg : messagesToRemove)
+            m_msgRegistry.removeMessage(msg);
+    }
 
 	void CM_Common::MessageListManager()
 	{
-		// Record any trigger events that occur during processing
-		// If we trigger while still processing, the list mutex is still locked and
-		// any callback code trying to access the mutex will deadlock.
-		// So record the events and trigger after the mutex is released.
-		std::vector<triggerEvents<int>> events;
-		//std::vector<std::uint8_t> int_data;
-		std::vector<triggerEvents<int, std::vector<std::uint8_t>>> vevents;
-		std::stringstream ss;
-		std::deque<std::uint8_t> glbl_rx;
-
 		while (DeviceIsOpen)
 		{
 
@@ -160,202 +282,101 @@ namespace iMS {
             }
 
 			// Do some message management
-            glbl_rx.insert(glbl_rx.end(),
+            m_glblRx.insert(m_glblRx.end(),
                std::make_move_iterator(localCopy.begin()),
                std::make_move_iterator(localCopy.end()));
-            localCopy.clear();
+
+            // Test for and parse interrupts in the global rx buffer
+            if (!m_glblRx.empty()) {
+                bool newInterruptCandidate = false;
+                if (m_glblRx.front() == (std::uint8_t)ReportTypes::INTERRUPT_REPORT_ID_CTRLR) {
+                    newInterruptCandidate = true;
+
+                    m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
+                        if (!m->Response()->Done() && !m->Response()->Idle())
+                            newInterruptCandidate = false; // this was actually an intermediate character
+                    });
+                }
+
+                if (newInterruptCandidate) {
+                    std::shared_ptr<Message> m = std::make_shared<Message>(HostReport());
+                    m->setStatus(Message::Status::INTERRUPT);
+                    m_msgRegistry.addMessage(m->getMessageHandle(), m);                  
+                }
+
+                bool interruptInProgress = false;
+                std::shared_ptr<Message> interruptMsg;
+                m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
+                    if (m->getStatus() == Message::Status::INTERRUPT) {
+                        interruptInProgress = true;
+                        interruptMsg = m;
+                    }
+                });
+
+                if (interruptInProgress) {
+
+                }
+            }
 
 			// Look for first message in list that is waiting for characters
             m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
 
-                if (!m->isComplete())
-                {
-                    //std::shared_ptr<Message> m = (*it);
-                    // Do Not add character data to both global queue (rxCharQueue) and message queue
-                    // Use one or the other, depending on capabilities of Connection Target
-                    while (!glbl_rx.empty() || m->HasData())
-                    {
-                        char c = ' ';
-                        // Parse a character(or buffer), if the current message is expecting more data
-                        if (!m->Response()->Done())
-                        {
-                            if (m->HasData()) {
-                                c = m->Parse();
-                            }
-                            else if (!glbl_rx.empty()) {
-                                std::stringstream ss;
-                                while (!glbl_rx.empty() && !m->Response()->UnexpectedChar() && !m->Response()->Done()) {
-                                    // Retrieve the next character from the HAL queue
-                                    c = glbl_rx.front();
-                                    glbl_rx.pop_front();
-                                    ss << std::hex << std::setfill('0') << std::setw(2) << (static_cast<unsigned int>(c)&0xFF) << " ";
-                                    m->Parse(c);
-                                }
-//                                BOOST_LOG_SEV(lg::get(), sev::trace) << "PROC: " << ss.str();
-                            }
-                            else {
-                                m->setStatus(Message::Status::RX_ERROR_INVALID);
-                                ss.clear(); ss.str("");
-                                ss << "Msg Invalid (" << m->getMessageHandle() << "): [" << m->getStatusText() << "] ";
-                                BOOST_LOG_SEV(lg::get(), sev::error) << ss.str();
-                                DebugLogReportTrace(m);
-                                m_msgRegistry.notifyAll();
-                                break;
-                            }
-                            if (m->getStatus() == Message::Status::SENT) m->setStatus(Message::Status::RX_PARTIAL);
-                        }
-                        else {
-                            m->setStatus(Message::Status::RX_ERROR_INVALID);
-                            ss.clear(); ss.str("");
-                            ss << "Msg Invalid (" << m->getMessageHandle() << "): [" << m->getStatusText() << "] ";
-                            BOOST_LOG_SEV(lg::get(), sev::error) << ss.str();
-                            DebugLogReportTrace(m);
-                            m_msgRegistry.notifyAll();
-                            break;
-                        }
-                        // Handle parsing errors
-                        if (m->Response()->UnexpectedChar())
-                        {
-                            // Since we received a byte that wasn't an ID byte, we can either reset and start again, or mark the message as failed.
-                            m->ResetParser();
-                            events.push_back(triggerEvents<int>(MessageEvents::UNEXPECTED_RX_CHAR, static_cast<int>(c)));
-                            ss.clear(); ss.str("");
-                            ss << "Unexpected Char 0x" << std::hex << std::setfill('0') << std::setw(2) << (static_cast<unsigned int>(c)&0xFF) << std::dec << " (" << m->getMessageHandle() << "): [" << m->getStatusText() << "]";
-                            BOOST_LOG_SEV(lg::get(), sev::warning) << ss.str();
-                            DebugLogReportTrace(m);
-                            m_msgRegistry.notifyAll();
-                            break;
-                        }
-                        if (m->Response()->Done())
-                        {
-                            // Look for any problems in the message transfer
-                            if (m->Response()->HardwareAlarm())
-                            {
-                                events.push_back(triggerEvents<int>(MessageEvents::INTERLOCK_ALARM_SET, m->getMessageHandle()));
-                                ss.clear(); ss.str("");
-                                ss << "Msg (" << m->getMessageHandle() << "): >>> INTERLOCK ALARM <<< " << m->MsgDuration().count() << "ms";
-                                BOOST_LOG_SEV(lg::get(), sev::warning) << ss.str();
-                                //DebugLogReportTrace(m);
-                            }
+                if (m->isComplete()) return;
 
-                            if ((m->Response()->GeneralError()) || (m->Response()->TxTimeout()) || (m->Response()->TxCRC()))
-                            {
-                                m->setStatus(Message::Status::RX_ERROR_VALID);
-                                events.push_back(triggerEvents<int>(MessageEvents::RESPONSE_ERROR_VALID, m->getMessageHandle()));
-                                ss.clear(); ss.str("");
-                                ss << "Msg (" << m->getMessageHandle() << "): [" << m->getStatusText() << "] " << m->MsgDuration().count() << "ms";
-                                BOOST_LOG_SEV(lg::get(), sev::warning) << ss.str();
-                                DebugLogReportTrace(m);
-                            }
-                            else if (m->Response()->RxCRC())
-                            {
-                                m->setStatus(Message::Status::RX_ERROR_INVALID);
-                                events.push_back(triggerEvents<int>(MessageEvents::RESPONSE_ERROR_CRC, m->getMessageHandle()));
-                                ss.clear(); ss.str("");
-                                ss << "Msg (" << m->getMessageHandle() << "): [" << m->getStatusText() << "] " << m->MsgDuration().count() << "ms";
-                                BOOST_LOG_SEV(lg::get(), sev::error) << ss.str();
-                                DebugLogReportTrace(m);
-                            }
-                            else if (m->getStatus() == Message::Status::INTERRUPT)
-                            {
-                                m->setStatus(Message::Status::PROCESSED_INTERRUPT);
-                                // Integer parameter for interrupt divided into two 16-bit fields: interrupt type and data.
-                                unsigned int param = (static_cast<unsigned int>(m->Response()->Fields().addr) << 16);
-                                unsigned int param2 = 0;
-                                if (m->Response()->Fields().len > 4) {
-                                    vevents.push_back(triggerEvents<int, std::vector<std::uint8_t>>(MessageEvents::INTERRUPT_RECEIVED, param, m->Response()->Payload<std::vector<std::uint8_t>>()));
-                                }
-                                else {
-                                    if (m->Response()->Fields().len >= 2) {
-                                        param |= (m->Response()->Payload<std::vector<std::uint16_t>>().at(0));
-                                    }
-                                    if (m->Response()->Fields().len >= 4) {
-                                        param2 = (m->Response()->Payload<std::vector<std::uint16_t>>().at(1));
-                                        events.push_back(triggerEvents<int, int>(MessageEvents::INTERRUPT_RECEIVED, param, param2));
-                                    }
-                                    else {
-                                        events.push_back(triggerEvents<int>(MessageEvents::INTERRUPT_RECEIVED, param));
-                                    }
-                                }
-                                ss.clear(); ss.str("");
-                                ss << "Processed Interrupt (" << m->getMessageHandle() << "): [" << m->getStatusText() << "] p0:" << param << " p1:" << param2;
-                                BOOST_LOG_SEV(lg::get(), sev::info) << ss.str();
-                                DebugLogReportTrace(m);
-                            }
-                            else
-                            {
-                                m->setStatus(Message::Status::RX_OK);
-                                events.push_back(triggerEvents<int>(MessageEvents::RESPONSE_RECEIVED, m->getMessageHandle()));
-                                ss.clear(); ss.str("");
-                                ss << "Msg (" << m->getMessageHandle() << "): [" << m->getStatusText() << "] " << m->MsgDuration().count() << "ms";
-                                BOOST_LOG_SEV(lg::get(), sev::info) << ss.str();
-                                DebugLogReportTrace(m);
-                            }
-                            m_msgRegistry.notifyAll();
-                            break;
-                        }
+                // Do Not add character data to both global queue (rxCharQueue) and message queue
+                // Use one or the other, depending on capabilities of Connection Target
+                while (!m_glblRx.empty() || m->HasData())
+                {
+                    if (m->Response()->Done()) {
+                        m->setStatus(Message::Status::RX_ERROR_INVALID);
+                        LogAndNotify(sev::error, m, "Msg Invalid");
+                        break;
+                    }              
+
+                    char c = HandleMessageParse(m);
+
+                    // Handle parsing errors
+                    if (m->Response()->UnexpectedChar()) {
+                        HandleUnexpectedChar(m, c);
+                        break;
+                    }
+
+                    if (m->Response()->Done())
+                    {
+                        HandleResponseDone(m);
+                        break;
                     }
                 }
             });
 
-            // Trigger all the events that were initiated while we still consumed the lock
-            for (std::vector<triggerEvents<int>>::iterator ev_it = events.begin(); ev_it != events.end(); ++ev_it)
+            // Trigger all the events that were initiated while we were iterating
+            for (auto& ev : m_Events)
             {
-                if (ev_it->count > 1) {
-                    mMsgEvent.Trigger<int, int>(this, ev_it->e, ev_it->p, ev_it->p2);
+                if (ev.count > 1) {
+                    mMsgEvent.Trigger<int, int>(this, ev.e, ev.p, ev.p2);
                 }
                 else {
-                    mMsgEvent.Trigger<int>(this, ev_it->e, ev_it->p);
+                    mMsgEvent.Trigger<int>(this, ev.e, ev.p);
                 }
             }
-            events.clear();
-            for (std::vector<triggerEvents<int, std::vector<std::uint8_t>>>::iterator ev_it = vevents.begin(); ev_it != vevents.end(); ++ev_it)
+            m_Events.clear();
+
+            for (auto& ev : m_Vevents)
             {
-                if (ev_it->count > 1) {
-                    mMsgEvent.Trigger<int, std::vector<std::uint8_t>>(this, MessageEvents::INTERRUPT_RECEIVED, ev_it->p, ev_it->p2);
+                if (ev.count > 1) {
+                    mMsgEvent.Trigger<int, std::vector<std::uint8_t>>(this, MessageEvents::INTERRUPT_RECEIVED, ev.p, ev.p2);
                 }
             }
-            vevents.clear();
+            m_Vevents.clear();
 
-			// Look for messages in the list that have timed out
-            std::vector<MessageHandle> messagesToRemove;
-            m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
-                if ((m->getStatus() == Message::Status::SENT) ||
-                    (m->getStatus() == Message::Status::RX_PARTIAL))
-                {
-                    if (m->TimeElapsed() > rxTimeout)
-                    {
-                        m->setStatus(Message::Status::TIMEOUT_ON_RXCV);
-                        events.push_back(triggerEvents<int>(MessageEvents::RESPONSE_TIMED_OUT, m->getMessageHandle()));
-                        ss.clear(); ss.str("");
-                        ss << "Msg RX Timeout (" << m->getMessageHandle() << "): [" << m->getStatusText() << "] ";
-                        BOOST_LOG_SEV(lg::get(), sev::warning) << ss.str();
-                        DebugLogReportTrace(m);
-                    }
-                }
-                // Then look for stale messages to expire from the list
-                else {
-#ifndef DEBUG_PRESERVE_LIST
-                    if (m->TimeElapsed() > autoFreeTimeout)
-                    {
-                        if (m->isComplete()) {
-                            messagesToRemove.push_back(m->getMessageHandle()); // Can't remove while we're consuming the lock, so store for later
-                        }
-                    }
-#endif
-                }
-            });
-
-            for (auto& msg : messagesToRemove) {
-                m_msgRegistry.removeMessage(msg);
-            }
+            HandleTimeoutsAndCleanup();            
 
             // Trigger all the events that were initiated while we still consumed the lock
-            for (std::vector<triggerEvents<int>>::const_iterator it = events.begin(); it != events.end(); ++it)
+            for (auto& ev : m_Events)
             {
-                mMsgEvent.Trigger<int>(this, (*it).e, (*it).p);
+                mMsgEvent.Trigger<int>(this, ev.e, ev.p);
             }
-            events.clear();
+            m_Events.clear();
 		}
 	}
 

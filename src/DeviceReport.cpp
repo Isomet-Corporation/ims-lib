@@ -78,6 +78,12 @@ namespace iMS
 		p_Impl->parser.ResetParser();
 	}
 
+    const bool DeviceReport::Idle() const
+	{
+		return ((p_Impl->parser.ParserState() == ReportParserState::IDLE) ||
+			(p_Impl->parser.ParserState() == ReportParserState::IDLE_UNEXPECTED_CHAR));
+	}
+
 	const bool DeviceReport::Done() const
 	{
 		return ((p_Impl->parser.ParserState() == ReportParserState::COMPLETE) ||

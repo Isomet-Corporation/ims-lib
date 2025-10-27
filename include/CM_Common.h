@@ -26,6 +26,7 @@
 
 #include "IConnectionManager.h"
 #include "MessageRegistry.h"
+#include "PrivateUtil.h"  // for logging
 
 #include <list>
 #include <mutex>
@@ -147,6 +148,43 @@ namespace iMS {
 		std::thread memoryTransferThread;
 		mutable std::mutex m_tfrmutex;
 		std::condition_variable m_tfrcond;
+
+    private:
+    	template <typename T, typename T2 = int>
+        struct triggerEvents
+        {
+            MessageEvents::Events e;
+            T p;
+            T2 p2;
+            int count;
+            triggerEvents(MessageEvents::Events e, T p) : e(e), p(p), p2(0), count(1) {};
+            triggerEvents(MessageEvents::Events e, T p, T2 p2) : e(e), p(p), p2(p2), count(2) {};
+        };
+
+        void LogAndNotify(
+            sev::severity_level level,
+            const std::shared_ptr<Message>& msg,
+            const std::string& prefix,
+            bool trace = true,
+            bool notify = true);
+
+        template<typename P>
+        void LogNotifyEvent(
+            sev::severity_level level,
+            const std::shared_ptr<Message>& msg,
+            const std::string& prefix,
+            MessageEvents::Events evType,
+            P param);
+
+		std::deque<std::uint8_t> m_glblRx;            
+		// Record any trigger events that occur during processing 
+		std::vector<triggerEvents<int>> m_Events;
+		std::vector<triggerEvents<int, std::vector<std::uint8_t>>> m_Vevents;
+
+        char HandleMessageParse(std::shared_ptr<Message> m);
+        void HandleResponseDone(std::shared_ptr<Message> m);
+        bool HandleUnexpectedChar(std::shared_ptr<Message> m, char c);
+        void CM_Common::HandleTimeoutsAndCleanup();
 	};
 
 

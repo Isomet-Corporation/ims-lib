@@ -43,6 +43,7 @@ namespace iMS
 		void ResetParser();
 
 		// Methods for establishing various success or failure modes
+		const bool Idle() const;
 		const bool Done() const;
 		const bool RxCRC() const;
 		const bool UnexpectedChar() const;

@@ -33,8 +33,6 @@ namespace iMS {
 		mID = mIDCount++;
 	}
 
-	IEventHandler::~IEventHandler() {}
-
 	int IEventHandler::mIDCount = 1;
 
 	bool IEventHandler::operator == (const IEventHandler e)
@@ -42,9 +40,4 @@ namespace iMS {
 		return (mID == e.mID);
 	}
 
-	// Implementation must be overridden
-	void IEventHandler::EventAction(void* sender, const int message, const int param) {}
-	void IEventHandler::EventAction(void* sender, const int message, const int param, const int param2) {}
-	void IEventHandler::EventAction(void* sender, const int message, const double param) {}
-	void IEventHandler::EventAction(void* sender, const int message, const int param, const std::vector<std::uint8_t> data) {}
 }

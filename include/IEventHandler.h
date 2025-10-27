@@ -145,11 +145,12 @@ namespace iMS {
     /// \since 1.0
 	class LIBSPEC IEventHandler
 	{
-	public:
+    protected:
     /// \brief Default Constructor
-		IEventHandler();
+        IEventHandler();
+	public:
     /// \brief Virtual Destructor
-		virtual ~IEventHandler();
+		virtual ~IEventHandler() = default;
     /// \brief Used internally to identify Functions subscribed to Events.  Not intended for Application usage.
     /// \since 1.0
 		bool operator == (const IEventHandler e);
@@ -169,7 +170,7 @@ namespace iMS {
 	/// \param[in] message an integer that maps to an enum in the Events class associated with the callback subscription
 	/// \param[in] param an optional integer parameter that provides additional information on the callback event.
 	/// \since 1.0
-		virtual void EventAction(void* sender, const int message, const int param = 0);
+		virtual void EventAction(void* sender, const int message, const int param = 0) {}
 	/// \brief This Method must be overriden by a User derived callback class.
   ///
   /// When a user class derived from IEventHandler is subscribed to receive event notifications from
@@ -183,7 +184,7 @@ namespace iMS {
   /// \param[in] param an integer parameter that provides additional information on the callback event.
 	/// \param[in] param2 an optional integer parameter that provides further additional information on the callback event.
 	/// \since 1.2
-		virtual void EventAction(void* sender, const int message, const int param, const int param2);
+		virtual void EventAction(void* sender, const int message, const int param, const int param2) {}
 	/// \brief This Method must be overriden by a User derived callback class.
 	///
 	/// When a user class derived from IEventHandler is subscribed to receive event notifications from
@@ -196,7 +197,7 @@ namespace iMS {
 	/// \param[in] message an integer that maps to an enum in the Events class associated with the callback subscription
 	/// \param[in] param an floating point parameter that provides additional information on the callback event.
 	/// \since 1.1
-		virtual void EventAction(void* sender, const int message, const double param);
+		virtual void EventAction(void* sender, const int message, const double param) {}
 	/// \brief This Method must be overriden by a User derived callback class.
 	///
 	/// When a user class derived from IEventHandler is subscribed to receive event notifications from
@@ -210,7 +211,7 @@ namespace iMS {
 	/// \param[in] param an integer parameter that provides information on the callback event.
 	/// \param[in] data a byte vector parameter that provides additional information on the callback event.
 	/// \since 1.2
-		virtual void EventAction(void* sender, const int message, const int param, const std::vector<std::uint8_t> data);
+		virtual void EventAction(void* sender, const int message, const int param, const std::vector<std::uint8_t> data) {}
 	//@}
 	private:
 		int mID;
