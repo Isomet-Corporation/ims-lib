@@ -341,9 +341,16 @@ namespace iMS {
 		/// TBEntry and continuing until \c last TBEntry (including first but not including last)
 		/// \since 1.1
 		bool StartDownload(ToneBuffer::const_iterator first, ToneBuffer::const_iterator last);
+		/// \brief Begins download of partial ToneBuffer to LTB memory on Synthesiser beginning at \c index
+		/// TBEntry and continuing for \c count entries
+		/// \since 1.9
+		bool StartDownload(std::size_t index, std::size_t count);
 		/// \brief Downloads a single TBEntry to LTB memory on Synthesiser
 		/// \since 1.1
 		bool StartDownload(ToneBuffer::const_iterator single);
+		/// \brief Downloads a single TBEntry to LTB memory on Synthesiser
+		/// \since 1.9
+		bool StartDownload(std::size_t index);
 		/// \brief No Verify is possible. Always returns false
 		/// \since 1.1
 		bool StartVerify() { return false; };

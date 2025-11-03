@@ -30,6 +30,7 @@
 #include "FileSystem_p.h"
 #include "IMSTypeDefs_p.h"
 #include "IMSConstants.h"
+#include "PrivateUtil.h"
 
 #include <mutex>
 #include <condition_variable>
@@ -180,19 +181,27 @@ namespace iMS {
 		std::list <MessageHandle> dl_list;
 		MessageHandle dl_final;
 		mutable std::mutex dl_list_mutex;
+        std::condition_variable dl_list_cv;     // signals when dl_list has room        
+        size_t dl_list_watermark = 16;          // tune this to the link capacity (messages)
 
 		bool downloaderRunning{ false };
 		std::thread downloadThread;
 		mutable std::mutex m_dlmutex;
 		std::condition_variable m_dlcond;
-		void DownloadWorker();
+
+        LazyWorker downloadWorker;
+        LazyWorker rxWorker;
+
+        bool downloadRequested{ false };
+        void DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
+        //void DownloadWorker();
 
 		std::thread RxThread;
 		mutable std::mutex m_rxmutex;
 		std::condition_variable m_rxcond;
 		std::deque<int> rxok_list;
 		std::deque<int> rxerr_list;
-		void RxWorker();
+	    void RxWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
 
 		FileSystemWriter* fsw;
 
@@ -200,10 +209,14 @@ namespace iMS {
 	};
 
 	ToneBufferDownload::Impl::Impl(IMSSystem& iMS, const ToneBuffer& tb) :
-		myiMS(iMS), m_tb(tb), Receiver(new ResponseReceiver(this))
+		myiMS(iMS), m_tb(tb), Receiver(new ResponseReceiver(this)),
+        downloadWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
+            DownloadWorkerLoop(running, cond, mtx);
+        }),
+        rxWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
+            RxWorkerLoop(running, cond, mtx);
+        })
 	{
-		downloaderRunning = true;
-
 		// Subscribe listeners
 		IConnectionManager * const myiMSConn = myiMS.Connection();
 		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
@@ -213,12 +226,6 @@ namespace iMS {
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
 		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-
-		// Start a thread to run the download in the background
-		downloadThread = std::thread(&ToneBufferDownload::Impl::DownloadWorker, this);
-
-		// And a thread to receive the download responses
-		RxThread = std::thread(&ToneBufferDownload::Impl::RxWorker, this);
 	}
 
 	ToneBufferDownload::Impl::~Impl() {
@@ -252,11 +259,10 @@ namespace iMS {
 
 			// Add response to verify list for checking by rx processing thread
 			{
-				std::unique_lock<std::mutex> lck{ m_parent->m_rxmutex };
+				std::unique_lock<std::mutex> lck{ m_parent->rxWorker.mutex() };
 				m_parent->rxok_list.push_back(param);
-				m_parent->m_rxcond.notify_one();
-				lck.unlock();
 			}
+            m_parent->rxWorker.notify();
 			break;
 		}
 		case (MessageEvents::TIMED_OUT_ON_SEND) :
@@ -267,11 +273,10 @@ namespace iMS {
 
 			// Add error to list and trigger processing thread if handle exists
 			{
-				std::unique_lock<std::mutex> lck{ m_parent->m_rxmutex };
+				std::unique_lock<std::mutex> lck{ m_parent->rxWorker.mutex() };
 				m_parent->rxerr_list.push_back(param);
-				m_parent->m_rxcond.notify_one();
-				lck.unlock();
 			}
+            m_parent->rxWorker.notify();
 			break;
 		}
 		}
@@ -283,16 +288,33 @@ namespace iMS {
 
 	bool ToneBufferDownload::StartDownload()
 	{
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "ToneBufferDownload::StartDownload()";
 		return this->StartDownload(p_Impl->m_tb.cbegin(), p_Impl->m_tb.cend());
 	}
 
 	bool ToneBufferDownload::StartDownload(ToneBuffer::const_iterator single)
 	{
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "ToneBufferDownload::StartDownload(ToneBuffer::const_iterator single)";
 		return this->StartDownload(single, single+1);
 	}
 
+    bool ToneBufferDownload::StartDownload(std::size_t index)
+    {
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "ToneBufferDownload::StartDownload(" << index << ")";
+        const ToneBuffer::const_iterator& single = p_Impl->m_tb.cbegin() + index;
+        return this->StartDownload(single, single+1);
+    }
+
+    bool ToneBufferDownload::StartDownload(std::size_t index, std::size_t count)
+    {
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "ToneBufferDownload::StartDownload(" << index << ", " << count << ")";
+        const ToneBuffer::const_iterator& single = p_Impl->m_tb.cbegin() + index;
+        return this->StartDownload(single, single+count);
+    }
+
 	bool ToneBufferDownload::StartDownload(ToneBuffer::const_iterator first, ToneBuffer::const_iterator last)
 	{
+        BOOST_LOG_SEV(lg::get(), sev::trace) << "ToneBufferDownload::StartDownload(ToneBuffer::const_iterator first, ToneBuffer::const_iterator last)";
 		p_Impl->first = first;
 		p_Impl->last = last;
 		p_Impl->offset = static_cast<int>(std::distance(p_Impl->m_tb.cbegin(), first));
@@ -300,15 +322,38 @@ namespace iMS {
 		// Make sure Synthesiser is present
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
-		std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
+        p_Impl->rxWorker.start();
+        p_Impl->downloadWorker.start();
 
-		if (!lck.owns_lock()) {
-			// Mutex lock failed, Downloader must be busy, try again later
-			return false;
+        int retries=10;
+        while (retries)
+		{
+			std::unique_lock<std::mutex> lck{ p_Impl->downloadWorker.mutex(), std::try_to_lock };
+
+			if (!lck.owns_lock()) {
+                if (!--retries) return false;
+				// Mutex lock failed, Downloader must be busy, try again later
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				continue;
+			}
+
+            std::unique_lock<std::mutex> rxlck{ p_Impl->rxWorker.mutex(), std::try_to_lock };
+
+            if (!rxlck.owns_lock()) {
+                if (!--retries) return false;
+                // Mutex lock failed, Rx must be busy, try again later
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				continue;
+            }
+
+			p_Impl->dl_list.clear();
+            p_Impl->downloadRequested = true;
+			lck.unlock();
+
+            break;
 		}
-		p_Impl->dl_list.clear();
-
-		p_Impl->m_dlcond.notify_one();
+		
+        p_Impl->downloadWorker.notify();
 		return true;
 	}
 
@@ -355,14 +400,17 @@ namespace iMS {
 	}
 
 	// ToneBuffer Downloading Thread
-	void ToneBufferDownload::Impl::DownloadWorker()
+	void ToneBufferDownload::Impl::DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-		while (downloaderRunning) {
-			std::unique_lock<std::mutex> lck{ m_dlmutex };
-			m_dlcond.wait(lck);
+		while (true) {
+			std::unique_lock<std::mutex> lck{ mtx };
+			cond.wait(lck, [this, &running]() {
+                return downloadRequested || !running;
+            });
 
 			// Allow thread to terminate 
-			if (!downloaderRunning) break;
+			if (!running) break;
+            downloadRequested = false;
 
 			// Download loop
 			IConnectionManager * const myiMSConn = myiMS.Connection();
@@ -376,37 +424,57 @@ namespace iMS {
 			std::vector<std::uint8_t> ltb_data;
 			ToneBuffer::const_iterator it = first;
 			MessageHandle h2;
-			while (((index - offset) < length) && (it < last))
+			while (((index - offset) < length) && (it < last) && running)
 			{
-				// Add one TBEntry to vector
+				// Add one TBEntry to vector: build packet data
 				AddPointToVector(ltb_data, (*it), false);
 
-				if (buf_bytes <= 0)
-				{
-      				std::this_thread::sleep_for(std::chrono::milliseconds(200));
-					// Clear Buffer every kB to prevent Hardware overrun
-					do {
-						{
-							std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-							if (dl_list.empty()) break;
-							dllck.unlock();
-						}
-						std::this_thread::sleep_for(std::chrono::milliseconds(50));
-					} while (1);
-					buf_bytes = 1024;
-				}
-				buf_bytes -= ltb_data.size();
+                if (buf_bytes <= 0)
+                {
+                    buf_bytes = 1024;
+                }
+                buf_bytes -= static_cast<int>(ltb_data.size());                
+				// if (buf_bytes <= 0)
+				// {
+      			// 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				// 	// Clear Buffer every kB to prevent Hardware overrun
+				// 	do {
+				// 		{
+				// 			std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+				// 			if (dl_list.empty()) break;
+				// 			dllck.unlock();
+				// 		}
+				// 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				// 	} while (1);
+				// 	buf_bytes = 1024;
+				// }
+				// buf_bytes -= ltb_data.size();
 
 				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ProgSyncDig);
 				iorpt->Payload<std::vector<std::uint8_t>>(ltb_data);
 				MessageHandle h = myiMSConn->SendMsg(*iorpt);
 				delete iorpt;
 
-				// Add message handles to download list so we can check the responses
-				{
-    				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-       				dl_list.push_back(h);
+                // THROTTLE: wait until dl_list has room (atomically)
+                {
+                    std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+                    dl_list_cv.wait(dllck, [&]() {
+                        return (!running) || (dl_list.size() < dl_list_watermark);
+                    });
+                    if (!running) {
+                        // optionally clean up or break out to terminate quickly
+                        dllck.unlock();
+                        break;
+                    }
+                    dl_list.push_back(h);
+                    // dllck.unlock(); // unlocks at scope exit
                 }
+                                
+				// // Add message handles to download list so we can check the responses
+				// {
+    			// 	std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+       			// 	dl_list.push_back(h);
+                // }
 
 				ltb_data.clear();
 
@@ -439,13 +507,8 @@ namespace iMS {
                 }
 
 				// Not a great hack: adding a gap ensures packets aren't coalesced (even with TCP_NODELAY enabled)
-				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				//std::this_thread::sleep_for(std::chrono::milliseconds(5));
 			}
-
-//			std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-			//dl_list.push_back(h2);
-//			if (!dl_list.empty()) dl_final = dl_list.back();
-//			dllck.unlock();
 
 			// Release lock, wait for next download trigger
 			lck.unlock();
@@ -453,45 +516,47 @@ namespace iMS {
 	}
 
 	// ToneBuffer Readback Verify Data Processing Thread
-	void ToneBufferDownload::Impl::RxWorker()
+	void ToneBufferDownload::Impl::RxWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-		std::unique_lock<std::mutex> lck{ m_rxmutex };
-		while (downloaderRunning) {
-			// Release lock implicitly, wait for next download trigger
-			m_rxcond.wait(lck);
+		while (true) {
+    		std::unique_lock<std::mutex> lck{ mtx };
+            cond.wait(lck);
 
-			// Allow thread to terminate 
-			if (!downloaderRunning) break;
-
-			//IConnectionManager * const myiMSConn = myiMS.Connection();
+            // Allow thread to terminate 
+			if (!running) break;
 
 			while (!rxok_list.empty())
 			{
 				int param = rxok_list.front();
 				rxok_list.pop_front();
+                
+                {
+                    std::unique_lock<std::mutex> dllck{ dl_list_mutex };
 
-				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+                    for (std::list<MessageHandle>::iterator iter = dl_list.begin();
+                        iter != dl_list.end();)
+                    {
+                        MessageHandle handle = static_cast<MessageHandle>(*iter);
+                        if (handle != (param))
+                        {
+                            ++iter;
+                            continue;
+                        }
 
-				for (std::list<MessageHandle>::iterator iter = dl_list.begin();
-					iter != dl_list.end();)
-				{
-					MessageHandle handle = static_cast<MessageHandle>(*iter);
-					if (handle != (param))
-					{
-						++iter;
-						continue;
-					}
+                        // Remove from list
+                        iter = dl_list.erase(iter);
 
-					// Remove from list
-					iter = dl_list.erase(iter);
+                        // Download Finished?
+                        if (handle == dl_final)
+                        {
+                            m_Event.Trigger<int>((void *)this, ToneBufferEvents::DOWNLOAD_FINISHED, 0);
+                        }
 
-					// Download Finished?
-					if (handle == dl_final)
-					{
-						m_Event.Trigger<int>((void *)this, ToneBufferEvents::DOWNLOAD_FINISHED, 0);
-					}
-				}
-				dllck.unlock();
+                        // Notify producer that there is room for more messages
+                        // (notify after each erase; could batch and notify once)
+                        dl_list_cv.notify_one();
+                    }
+                }
 
 			}
 
@@ -500,30 +565,33 @@ namespace iMS {
 				int param = rxerr_list.front();
 				rxerr_list.pop_front();
 
-				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+                {
+                    std::unique_lock<std::mutex> dllck{ dl_list_mutex };
 
-				for (std::list<MessageHandle>::iterator iter = dl_list.begin();
-					iter != dl_list.end();)
-				{
-					MessageHandle handle = static_cast<MessageHandle>(*iter);
-					if (handle != (param))
-					{
-						++iter;
-						continue;
-					}
+                    for (std::list<MessageHandle>::iterator iter = dl_list.begin();
+                        iter != dl_list.end();)
+                    {
+                        MessageHandle handle = static_cast<MessageHandle>(*iter);
+                        if (handle != (param))
+                        {
+                            ++iter;
+                            continue;
+                        }
 
-					// Download Finished?
-					if (handle == dl_final)
-					{
-						m_Event.Trigger<int>((void *)this, ToneBufferEvents::DOWNLOAD_FINISHED, 0);
-					}
+                        // Download Finished?
+                        if (handle == dl_final)
+                        {
+                            m_Event.Trigger<int>((void *)this, ToneBufferEvents::DOWNLOAD_FINISHED, 0);
+                        }
 
-					// Remove from list
-					iter = dl_list.erase(iter);
-					m_Event.Trigger<int>((void *)this, ToneBufferEvents::DOWNLOAD_ERROR, handle);
-				}
-				dllck.unlock();
+                        // Remove from list
+                        iter = dl_list.erase(iter);
+                        m_Event.Trigger<int>((void *)this, ToneBufferEvents::DOWNLOAD_ERROR, handle);
 
+                        // Notify producer it can continue
+                        dl_list_cv.notify_one();                        
+                    }
+                }
 			}
 
 		}

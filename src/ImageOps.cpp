@@ -577,9 +577,8 @@ namespace iMS
 			{
 				std::unique_lock<std::mutex> lck{ m_parent->rxWorker.mutex() };
 				m_parent->rxok_list.push_back(param);
-				m_parent->rxWorker.notify();
-				lck.unlock();
 			}
+            m_parent->rxWorker.notify();
 			break;
 		}
 		case (MessageEvents::TIMED_OUT_ON_SEND) :
@@ -592,9 +591,8 @@ namespace iMS
 			{
 				std::unique_lock<std::mutex> lck{ m_parent->rxWorker.mutex() };
 				m_parent->rxerr_list.push_back(param);
-				m_parent->rxWorker.notify();
-				lck.unlock();
 			}
+            m_parent->rxWorker.notify();
 			break;
 		}
 		}

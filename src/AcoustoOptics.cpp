@@ -98,8 +98,8 @@ namespace iMS
 		case Crystal::Material::TeO2:     return os << "TeO2";
 		case Crystal::Material::TeO2S:    return os << "TeO2(S)";
 		case Crystal::Material::aQuartz:  return os << "a-Quartz";
-		case Crystal::Material::fSilica:  return os << "FusedSilica";
-		case Crystal::Material::fSilicaS: return os << "FusedSilica(S)";
+		case Crystal::Material::fSilica:  return os << "F-Silica";
+		case Crystal::Material::fSilicaS: return os << "F-Silica(S)";
 		case Crystal::Material::Ge:       return os << "Ge";
 			// omit default case to trigger compiler warning for missing cases
 		};
@@ -112,8 +112,8 @@ namespace iMS
 		else if (s == "TeO2") return Crystal::Material::TeO2;
 		else if (s == "TeO2(S)") return Crystal::Material::TeO2S;
 		else if (s == "a-Quartz") return Crystal::Material::aQuartz;
-		else if (s == "FusedSilica") return Crystal::Material::fSilica;
-		else if (s == "FusedSilica(S)") return Crystal::Material::fSilicaS;
+		else if (s == "F-Silica") return Crystal::Material::fSilica;
+		else if (s == "F-Silica(S)") return Crystal::Material::fSilicaS;
 		else if (s == "Ge") return Crystal::Material::Ge;
 		else return Crystal::Material::TeO2;
 	}

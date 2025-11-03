@@ -1007,7 +1007,10 @@ static std::string logErrorString(int err = INT_MAX) {
                         break;
                     }
                     else if ((fds.revents & POLLOUT) != 0) {
-                        ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(outContext->BytesXfer), (outContext->bufLen-outContext->BytesXfer), 0);
+                        #ifndef MSG_EOR
+                        #define MSG_EOR 0
+                        #endif
+                        ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(outContext->BytesXfer), (outContext->bufLen-outContext->BytesXfer), MSG_EOR);
                         err = errno;
 
                         if (0 > ret) {
