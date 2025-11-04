@@ -184,28 +184,17 @@ namespace iMS {
         std::condition_variable dl_list_cv;     // signals when dl_list has room        
         size_t dl_list_watermark = 16;          // tune this to the link capacity (messages)
 
-		bool downloaderRunning{ false };
-		std::thread downloadThread;
-		mutable std::mutex m_dlmutex;
-		std::condition_variable m_dlcond;
-
         LazyWorker downloadWorker;
         LazyWorker rxWorker;
 
         bool downloadRequested{ false };
         void DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
-        //void DownloadWorker();
 
-		std::thread RxThread;
-		mutable std::mutex m_rxmutex;
-		std::condition_variable m_rxcond;
 		std::deque<int> rxok_list;
 		std::deque<int> rxerr_list;
 	    void RxWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
 
 		FileSystemWriter* fsw;
-
-		
 	};
 
 	ToneBufferDownload::Impl::Impl(IMSSystem& iMS, const ToneBuffer& tb) :
@@ -229,14 +218,6 @@ namespace iMS {
 	}
 
 	ToneBufferDownload::Impl::~Impl() {
-		// Unblock worker thread
-		downloaderRunning = false;
-		m_dlcond.notify_one();
-		m_rxcond.notify_one();
-
-		downloadThread.join();
-		RxThread.join();
-
 		// Unsubscribe listener
 		IConnectionManager * const myiMSConn = myiMS.Connection();
 		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
@@ -424,6 +405,7 @@ namespace iMS {
 			std::vector<std::uint8_t> ltb_data;
 			ToneBuffer::const_iterator it = first;
 			MessageHandle h2;
+
 			while (((index - offset) < length) && (it < last) && running)
 			{
 				// Add one TBEntry to vector: build packet data
@@ -434,21 +416,6 @@ namespace iMS {
                     buf_bytes = 1024;
                 }
                 buf_bytes -= static_cast<int>(ltb_data.size());                
-				// if (buf_bytes <= 0)
-				// {
-      			// 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
-				// 	// Clear Buffer every kB to prevent Hardware overrun
-				// 	do {
-				// 		{
-				// 			std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-				// 			if (dl_list.empty()) break;
-				// 			dllck.unlock();
-				// 		}
-				// 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
-				// 	} while (1);
-				// 	buf_bytes = 1024;
-				// }
-				// buf_bytes -= ltb_data.size();
 
 				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ProgSyncDig);
 				iorpt->Payload<std::vector<std::uint8_t>>(ltb_data);
@@ -469,12 +436,6 @@ namespace iMS {
                     dl_list.push_back(h);
                     // dllck.unlock(); // unlocks at scope exit
                 }
-                                
-				// // Add message handles to download list so we can check the responses
-				// {
-    			// 	std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-       			// 	dl_list.push_back(h);
-                // }
 
 				ltb_data.clear();
 
@@ -646,7 +607,7 @@ namespace iMS {
 	{
 		p_Impl->index = rhs.p_Impl->index;
 		p_Impl->tbc = rhs.p_Impl->tbc;
-		this->SyncOutDelay() == rhs.SyncOutDelay();
+		this->SyncOutDelay() = rhs.SyncOutDelay();
 		for (RFChannel ch = RFChannel::min; ; ch++) {
 			this->SetFrequencyOffset(rhs.GetFrequencyOffset(ch), ch);
 			if (ch == RFChannel::max) break;
