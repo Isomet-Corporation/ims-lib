@@ -826,13 +826,15 @@ namespace iMS
 
 		if (global_lut) {
 			if (m_gtbl == nullptr) return false;
-			local_table = std::make_unique<CompensationTable>(m_gtbl->Size(), m_gtbl->LowerFrequency(), m_gtbl->UpperFrequency(), *m_gtbl);
+            int size = static_cast<int>(m_gtbl->Size());
+			local_table = std::make_unique<CompensationTable>(size, m_gtbl->LowerFrequency(), m_gtbl->UpperFrequency(), *m_gtbl);
 		} else {
 			// Check each of the Comp Tables is valid
 			for (int i = RFChannel::min; i <= m_chan_count; i++) {
 				if (m_ctbl[i - RFChannel::min] == nullptr) return false;
 			}
-			local_table = std::make_unique<CompensationTable>(m_ctbl[0]->Size(), m_ctbl[0]->LowerFrequency(), m_ctbl[0]->UpperFrequency(), *m_ctbl[0]);
+            int size = static_cast<int>(m_ctbl[0]->Size());
+			local_table = std::make_unique<CompensationTable>(size, m_ctbl[0]->LowerFrequency(), m_ctbl[0]->UpperFrequency(), *m_ctbl[0]);
 		}
 
 		if (ofile.is_open())
@@ -898,7 +900,8 @@ namespace iMS
 				}
 				if (++j != hdr.chan_count) {
 					local_table.release();
-					local_table = std::make_unique<CompensationTable>(m_ctbl[j]->Size(), m_ctbl[j]->LowerFrequency(), m_ctbl[j]->UpperFrequency(), *m_ctbl[j]);
+                    int size = static_cast<int>(m_ctbl[j]->Size());
+					local_table = std::make_unique<CompensationTable>(size, m_ctbl[j]->LowerFrequency(), m_ctbl[j]->UpperFrequency(), *m_ctbl[j]);
 				}
 			}
 			delete[] data;

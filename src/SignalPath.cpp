@@ -1835,6 +1835,8 @@ namespace iMS
 	bool SignalPath::UpdateLocalToneBuffer(const SignalPath::ToneBufferControl& tbc, const unsigned int index, 
 		const SignalPath::Compensation AmplitudeComp, const SignalPath::Compensation PhaseComp)
 	{
+        BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("SignalPath::UpdateLocalToneBuffer(const SignalPath::ToneBufferControl& tbc, const unsigned int index, \
+		const SignalPath::Compensation AmplitudeComp, const SignalPath::Compensation PhaseComp)");
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
 		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
@@ -1864,6 +1866,7 @@ namespace iMS
 
 	bool SignalPath::UpdateLocalToneBuffer(const SignalPath::ToneBufferControl& tbc)
 	{
+        BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("SignalPath::UpdateLocalToneBuffer(const SignalPath::ToneBufferControl& tbc)");
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
 		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
@@ -1900,6 +1903,7 @@ namespace iMS
 
 	bool SignalPath::UpdateLocalToneBuffer(const SignalPath::Compensation AmplitudeComp, const SignalPath::Compensation PhaseComp)
 	{
+        BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("SignalPath::UpdateLocalToneBuffer(const SignalPath::Compensation AmplitudeComp, const SignalPath::Compensation PhaseComp)");
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
 		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
@@ -1932,6 +1936,7 @@ namespace iMS
 
 	bool SignalPath::UpdateLocalToneBuffer(const unsigned int index)
 	{
+        BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("SignalPath::UpdateLocalToneBuffer(const unsigned int index)");
 		if (!p_Impl->myiMS.Synth().IsValid()) return false;
 
 		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();

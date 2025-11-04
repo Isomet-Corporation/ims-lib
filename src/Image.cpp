@@ -690,7 +690,7 @@ namespace iMS {
 		p_Impl->ExtClockDivide = rhs.p_Impl->ExtClockDivide;
 		p_Impl->imgDelay = rhs.p_Impl->imgDelay;
 		p_Impl->InternalClock = rhs.p_Impl->InternalClock;
-		this->SyncOutDelay() == rhs.SyncOutDelay();
+		this->SyncOutDelay() = rhs.SyncOutDelay();
 		p_Impl->rpts = rhs.p_Impl->rpts;
 		for (RFChannel ch = RFChannel::min; ; ch++) {
 			this->SetFrequencyOffset(rhs.GetFrequencyOffset(ch), ch);
