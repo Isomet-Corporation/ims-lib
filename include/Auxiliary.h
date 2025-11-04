@@ -422,7 +422,7 @@ namespace iMS
 		/// \endcode
 		/// \param[in] name Create the register object accessing the specified Register
 		/// \since 1.1
-		DDSScriptRegister(Name name);
+		DDSScriptRegister(Name name = Name::CSR);
 		/// \overload
 		/// Example:
 		/// \code
