@@ -84,12 +84,20 @@ namespace iMS
 		std::atomic<int> MasterClockModeMsg;
 		std::unique_ptr<SystemFuncEventTrigger> m_Event;
 		IMSSystem& myiMS;
+
+        std::thread heartbeatThread;
+        std::atomic<bool> heartbeatRunning;
+        int heartbeatIntervalMs;
+        std::mutex hbMutex;
+        std::condition_variable hbCv;        
 	};
 
 	SystemFunc::Impl::Impl(IMSSystem& iMS) :
 		Receiver(new ResponseReceiver(this)),
 		m_Event(new SystemFuncEventTrigger()),
-		myiMS(iMS)
+		myiMS(iMS),
+        heartbeatRunning(false),
+        heartbeatIntervalMs(1000) 
 	{
 		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("SystemFunc::SystemFunc()");
 
@@ -143,7 +151,7 @@ namespace iMS
 
 	SystemFunc::SystemFunc(IMSSystem& iMS) : p_Impl(new Impl(iMS)) {}
 
-	SystemFunc::~SystemFunc() { delete p_Impl; p_Impl = nullptr; }
+	SystemFunc::~SystemFunc() { StopHeartbeat(); delete p_Impl; p_Impl = nullptr; }
 
 	void SystemFunc::Impl::ResponseReceiver::EventAction(void* sender, const int message, const int param)
 	{
@@ -355,6 +363,78 @@ namespace iMS
 		delete iorpt;
 		return true;
 	}
+
+    bool SystemFunc::SendHeartbeat()
+    {
+		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+
+		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+
+		// Read the first register (effectively a no-op)
+		HostReport *iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, 0);
+
+		if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		{
+			delete iorpt;
+			return false;
+		}
+		delete iorpt;
+		return true;        
+    }
+
+        // Starts automatic heartbeat with specified interval in milliseconds
+    void SystemFunc::StartHeartbeat(int intervalMs)
+    {
+        std::lock_guard<std::mutex> lock(p_Impl->hbMutex);
+
+        p_Impl->heartbeatIntervalMs = intervalMs;
+
+        if (!p_Impl->heartbeatRunning)
+        {
+            p_Impl->heartbeatRunning = true;
+            p_Impl->heartbeatThread = std::thread([this]()
+            {
+                std::unique_lock<std::mutex> lock(p_Impl->hbMutex);
+                while (p_Impl->heartbeatRunning)
+                {
+                    // Send heartbeat without holding the lock to avoid blocking Start/Stop
+                    lock.unlock();
+                    this->SendHeartbeat();
+                    lock.lock();
+
+                    // Wait for interval or stop signal
+                    if (p_Impl->hbCv.wait_for(lock, std::chrono::milliseconds(p_Impl->heartbeatIntervalMs),
+                                            [this]() { return !p_Impl->heartbeatRunning; }))
+                    {
+                        break; // stopped
+                    }
+                }
+            });
+        }
+        else
+        {
+            // Thread already running, notify to apply new interval immediately
+            p_Impl->hbCv.notify_one();
+        }
+    }
+
+    // Stops automatic heartbeat
+    void SystemFunc::StopHeartbeat()
+    {
+        // First, tell the thread to stop and notify it
+        {
+            std::lock_guard<std::mutex> lock(p_Impl->hbMutex);
+            if (!p_Impl->heartbeatRunning)
+                return;
+
+            p_Impl->heartbeatRunning = false;
+            p_Impl->hbCv.notify_one();
+        }
+
+        // Now join the thread outside the lock
+        if (p_Impl->heartbeatThread.joinable())
+            p_Impl->heartbeatThread.join();
+    }
 
 	bool SystemFunc::ConfigureNHF(bool Enabled, int milliSeconds, NHFLocalReset reset)
 	{

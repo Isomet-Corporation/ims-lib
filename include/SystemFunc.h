@@ -244,6 +244,19 @@ namespace iMS
     /// \brief Clear the Not Healthy Flag once normal service is resumed
     ///
 		bool ClearNHF();
+    /// \brief Sends a single No-op message to the iMS to reset the NHF timer
+    ///
+    /// \since 1.9
+		bool SendHeartbeat();
+    /// \brief Starts a timer that repeatedly sends keep-alive heartbeat messages to the iMS system on a specified millisecond interval.
+    /// If the timer is already running, it is restarted and the interval updated
+    ///
+    /// \since 1.9
+        void StartHeartbeat(int intervalMs);
+    /// \brief Stops the automated keep-alive timer
+    ///
+    /// \since 1.9
+        void StopHeartbeat();
     /// \brief Configure the Not Healthy Flag mechanism
     ///
     /// \param[in] Enabled Turns the mechanism on or off (default: on)
