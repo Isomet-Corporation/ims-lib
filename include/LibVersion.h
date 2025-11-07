@@ -83,19 +83,19 @@
 ///
 /// The API Major Version number for use in preprocessing directives
 ///
-#define IMS_API_MAJOR 1
+#define IMS_API_MAJOR 2
 ///
 /// \brief Minor Version Number
 ///
 /// The API Minor Version number for use in preprocessing directives
 ///
-#define IMS_API_MINOR 9
+#define IMS_API_MINOR 0
 ///
 /// \brief Patch Version Number
 ///
 /// The API Patch Version number for use in preprocessing directives
 ///
-#define IMS_API_PATCH 1
+#define IMS_API_PATCH 0
 //@}
 
 /// \namespace iMS
