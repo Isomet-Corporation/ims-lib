@@ -445,7 +445,7 @@ namespace iMS
 
     /// \brief returns a pointer to an object which is the Connection through which all messages to the hardware go
     /// \warning This function may be removed in a future release.  Avoid using.
-		IConnectionManager* const Connection() const;
+		const std::shared_ptr<IConnectionManager> Connection() const;
 
     /// \brief Add an iMS Controller to the System. Intended for internal library use.
     /// \since 1.0
@@ -504,7 +504,7 @@ namespace iMS
 		bool RetrieveSettings(IConnectionSettings& settings);
 	private:
 		IMSSystem();
-		IMSSystem(IConnectionManager* const, const std::string&);
+		IMSSystem(const std::shared_ptr<IConnectionManager>, const std::string&);
 
 		class Impl;
 		Impl * p_Impl;

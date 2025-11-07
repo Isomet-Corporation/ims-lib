@@ -226,7 +226,7 @@ namespace iMS
 				for (int i = 0; i <= 1; i++) {
 					if ((!m_parent->TemperatureHandle[i].empty()) && (param == m_parent->TemperatureHandle[i].front()))
 					{
-						IConnectionManager* object = static_cast<IConnectionManager*>(sender);
+						auto object = static_cast<IConnectionManager*>(sender);
 						IOReport resp = object->Response(param);
 
 						std::unique_lock<std::mutex> lck{ m_parent->m_bkmutex };

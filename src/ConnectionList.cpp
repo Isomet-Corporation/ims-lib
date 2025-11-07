@@ -43,6 +43,8 @@
 #include <boost/log/utility/setup/settings_parser.hpp>
 #include "boost/filesystem.hpp"
 
+#include <memory>
+
 #if defined(_WIN32)
 #include "Shlobj.h"
 #endif
@@ -330,8 +332,8 @@ namespace iMS
 		~Impl();
 
 		// The list of connection types
-		typedef std::list<IConnectionManager*> ConnectionTypesList;
-		ConnectionTypesList* connList;
+		typedef std::list<std::shared_ptr<IConnectionManager>> ConnectionTypesList;
+		std::unique_ptr<ConnectionTypesList> connList;
 		ListBase<std::string> ModuleNames;
 
 		typedef ConnectionTypesList::iterator iterator;
@@ -347,7 +349,7 @@ namespace iMS
 
 	ConnectionList::Impl::Impl()
 	{
-		connList = new ConnectionTypesList;
+		connList = std::make_unique<ConnectionTypesList>();
 		config_map = new ConnectionList::Impl::ConnectionConfigMap;
 		settings_map = new ConnectionListSettingsMap;
 
@@ -370,14 +372,6 @@ namespace iMS
 	{
 		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("ConnectionList::~ConnectionList()");
 
-		for (ConnectionList::Impl::const_iterator iter = connList->begin();
-			iter != connList->end();
-			iter++)
-		{
-			IConnectionManager *object = *iter;
-			delete object;
-		}
-		delete connList;
 		delete config_map;
 		delete settings_map;
 
@@ -398,46 +392,49 @@ namespace iMS
 
 	ConnectionList::ConnectionList() : pImpl(new Impl())
 	{
-		IConnectionManager* module;
 		// connList is a read-only list containing one element for each host connection type.
 		// Each element must fully implement the IConnectionManager interface to define methods
 		//   for discovering, connecting to and sending messages to/from the iMS.
 		// Add in any additional concrete clases that are an implementation of the IConnectionManager interface below
 #if defined (_WIN32) 
 		try {
-			module = new CM_FTDI();
+			auto module = CM_FTDI::Create ();
 			pImpl->connList->push_back(module);
 		}
-		catch (std::exception ex) {
-			BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initilise CM_FTDI Module" << std::endl;
-		}
+		catch (const std::exception& ex)
+        {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initialise CM_FTDI Module: " << ex.what();
+        }
 #endif
 #if defined (_WIN32) 
 		try {
-			module = new CM_CYUSB();
+			auto module = CM_CYUSB::Create ();
 			pImpl->connList->push_back(module);
 		}
-		catch (std::exception ex) {
-			BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initilise CM_CYUSB Module" << std::endl;
-		}
+		catch (const std::exception& ex)
+        {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initialise CM_CYUSB Module: " << ex.what();
+        }
 #endif
 #if defined (_WIN32) 
 		try {
-			module = new CM_RS422();
+			auto module = CM_RS422::Create ();
 			pImpl->connList->push_back(module);
 		}
-		catch (std::exception ex) {
-			BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initilise CM_RS422 Module" << std::endl;
-		}
+		catch (const std::exception& ex)
+        {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initialise CM_RS422 Module: " << ex.what();
+        }
 #endif
 #if defined (_WIN32) || defined (__QNXNTO__) || defined (__linux__)
 		try {
-			module = new CM_ENET();
+			auto module = CM_ENET::Create ();
 			pImpl->connList->push_back(module);
 		}
-		catch (std::exception ex) {
-			BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initilise CM_ENET Module" << std::endl;
-		}
+		catch (const std::exception& ex)
+        {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Failed to initialise CM_ENET Module: " << ex.what();
+        }
 #endif
 
 		for (ConnectionList::Impl::const_iterator iter = pImpl->begin();
@@ -477,7 +474,7 @@ namespace iMS
 			iter != pImpl->end();
 			iter++)
 		{
-			IConnectionManager *object = *iter;
+			auto object = *iter;
 
 			if ((*pImpl->config_map)[object->Ident()].IncludeInScan) {
 				BOOST_LOG_SEV(lg::get(), sev::info) << "scan(" << object->Ident() << ") start" << std::endl;

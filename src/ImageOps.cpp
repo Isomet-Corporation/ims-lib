@@ -1835,7 +1835,7 @@ namespace iMS
             if (!ims->Ctlr().IsValid()) return false;
             if (!ims->Synth().IsValid()) return false;
 
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport *iorpt;
             
             if (ImagePlayer::StopStyle::IMMEDIATELY == s)
@@ -1923,7 +1923,7 @@ namespace iMS
 			{
 				if ((!m_parent->progressHandle.empty()) && (param == m_parent->progressHandle.front()))
 				{
-					IConnectionManager* object = static_cast<IConnectionManager*>(sender);
+					auto object = static_cast<IConnectionManager*>(sender);
 					IOReport resp = object->Response(param);
 
 					std::unique_lock<std::mutex> lck{ m_parent->m_bkmutex };
@@ -1942,7 +1942,7 @@ namespace iMS
 				if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46) break;
 				else if ((!m_parent->finishHandle.empty()) && (param == m_parent->finishHandle.front()))
 				{
-					IConnectionManager* object = static_cast<IConnectionManager*>(sender);
+					auto object = static_cast<IConnectionManager*>(sender);
 					IOReport resp = object->Response(param);
 
 					std::uint16_t ctrl = resp.Payload<std::uint16_t>();
@@ -2465,7 +2465,7 @@ namespace iMS
 	{
         with_locked(m_ims, [&](std::shared_ptr<IMSSystem> ims) {         
             // Unsubscribe listener
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46) {
                 conn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
                 int IntrMask = ~(int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
@@ -2897,7 +2897,7 @@ namespace iMS
 		m_ims(ims)
 	{
 		// Subscribe listener
-		IConnectionManager * const conn = ims->Connection();
+		auto conn = ims->Connection();
 		if (ims->Ctlr().GetVersion().revision > 46) {
 			conn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 		}
@@ -3022,7 +3022,7 @@ namespace iMS
                 return false;
             }
 
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport* iorpt;
 
             iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Stop);
@@ -3060,7 +3060,7 @@ namespace iMS
                 return false;
             }
 
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport* iorpt;
 
             iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Stop);
@@ -3090,7 +3090,7 @@ namespace iMS
                 return false;
             }
 
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport* iorpt;
 
             iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Pause);
@@ -3128,7 +3128,7 @@ namespace iMS
                 return false;
             }
 
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport* iorpt;
 
             iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Restart);
@@ -3149,7 +3149,7 @@ namespace iMS
         {         
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return -1;
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
             ReportFields f = iorpt->Fields();
             f.context = 0;
@@ -3171,7 +3171,7 @@ namespace iMS
         {        
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return false;
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, index);
             ReportFields f = iorpt->Fields();
             f.context = 1;
@@ -3196,7 +3196,7 @@ namespace iMS
         {          
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return false;
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
             ReportFields f = iorpt->Fields();
             f.context = 5;
@@ -3216,7 +3216,7 @@ namespace iMS
         {         
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return false;
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
             ReportFields f = iorpt->Fields();
             f.context = 4;
@@ -3246,7 +3246,7 @@ namespace iMS
         {          
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return false;
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
             ReportFields f = iorpt->Fields();
             f.context = 3;
@@ -3277,7 +3277,7 @@ namespace iMS
         {          
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return false;
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
             ReportFields f = iorpt->Fields();
             f.context = 3;
@@ -3324,7 +3324,7 @@ namespace iMS
         {         
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return false;
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
             ReportFields f = iorpt->Fields();
             f.context = 9;
@@ -3352,7 +3352,7 @@ namespace iMS
         {          
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return false;
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
             ReportFields f = iorpt->Fields();
             f.context = 10;
@@ -3378,7 +3378,7 @@ namespace iMS
         {          
             // Make sure Controller is present
             if (!ims->Ctlr().IsValid()) return false;
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
             HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
             ReportFields f = iorpt->Fields();
             f.context = 8;

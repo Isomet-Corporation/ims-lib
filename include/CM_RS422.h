@@ -36,7 +36,7 @@ namespace iMS
 	class CM_RS422 : public CM_Common
 	{
 	public:
-		CM_RS422();
+        static std::shared_ptr<IConnectionManager> Create();
 		~CM_RS422();
 
 		const std::string& Ident() const;
@@ -50,6 +50,7 @@ namespace iMS
 //		bool MemoryUpload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int len, int image_index, const std::array<std::uint8_t, 16>& uuid);
 
 	private:
+		CM_RS422();
 		// Make this object non-copyable
 		CM_RS422(const CM_RS422 &);
 		const CM_RS422 &operator =(const CM_RS422 &);

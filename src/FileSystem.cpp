@@ -433,8 +433,7 @@ namespace iMS
         {         
             // Read back FileSystemTable from iMS Synthesiser
             if (!ims->Synth().IsValid()) return FileSystemTable();
-
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
 
             // Get magic number to check first entry
             HostReport *iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, 0);

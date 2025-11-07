@@ -83,7 +83,7 @@ namespace iMS {
 	class CM_CYUSB::Impl
 	{
 	public:
-		Impl::Impl(IConnectionManager* parent) : m_parent(parent) {}
+		Impl::Impl() {}
 		~Impl();
 
 		const std::string Ident = "CM_USBSS";
@@ -118,8 +118,10 @@ namespace iMS {
 		std::thread interruptThread;
 		std::shared_ptr<std::vector<uint8_t>> interruptData;
 
+        void SetOwner(std::shared_ptr<IConnectionManager> mgr) {m_parent = mgr;}
+
 	private:
-		IConnectionManager * m_parent;
+		std::shared_ptr<IConnectionManager> m_parent;
 		std::vector<HANDLE> rxBufHandles;
 	};
 
@@ -132,9 +134,15 @@ namespace iMS {
 		}
 	}
 
+    std::shared_ptr<IConnectionManager> CM_CYUSB::Create() {
+        auto instance = std::shared_ptr<CM_CYUSB>(new CM_CYUSB());
+        instance->pImpl->SetOwner(instance);  // safe now
+        return instance;
+    }
+
 	// Default Constructor
 	CM_CYUSB::CM_CYUSB() 
-		 : mImpl(new CM_CYUSB::Impl(this))
+		 : pImpl(new CM_CYUSB::Impl())
 	{
 		sendTimeout = std::chrono::milliseconds(500);
 		rxTimeout = std::chrono::milliseconds(10000);
@@ -143,7 +151,7 @@ namespace iMS {
 
 	const std::string& CM_CYUSB::Ident() const
 	{
-		return mImpl->Ident;
+		return pImpl->Ident;
 	}
 
 	// Data path from USB device to FPGA is 32-bits and messages are byte-oriented.
@@ -201,8 +209,8 @@ namespace iMS {
 	{
 		if (DeviceIsOpen) this->Disconnect();
 
-		delete mImpl;
-		mImpl = NULL;
+		delete pImpl;
+		pImpl = NULL;
 	}
 
 	std::vector<std::shared_ptr<IMSSystem>> CM_CYUSB::Impl::ListCyUsbDevices()
@@ -311,7 +319,7 @@ namespace iMS {
 
 	std::vector<std::shared_ptr<IMSSystem>> CM_CYUSB::Discover(const ListBase<std::string>& PortMask)
 	{
-		return mImpl->ListCyUsbDevices();
+		return pImpl->ListCyUsbDevices();
 	}
 
 	void CM_CYUSB::Connect(const std::string& serial)
@@ -319,43 +327,43 @@ namespace iMS {
 		if (!DeviceIsOpen)
 		{
 			// If connecting without first scanning system, do a scan here to populate cyusb map
-			if (mImpl->USBDevice == nullptr) mImpl->ListCyUsbDevices();
+			if (pImpl->USBDevice == nullptr) pImpl->ListCyUsbDevices();
 
 			// Exit if no device found
-			if (mImpl->cyusb_list.empty()) return;
+			if (pImpl->cyusb_list.empty()) return;
 
 			//  Attempt to open device
-			if (mImpl->USBDevice->DeviceCount() && !mImpl->USBDevice->Open(mImpl->cyusb_list[serial])) {
-				mImpl->USBDevice->Reset();
-				mImpl->USBDevice->Open(mImpl->cyusb_list[serial]);
+			if (pImpl->USBDevice->DeviceCount() && !pImpl->USBDevice->Open(pImpl->cyusb_list[serial])) {
+				pImpl->USBDevice->Reset();
+				pImpl->USBDevice->Open(pImpl->cyusb_list[serial]);
 			}
 
-			if (!mImpl->USBDevice->IsOpen()) return;
+			if (!pImpl->USBDevice->IsOpen()) return;
 
 			// Populate endpoint array
-			for (int endPoint = 0; endPoint < mImpl->USBDevice->EndPointCount(); endPoint++)
+			for (int endPoint = 0; endPoint < pImpl->USBDevice->EndPointCount(); endPoint++)
 			{
-				CCyUSBEndPoint *ept = mImpl->USBDevice->EndPoints[endPoint];
+				CCyUSBEndPoint *ept = pImpl->USBDevice->EndPoints[endPoint];
 				if (ept->Attributes == 2) {
-					if (ept->bIn && ept->Address == 0x81) mImpl->Ept.cInEpt = ept;
-					if (!ept->bIn && ept->Address == 0x01) mImpl->Ept.cOutEpt = ept;
-					if (ept->bIn && ept->Address == 0x82) mImpl->Ept.bInEpt = ept;
-					if (!ept->bIn && ept->Address == 0x02) mImpl->Ept.bOutEpt = ept;
+					if (ept->bIn && ept->Address == 0x81) pImpl->Ept.cInEpt = ept;
+					if (!ept->bIn && ept->Address == 0x01) pImpl->Ept.cOutEpt = ept;
+					if (ept->bIn && ept->Address == 0x82) pImpl->Ept.bInEpt = ept;
+					if (!ept->bIn && ept->Address == 0x02) pImpl->Ept.bOutEpt = ept;
 				}
 				if (ept->Attributes == 3) {
-					if (ept->bIn && ept->Address == 0x83) mImpl->Ept.iInEpt = ept;
+					if (ept->bIn && ept->Address == 0x83) pImpl->Ept.iInEpt = ept;
 				}
 
 				// Set Timeout
 				ept->TimeOut = 1000;  // 1sec
 			}
-			if ((mImpl->Ept.cInEpt == nullptr) || (mImpl->Ept.cOutEpt == nullptr) || (mImpl->Ept.bInEpt == nullptr) || (mImpl->Ept.bOutEpt == nullptr))
+			if ((pImpl->Ept.cInEpt == nullptr) || (pImpl->Ept.cOutEpt == nullptr) || (pImpl->Ept.bInEpt == nullptr) || (pImpl->Ept.bOutEpt == nullptr))
 			{
-				mImpl->USBDevice->Close();
-				mImpl->Ept.cInEpt = nullptr;
-				mImpl->Ept.cOutEpt = nullptr;
-				mImpl->Ept.bInEpt = nullptr;
-				mImpl->Ept.bOutEpt = nullptr;
+				pImpl->USBDevice->Close();
+				pImpl->Ept.cInEpt = nullptr;
+				pImpl->Ept.cOutEpt = nullptr;
+				pImpl->Ept.bInEpt = nullptr;
+				pImpl->Ept.bOutEpt = nullptr;
 				return;
 			}
 			DeviceIsOpen = true;
@@ -363,7 +371,7 @@ namespace iMS {
 			// Clear Message Lists
             m_msgRegistry.clear();
 			while (!m_queue.empty()) m_queue.pop();
-			while (!mImpl->m_rxBuf.empty()) mImpl->m_rxBuf.pop_front();
+			while (!pImpl->m_rxBuf.empty()) pImpl->m_rxBuf.pop_front();
 
 			// Start Report Sending Thread
 			senderThread = std::thread(&CM_CYUSB::MessageSender, this);
@@ -378,7 +386,7 @@ namespace iMS {
 			memoryTransferThread = std::thread(&CM_CYUSB::MemoryTransfer, this);
 
 			// Start Interrupt receiving thread
-			mImpl->interruptThread = std::thread(&CM_CYUSB::InterruptReceiver, this);
+			pImpl->interruptThread = std::thread(&CM_CYUSB::InterruptReceiver, this);
 
 		}
 	}
@@ -432,9 +440,9 @@ namespace iMS {
 			receiverThread.join();
 			parserThread.join();
 			memoryTransferThread.join();  // TODO: need to abort in-flight transfers
-			mImpl->interruptThread.join();
+			pImpl->interruptThread.join();
 
-			mImpl->USBDevice->Close();
+			pImpl->USBDevice->Close();
 
 			// Clear Up
 		}
@@ -466,7 +474,7 @@ namespace iMS {
 
             // Get HostReport bytes and send to device
             std::vector<uint8_t> b = m->SerialStream();
-            mImpl->expandBuffer(b);
+            pImpl->expandBuffer(b);
 
             std::shared_ptr<USBContext> inContext = std::make_shared<USBContext>();
             inContext->handle = m->getMessageHandle();
@@ -474,20 +482,20 @@ namespace iMS {
             inContext->bufLen = USBContext::MaxPacketSize;
 
             {
-                std::unique_lock<std::mutex> rxlck{ mImpl->m_rxBufmutex };
-                inContext->context = mImpl->Ept.cInEpt->BeginDataXfer((PUCHAR)&((*(inContext->Buffer))[0]), inContext->bufLen, inContext->OvLap);
-                mImpl->m_rxBuf.push_back(inContext);
+                std::unique_lock<std::mutex> rxlck{ pImpl->m_rxBufmutex };
+                inContext->context = pImpl->Ept.cInEpt->BeginDataXfer((PUCHAR)&((*(inContext->Buffer))[0]), inContext->bufLen, inContext->OvLap);
+                pImpl->m_rxBuf.push_back(inContext);
             }
 
             USBContext outContext;
             outContext.Buffer = &b;
             outContext.bufLen = b.size();
-            outContext.context = mImpl->Ept.cOutEpt->BeginDataXfer((PUCHAR)&((*(outContext.Buffer))[0]), outContext.bufLen, outContext.OvLap);
+            outContext.context = pImpl->Ept.cOutEpt->BeginDataXfer((PUCHAR)&((*(outContext.Buffer))[0]), outContext.bufLen, outContext.OvLap);
             
             std::chrono::time_point<std::chrono::high_resolution_clock> tm_start = std::chrono::high_resolution_clock::now();
             do
             {
-                if (mImpl->Ept.cOutEpt->NtStatus || mImpl->Ept.cOutEpt->UsbdStatus)
+                if (pImpl->Ept.cOutEpt->NtStatus || pImpl->Ept.cOutEpt->UsbdStatus)
                 {
                     m->setStatus(Message::Status::SEND_ERROR);
                     mMsgEvent.Trigger<int>(this, MessageEvents::SEND_ERROR, m->getMessageHandle());
@@ -501,24 +509,24 @@ namespace iMS {
                     mMsgEvent.Trigger<int>(this, MessageEvents::TIMED_OUT_ON_SEND, m->getMessageHandle());  // Notify listeners
 
                     // Abort transfer
-                    mImpl->Ept.cOutEpt->Abort();
-                    if (mImpl->Ept.cOutEpt->LastError == ERROR_IO_PENDING)
+                    pImpl->Ept.cOutEpt->Abort();
+                    if (pImpl->Ept.cOutEpt->LastError == ERROR_IO_PENDING)
                         WaitForSingleObject(outContext.OvLap->hEvent, 100);
 
                     // If there is anything connected still, we need to flush through the buffer
                     std::vector<uint8_t> flush (USBContext::MaxPacketSize);
                     LONG flush_size = USBContext::MaxPacketSize;
-                    mImpl->Ept.cOutEpt->XferData((PUCHAR)&(flush[0]), flush_size);
+                    pImpl->Ept.cOutEpt->XferData((PUCHAR)&(flush[0]), flush_size);
                     break;
                 }
 
-                if (!mImpl->Ept.cOutEpt->WaitForXfer(outContext.OvLap, 10))
+                if (!pImpl->Ept.cOutEpt->WaitForXfer(outContext.OvLap, 10))
                 {
                     // Xfer returned without completing, loop around and retry
                 }
             } while (!HasOverlappedIoCompleted(outContext.OvLap));
 
-            mImpl->Ept.cOutEpt->FinishDataXfer((PUCHAR)&((*(outContext.Buffer))[0]), outContext.bufLen, outContext.OvLap, outContext.context);
+            pImpl->Ept.cOutEpt->FinishDataXfer((PUCHAR)&((*(outContext.Buffer))[0]), outContext.bufLen, outContext.OvLap, outContext.context);
             if (m->getStatus() == Message::Status::UNSENT) {
                 m->setStatus(Message::Status::SENT);
             }
@@ -526,7 +534,7 @@ namespace iMS {
 
             // Indicate to receive thread that a receive transfer has been started
             if (m->getStatus() == Message::Status::SENT) {
-                mImpl->m_rxBufcond.notify_one();
+                pImpl->m_rxBufcond.notify_one();
             }
 		}
 	}
@@ -536,21 +544,21 @@ namespace iMS {
 		while (DeviceIsOpen == true)
 		{
 			{
-				std::unique_lock<std::mutex> lck{ mImpl->m_rxBufmutex };
-				//while (mImpl->m_rxBufcond.wait_for(lck, std::chrono::milliseconds(100)) == std::cv_status::timeout)
+				std::unique_lock<std::mutex> lck{ pImpl->m_rxBufmutex };
+				//while (pImpl->m_rxBufcond.wait_for(lck, std::chrono::milliseconds(100)) == std::cv_status::timeout)
 				//{
 				//	// Timeout every 100ms to allow threads to terminate on disconnect
 				//	if (DeviceIsOpen == false) break;
 				//}
-				mImpl->m_rxBufcond.wait_for(lck, std::chrono::milliseconds(100));
+				pImpl->m_rxBufcond.wait_for(lck, std::chrono::milliseconds(100));
 
 #if defined(_WIN32)
 				// Determine how many buffers we are waiting for, then wait until at least one of them has been signalled
 				HANDLE *h;
 				//do {
-				h = mImpl->getRxBufHandles();
+				h = pImpl->getRxBufHandles();
 				DWORD ret;
-				if (mImpl->m_rxbuf_size == 0) {
+				if (pImpl->m_rxbuf_size == 0) {
 					if (DeviceIsOpen == false)
 					{
 						// End thread
@@ -559,17 +567,17 @@ namespace iMS {
 					}
 					else continue;
 				}
-				else if (mImpl->m_rxbuf_size == 1) {
-					ret = WaitForSingleObject(mImpl->m_rxBuf.front()->OvLap->hEvent, 10);
+				else if (pImpl->m_rxbuf_size == 1) {
+					ret = WaitForSingleObject(pImpl->m_rxBuf.front()->OvLap->hEvent, 10);
 					if (WAIT_TIMEOUT <= ret) continue;
 				}
 				else {
-					ret = WaitForMultipleObjects(mImpl->m_rxbuf_size, h, FALSE, 10);
+					ret = WaitForMultipleObjects(pImpl->m_rxbuf_size, h, FALSE, 10);
 					// WAIT_OBJECT_n and WAIT_ABANDONED_n satisfy this condition
 					if (WAIT_TIMEOUT <= ret) continue;
 				}
 				//} while (1);
-				//if (mImpl->m_rxbuf_size == 0) continue;
+				//if (pImpl->m_rxbuf_size == 0) continue;
 #elif defined(__linux__)
 				pthread_mutex_lock(&eh.eMutex);
 				pthread_cond_wait(&eh.eCondVar, &eh.eMutex);
@@ -589,7 +597,7 @@ namespace iMS {
 #endif
 
 
-				for (std::deque<std::shared_ptr<USBContext>>::iterator usb_it = mImpl->m_rxBuf.begin(); usb_it != mImpl->m_rxBuf.end();)
+				for (std::deque<std::shared_ptr<USBContext>>::iterator usb_it = pImpl->m_rxBuf.begin(); usb_it != pImpl->m_rxBuf.end();)
 				{
 					if (HasOverlappedIoCompleted((*usb_it)->OvLap))
 					{
@@ -599,15 +607,15 @@ namespace iMS {
                         auto& msg = m_msgRegistry.findMessage(msgHnd);
 						if (msg != nullptr)
 						{
-							mImpl->Ept.cInEpt->FinishDataXfer((PUCHAR)&((*((*usb_it)->Buffer))[0]), (*usb_it)->bufLen, (*usb_it)->OvLap, (*usb_it)->context);
+							pImpl->Ept.cInEpt->FinishDataXfer((PUCHAR)&((*((*usb_it)->Buffer))[0]), (*usb_it)->bufLen, (*usb_it)->OvLap, (*usb_it)->context);
 							ResetEvent((*usb_it)->OvLap->hEvent);
 
 							(*(*usb_it)->Buffer).resize((*usb_it)->bufLen);
-							mImpl->condenseBuffer(*(*usb_it)->Buffer);
+							pImpl->condenseBuffer(*(*usb_it)->Buffer);
 							msg->AddBuffer(*(*usb_it)->Buffer);
 
 							delete (*usb_it)->Buffer;
-							usb_it = mImpl->m_rxBuf.erase(usb_it);
+							usb_it = pImpl->m_rxBuf.erase(usb_it);
 							//break;
 						}
 						//}
@@ -641,7 +649,7 @@ namespace iMS {
 		{
             CYUSB_Policy policy(start_addr);
 			std::unique_lock<std::mutex> tfr_lck{ m_tfrmutex };
-			mImpl->m_fti = new FastTransfer(arr, length, policy);
+			pImpl->m_fti = new FastTransfer(arr, length, policy);
 		}
 
 		// Signal thread to do the grunt work
@@ -669,7 +677,7 @@ namespace iMS {
 		{
             CYUSB_Policy policy(start_addr);
 			std::unique_lock<std::mutex> tfr_lck{ m_tfrmutex };
-			mImpl->m_fti = new FastTransfer(arr, length, policy);
+			pImpl->m_fti = new FastTransfer(arr, length, policy);
 		}
 
 		// Signal thread to do the grunt work
@@ -690,7 +698,7 @@ namespace iMS {
 		{
 			{
 				std::unique_lock<std::mutex> lck{ m_tfrmutex };
-				while (!m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return mImpl->m_fti != nullptr; }))
+				while (!m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return pImpl->m_fti != nullptr; }))
 				{
 					if (FastTransferStatus.load() != _FastTransferStatus::IDLE)
 					{
@@ -719,7 +727,7 @@ namespace iMS {
 				//}
 				LONG bytesTransferred = 0;
 
-				if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING) mImpl->m_fti->m_data.clear();
+				if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING) pImpl->m_fti->m_data.clear();
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 				boost::chrono::steady_clock::time_point start = boost::chrono::steady_clock::now();
@@ -727,11 +735,11 @@ namespace iMS {
 				boost::chrono::duration<double, boost::milli> xfer_time(0.0);
 #endif
 
-				for (int i = 0; i < mImpl->m_fti->m_transCount; i++) {
+				for (int i = 0; i < pImpl->m_fti->m_transCount; i++) {
 					// Prime DMA Transfer
 					HostReport *iorpt;
-					uint32_t len = static_cast<uint32_t>(mImpl->m_fti->m_transBytesRemaining);
-					uint32_t addr = mImpl->m_fti->m_policy.addr + i * CYUSB_Policy::TRANSFER_UNIT;
+					uint32_t len = static_cast<uint32_t>(pImpl->m_fti->m_transBytesRemaining);
+					uint32_t addr = pImpl->m_fti->m_policy.addr + i * CYUSB_Policy::TRANSFER_UNIT;
 					if (FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
 						iorpt = new HostReport(HostReport::Actions::CTRLR_IMGDMA, HostReport::Dir::WRITE, ImageDMA_Download);
 						iorpt->Payload<std::vector<uint32_t>>({ len, addr });
@@ -740,17 +748,17 @@ namespace iMS {
 						delete iorpt;
 
 						// Copy a buffer's worth of data
-						while (mImpl->m_fti->m_transBytesRemaining > 0) {
+						while (pImpl->m_fti->m_transBytesRemaining > 0) {
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_pre_copy = boost::chrono::steady_clock::now();
 #endif
 							LONG dl_len = CYUSB_Policy::DL_TRANSFER_SIZE;
-							if (mImpl->m_fti->m_transBytesRemaining < CYUSB_Policy::DL_TRANSFER_SIZE) dl_len = mImpl->m_fti->m_transBytesRemaining;
-							auto buf_start = mImpl->m_fti->m_data_it;
-							auto buf_end = mImpl->m_fti->m_data_it + dl_len;
+							if (pImpl->m_fti->m_transBytesRemaining < CYUSB_Policy::DL_TRANSFER_SIZE) dl_len = pImpl->m_fti->m_transBytesRemaining;
+							auto buf_start = pImpl->m_fti->m_data_it;
+							auto buf_end = pImpl->m_fti->m_data_it + dl_len;
 							std::copy(buf_start, buf_end, dataBuffer);
-							mImpl->m_fti->m_data_it += dl_len;
-							mImpl->m_fti->m_transBytesRemaining -= dl_len;
+							pImpl->m_fti->m_data_it += dl_len;
+							pImpl->m_fti->m_transBytesRemaining -= dl_len;
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_pre_xfer = boost::chrono::steady_clock::now();
 #endif
@@ -759,7 +767,7 @@ namespace iMS {
 							do {
 								tfr_len = dl_len;
 								if (tfr_len < CYUSB_Policy::TRANSFER_GRANULARITY) tfr_len = CYUSB_Policy::TRANSFER_GRANULARITY;
-								mImpl->Ept.bOutEpt->XferData(tfr_ptr, tfr_len);
+								pImpl->Ept.bOutEpt->XferData(tfr_ptr, tfr_len);
 								tfr_ptr += tfr_len;
 								bytesTransferred += tfr_len;
 							} while ((dl_len -= tfr_len) > 0);
@@ -778,13 +786,13 @@ namespace iMS {
 						delete iorpt;
 
 						// Retrieve a buffer's worth of data
-						while (mImpl->m_fti->m_transBytesRemaining > 0) {
+						while (pImpl->m_fti->m_transBytesRemaining > 0) {
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_pre_xfer = boost::chrono::steady_clock::now();
 #endif
 							LONG ul_len = CYUSB_Policy::UL_TRANSFER_SIZE;
-							if (mImpl->m_fti->m_transBytesRemaining < CYUSB_Policy::UL_TRANSFER_SIZE) ul_len = mImpl->m_fti->m_transBytesRemaining;
-							mImpl->m_fti->m_transBytesRemaining -= ul_len;
+							if (pImpl->m_fti->m_transBytesRemaining < CYUSB_Policy::UL_TRANSFER_SIZE) ul_len = pImpl->m_fti->m_transBytesRemaining;
+							pImpl->m_fti->m_transBytesRemaining -= ul_len;
 
 							PUCHAR tfr_ptr = dataBuffer;
 							LONG tfr_len;
@@ -792,15 +800,15 @@ namespace iMS {
 							do {
 								tfr_len = ul_len;
 								if (tfr_len < CYUSB_Policy::TRANSFER_GRANULARITY) tfr_len = CYUSB_Policy::TRANSFER_GRANULARITY;
-								mImpl->Ept.bInEpt->XferData(tfr_ptr, tfr_len);
+								pImpl->Ept.bInEpt->XferData(tfr_ptr, tfr_len);
 								tfr_ptr += tfr_len;
 								bytesTransferred += tfr_len;
 							} while ((ul_len -= tfr_len) > 0);
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_pre_copy = boost::chrono::steady_clock::now();
 #endif
-							mImpl->m_fti->m_data.insert(mImpl->m_fti->m_data.end(), dataBuffer, dataBuffer + buf_len);
-							//mImpl->m_fti->m_data_it += len;
+							pImpl->m_fti->m_data.insert(pImpl->m_fti->m_data.end(), dataBuffer, dataBuffer + buf_len);
+							//pImpl->m_fti->m_data_it += len;
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
 							boost::chrono::steady_clock::time_point t_final = boost::chrono::steady_clock::now();
 							copy_time += (t_final - t_pre_copy);
@@ -809,7 +817,7 @@ namespace iMS {
 						}
 					}
 					// Set up index data for next DMA Transaction
-					mImpl->m_fti->startNextTransaction();
+					pImpl->m_fti->startNextTransaction();
 				}
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
@@ -826,8 +834,8 @@ namespace iMS {
 #endif
 
 				delete[] dataBuffer;
-				delete mImpl->m_fti;
-				mImpl->m_fti = nullptr;
+				delete pImpl->m_fti;
+				pImpl->m_fti = nullptr;
 
 				FastTransferStatus.store(_FastTransferStatus::IDLE);
 				mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_COMPLETE, bytesTransferred);
@@ -840,13 +848,13 @@ namespace iMS {
 		while (DeviceIsOpen == true)
 		{
 			// Not required to have interrupt functionality
-			if (mImpl->Ept.iInEpt == nullptr) break;
+			if (pImpl->Ept.iInEpt == nullptr) break;
 
 			std::vector<uint8_t> interruptData(64, 0);
 			LONG bufLen = 64;
 
-			mImpl->Ept.iInEpt->TimeOut = 100;
-			while (!mImpl->Ept.iInEpt->XferData((PUCHAR)&(interruptData[0]), bufLen))
+			pImpl->Ept.iInEpt->TimeOut = 100;
+			while (!pImpl->Ept.iInEpt->XferData((PUCHAR)&(interruptData[0]), bufLen))
 			{
 				// Timeout.
 				if (DeviceIsOpen == false) break;

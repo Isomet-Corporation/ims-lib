@@ -49,7 +49,7 @@ namespace iMS {
 	class CM_FTDI::Impl
 	{
 	public:
-		Impl::Impl(IConnectionManager* parent) : m_parent(parent) {}
+		Impl::Impl(){}
 
 		// Only accept FTDI Device number with Serial Numbers prefixed with these strings
 		static const std::list<std::string> SerialNumberPrefix;
@@ -75,14 +75,15 @@ namespace iMS {
 		std::thread interruptThread;
 		std::shared_ptr<std::vector<uint8_t>> interruptData;
 
+        void SetOwner(std::shared_ptr<IConnectionManager> mgr) {m_parent = mgr;}
 	private:
-		IConnectionManager * m_parent;
+		std::shared_ptr<IConnectionManager> m_parent;
 	};
 
 	const std::list<std::string> CM_FTDI::Impl::SerialNumberPrefix = std::list<std::string>({ "iMS", "iDDS", "iCSA" });
 
 	// Default Constructor
-	CM_FTDI::CM_FTDI() : pImpl(new CM_FTDI::Impl(this))
+	CM_FTDI::CM_FTDI() : pImpl(new CM_FTDI::Impl())
 	{
 		sendTimeout = std::chrono::milliseconds(50);
 		rxTimeout = std::chrono::milliseconds(5000);
@@ -97,6 +98,12 @@ namespace iMS {
 		delete pImpl;
 		pImpl = nullptr;
 	}
+
+    std::shared_ptr<IConnectionManager> CM_FTDI::Create() {
+        auto instance = std::shared_ptr<CM_FTDI>(new CM_FTDI());
+        instance->pImpl->SetOwner(instance);  // safe now
+        return instance;
+    }
 
 	const std::string& CM_FTDI::Ident() const
 	{

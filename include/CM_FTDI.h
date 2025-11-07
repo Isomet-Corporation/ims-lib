@@ -42,7 +42,7 @@ namespace iMS
 	class CM_FTDI : public CM_Common
 	{
 	public:
-		CM_FTDI();
+        static std::shared_ptr<IConnectionManager> Create();
 		~CM_FTDI();
 
 		const std::string& Ident() const;
@@ -56,6 +56,8 @@ namespace iMS
 //		bool MemoryUpload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int len, int image_index, const std::array<std::uint8_t, 16>& uuid);
 
 	private:
+		CM_FTDI();
+
 		// Make this object non-copyable
 		CM_FTDI(const CM_FTDI &);
 		const CM_FTDI &operator =(const CM_FTDI &);

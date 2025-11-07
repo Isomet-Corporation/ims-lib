@@ -87,7 +87,7 @@ namespace iMS
 	{
 	public:
 		Impl(IMSSystem* parent) : Impl(parent, std::string(), nullptr) {}
-		Impl(IMSSystem* parent, std::string connString, IConnectionManager* conn) :
+		Impl(IMSSystem* parent, std::string connString, std::shared_ptr<IConnectionManager> conn) :
 			m_parent(parent), m_connString(connString), m_conn(conn) {
 #if defined (_WIN32)
 			CS_RS422 cs_rs422;
@@ -108,7 +108,7 @@ namespace iMS
 		IMSController m_Ctlr;
 		IMSSynthesiser m_Synth;
 		std::string m_connString;
-		IConnectionManager * m_conn;
+		std::shared_ptr<IConnectionManager> m_conn;
 
 		bool AddDevice(std::uint16_t magicID);
 
@@ -141,7 +141,7 @@ namespace iMS
 
 	IMSSystem::IMSSystem() : IMSSystem(nullptr, std::string()) {}
 
-	IMSSystem::IMSSystem(IConnectionManager * const conn, const std::string& str) : p_Impl(new Impl(this, str, conn))	{
+	IMSSystem::IMSSystem(const std::shared_ptr<IConnectionManager> conn, const std::string& str) : p_Impl(new Impl(this, str, conn))	{
 	}
 
 	IMSSystem::~IMSSystem()	{ delete p_Impl; p_Impl = nullptr; }
@@ -649,7 +649,7 @@ namespace iMS
 		return p_Impl->m_connString;
 	}
 
-	IConnectionManager * const IMSSystem::Connection() const
+	const std::shared_ptr<IConnectionManager> IMSSystem::Connection() const
 	{
 		return p_Impl->m_conn;
 	}

@@ -169,7 +169,7 @@ static std::string logErrorString(int err = INT_MAX) {
 	class CM_ENET::Impl
 	{
 	public:
-		Impl(IConnectionManager* parent);
+		Impl();
 		~Impl();
 
 		const std::string Ident = "CM_ETH";
@@ -218,8 +218,10 @@ static std::string logErrorString(int err = INT_MAX) {
 		std::shared_ptr<std::vector<uint8_t>> interruptData;
 
 		std::string conn_string;
+
+        void SetOwner(std::shared_ptr<IConnectionManager> mgr) {m_parent = mgr;}
 	private:
-		IConnectionManager * m_parent;
+		std::shared_ptr<IConnectionManager> m_parent;
 	};
 
 	const int CM_ENET::Impl::ANNOUNCE_DEST_PORT = 28242;
@@ -233,7 +235,7 @@ static std::string logErrorString(int err = INT_MAX) {
 	// Max size of UDP response buffer
 	const int CM_ENET::Impl::MTU_SIZE = 1560;
 
-	CM_ENET::Impl::Impl(IConnectionManager* parent) : m_parent(parent)
+	CM_ENET::Impl::Impl() 
 	{
 		intf_detail = new std::list<InterfaceConnectionDetail>();
 #ifdef WIN32
@@ -261,7 +263,7 @@ static std::string logErrorString(int err = INT_MAX) {
 
 	const std::string& CM_ENET::Ident() const
 	{
-		return mImpl->Ident;
+		return pImpl->Ident;
 	}
 
 	std::vector<std::shared_ptr<IMSSystem>> CM_ENET::Impl::ListConnectedDevices()
@@ -515,7 +517,7 @@ static std::string logErrorString(int err = INT_MAX) {
 	}
 
 	// Default Constructor
-	CM_ENET::CM_ENET() : mImpl(new CM_ENET::Impl(this))
+	CM_ENET::CM_ENET() : pImpl(new CM_ENET::Impl())
 	{
 		sendTimeout = std::chrono::milliseconds(500);
 		rxTimeout = std::chrono::milliseconds(10000);
@@ -524,15 +526,21 @@ static std::string logErrorString(int err = INT_MAX) {
 
 	CM_ENET::~CM_ENET()
 	{
-		delete mImpl;
-		mImpl = NULL;
+		delete pImpl;
+		pImpl = NULL;
 	}
+
+    std::shared_ptr<IConnectionManager> CM_ENET::Create() {
+        auto instance = std::shared_ptr<CM_ENET>(new CM_ENET());
+        instance->pImpl->SetOwner(instance);  // safe now
+        return instance;
+    }
 
 	std::vector<std::shared_ptr<IMSSystem>> CM_ENET::Discover(const ListBase<std::string>& PortMask)		
 	{
 //		std::cout << "CM_ENET::Discover()" << std::endl;
-		mImpl->PortMask = PortMask;
-		std::vector<std::shared_ptr<IMSSystem>> v = mImpl->ListConnectedDevices();
+		pImpl->PortMask = PortMask;
+		std::vector<std::shared_ptr<IMSSystem>> v = pImpl->ListConnectedDevices();
 		return v;
 	}
 
@@ -541,20 +549,20 @@ static std::string logErrorString(int err = INT_MAX) {
 		if (!DeviceIsOpen)
 		{
 			// If connecting without first scanning system, do a scan here to populate interface detail list
-			if (mImpl->intf_detail->empty()) mImpl->ListConnectedDevices();
+			if (pImpl->intf_detail->empty()) pImpl->ListConnectedDevices();
 
 			// Connect TCP Client to Server
 			SOCKADDR_IN ServerAddr, InterruptAddr;
 			SOCKET InterruptSock;
 
 #ifdef WIN32
-			mImpl->msgSock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
+			pImpl->msgSock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
 			InterruptSock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0);
 #else
-			mImpl->msgSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+			pImpl->msgSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 			InterruptSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 #endif
-			if ((mImpl->msgSock == INVALID_SOCKET) || (InterruptSock == INVALID_SOCKET))
+			if ((pImpl->msgSock == INVALID_SOCKET) || (InterruptSock == INVALID_SOCKET))
 			{
 				BOOST_LOG_SEV(lg::get(), sev::error) << "client socket error: " << logErrorString() << std::endl;
 
@@ -565,13 +573,13 @@ static std::string logErrorString(int err = INT_MAX) {
 			// IPv4
 			ServerAddr.sin_family = AF_INET;
 			// Port no.
-			ServerAddr.sin_port = htons(mImpl->IMSMSG_PORT);
+			ServerAddr.sin_port = htons(pImpl->IMSMSG_PORT);
 
 			// Just in case we've been passed a port connection (serial:ipaddr) instead of just a serial number
 			std::string serial_ = serial.substr(0,serial.find_first_of(":"));
 
 			// The IP address
-			for (std::list<Impl::InterfaceConnectionDetail>::iterator it = mImpl->intf_detail->begin(); it != mImpl->intf_detail->end(); ++it)
+			for (std::list<Impl::InterfaceConnectionDetail>::iterator it = pImpl->intf_detail->begin(); it != pImpl->intf_detail->end(); ++it)
 			{
 				if (it->serialNo == serial_)
 				{
@@ -580,7 +588,7 @@ static std::string logErrorString(int err = INT_MAX) {
 				}
 			}
 			memcpy(&InterruptAddr, (void *)&ServerAddr, sizeof(SOCKADDR));
-			InterruptAddr.sin_port = htons(mImpl->IMSINTR_PORT);
+			InterruptAddr.sin_port = htons(pImpl->IMSINTR_PORT);
 
 			// Unlike the messaging socket, the interrupt socket it only a listener, so we can quite happily bind to any interface
 			InterruptAddr.sin_addr.s_addr = INADDR_ANY;
@@ -591,11 +599,11 @@ static std::string logErrorString(int err = INT_MAX) {
 #ifdef WIN32
 				int err = WSAGetLastError();
 				BOOST_LOG_SEV(lg::get(), sev::error) << "setsockopt (SO_REUSEADDR): " << logErrorString(err) << std::endl;
-				closesocket(mImpl->msgSock);
+				closesocket(pImpl->msgSock);
 				closesocket(InterruptSock);
 #else
 				BOOST_LOG_SEV(lg::get(), sev::error) << "setsockopt (SO_REUSEADDR): " << strerror(errno) << std::endl;
-				close(mImpl->msgSock);
+				close(pImpl->msgSock);
 				close(InterruptSock);
 #endif
 				return;
@@ -607,11 +615,11 @@ static std::string logErrorString(int err = INT_MAX) {
 #ifdef WIN32
 				int err = WSAGetLastError();
 				BOOST_LOG_SEV(lg::get(), sev::error) << "interrupt socket failed to bind: " << logErrorString(err) << std::endl;
-				closesocket(mImpl->msgSock);
+				closesocket(pImpl->msgSock);
 				closesocket(InterruptSock);
 #else
 				BOOST_LOG_SEV(lg::get(), sev::error) << "bind error: " << strerror(errno) << std::endl;
-				close(mImpl->msgSock);
+				close(pImpl->msgSock);
 				close(InterruptSock);
 #endif
 				return;
@@ -620,7 +628,7 @@ static std::string logErrorString(int err = INT_MAX) {
 			//set the sockets to non-blocking mode
 #ifdef WIN32
 			u_long iMode = 1;
-			int iResult = ioctlsocket(mImpl->msgSock, FIONBIO, &iMode);
+			int iResult = ioctlsocket(pImpl->msgSock, FIONBIO, &iMode);
 			iResult |= ioctlsocket(InterruptSock, FIONBIO, &iMode);
 			if (iResult != NO_ERROR)
 			{
@@ -631,16 +639,16 @@ static std::string logErrorString(int err = INT_MAX) {
 			// Force the socket to send each message as it arrives in the buffer (disables Nagle algorithm: warning - this will impede network performance)
 			{
 				BOOL fNodelay = TRUE;
-				setsockopt(mImpl->msgSock, IPPROTO_TCP, TCP_NODELAY, (const char FAR*)&fNodelay, sizeof(fNodelay));
+				setsockopt(pImpl->msgSock, IPPROTO_TCP, TCP_NODELAY, (const char FAR*)&fNodelay, sizeof(fNodelay));
 			}
 
 #else
-			fcntl(mImpl->msgSock, F_SETFL, O_NONBLOCK);
+			fcntl(pImpl->msgSock, F_SETFL, O_NONBLOCK);
 			fcntl(InterruptSock, F_SETFL, O_NONBLOCK);
 			// Force the socket to send each message as it arrives in the buffer (disables Nagle algorithm: warning - this will impede network performance)
 			{
 				int flag = 1;
-				int result = setsockopt(mImpl->msgSock,            /* socket affected */
+				int result = setsockopt(pImpl->msgSock,            /* socket affected */
 				                        IPPROTO_TCP,     /* set option at TCP level */
 				                        TCP_NODELAY,     /* name of option */
 				                        (void *) &flag,  /* the cast is historical cruft */
@@ -657,10 +665,10 @@ static std::string logErrorString(int err = INT_MAX) {
 			if (INVALID_SOCKET == listenResult) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "interrupt socket failed to listen: " << listenResult << std::endl;
 #ifdef WIN32
-				closesocket(mImpl->msgSock);
+				closesocket(pImpl->msgSock);
 				closesocket(InterruptSock);
 #else
-				close(mImpl->msgSock);
+				close(pImpl->msgSock);
 				close(InterruptSock);
 #endif
 				return;
@@ -672,7 +680,7 @@ static std::string logErrorString(int err = INT_MAX) {
 
 
 			// Make a connection to the server with socket SendingSocket.
-			int RetCode = connect(mImpl->msgSock, (SOCKADDR *)&ServerAddr, sizeof(ServerAddr));
+			int RetCode = connect(pImpl->msgSock, (SOCKADDR *)&ServerAddr, sizeof(ServerAddr));
 			if (RetCode < 0)
 			{
 #ifdef WIN32
@@ -680,14 +688,14 @@ static std::string logErrorString(int err = INT_MAX) {
 				if (err != WSAEWOULDBLOCK) {
 					BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() failed! " << logErrorString(err) << std::endl;
 					// Close the socket
-					closesocket(mImpl->msgSock);
+					closesocket(pImpl->msgSock);
 					closesocket(InterruptSock);
 #else
 				int err = errno;
 				if ((err != EWOULDBLOCK) && (err != EINPROGRESS)) {
 					BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() failed! " << logErrorString(err) << std::endl;
 					// Close the socket
-					close(mImpl->msgSock);
+					close(pImpl->msgSock);
 					close(InterruptSock);
 #endif
 					// Exit 
@@ -698,22 +706,22 @@ static std::string logErrorString(int err = INT_MAX) {
 					fd_set Write, Err;
 					FD_ZERO(&Write);
 					FD_ZERO(&Err);
-					FD_SET(mImpl->msgSock, &Write);
-					FD_SET(mImpl->msgSock, &Err);
+					FD_SET(pImpl->msgSock, &Write);
+					FD_SET(pImpl->msgSock, &Err);
 
 					// check if the socket is ready
-					select(mImpl->msgSock+1, NULL, &Write, &Err, &Timeout);
-					if (FD_ISSET(mImpl->msgSock, &Write))
+					select(pImpl->msgSock+1, NULL, &Write, &Err, &Timeout);
+					if (FD_ISSET(pImpl->msgSock, &Write))
 					{
 					}
 					else {
 						BOOST_LOG_SEV(lg::get(), sev::error) << "Client: connect() timed out! " << logErrorString() << std::endl;
 #ifdef WIN32
 						// Close the socket
-						closesocket(mImpl->msgSock);
+						closesocket(pImpl->msgSock);
 						closesocket(InterruptSock);
 #else
-						close(mImpl->msgSock);
+						close(pImpl->msgSock);
 						close(InterruptSock);
 #endif
 						// Exit 
@@ -733,20 +741,20 @@ static std::string logErrorString(int err = INT_MAX) {
 					select(InterruptSock+1, &Read, NULL, NULL, &Timeout);
 					if (FD_ISSET(InterruptSock, &Read))
 					{
-						mImpl->intrSock = accept(InterruptSock, NULL, NULL);
-						if (INVALID_SOCKET == mImpl->intrSock) {
+						pImpl->intrSock = accept(InterruptSock, NULL, NULL);
+						if (INVALID_SOCKET == pImpl->intrSock) {
 							BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: accept() failed! Continuing without interrupts " << logErrorString() << std::endl;
 						} else {
 #ifdef __linux__
 							// v1.8.5 (Linux)
 							// intrSock does not inherit the flags of InterruptSock, unlike in BSD and Windows
 							// https://stackoverflow.com/questions/8053294/is-sockets-accept-return-descriptor-blocking-or-non-blocking/8053432
-							fcntl(mImpl->intrSock, F_SETFL, O_NONBLOCK);
+							fcntl(pImpl->intrSock, F_SETFL, O_NONBLOCK);
 #endif
 						}
 					}
 					else {
-						mImpl->intrSock = INVALID_SOCKET;
+						pImpl->intrSock = INVALID_SOCKET;
 							BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: accept() timed out! Continuing without interrupts " << logErrorString() << std::endl;
 					}
 #ifdef WIN32
@@ -760,15 +768,15 @@ static std::string logErrorString(int err = INT_MAX) {
 
 
 			DeviceIsOpen = true;
-			mImpl->conn_string = serial;
+			pImpl->conn_string = serial;
 
 			// Save the IP address of the connected server
-			mImpl->ConnectedServer = *((SOCKADDR*)&ServerAddr);
+			pImpl->ConnectedServer = *((SOCKADDR*)&ServerAddr);
 
 			// Clear Message Lists
 			m_msgRegistry.clear();
 			while (!m_queue.empty()) m_queue.pop();
-			//while (!mImpl->m_rxBuf.empty()) mImpl->m_rxBuf.pop_front();
+			//while (!pImpl->m_rxBuf.empty()) pImpl->m_rxBuf.pop_front();
 
             {
                 std::lock_guard<std::mutex> lock(m_rxmutex);
@@ -788,7 +796,7 @@ static std::string logErrorString(int err = INT_MAX) {
 			memoryTransferThread = std::thread(&CM_ENET::MemoryTransfer, this);
 
 			// Start Interrupt receiving thread
-			mImpl->interruptThread = std::thread(&CM_ENET::InterruptReceiver, this);
+			pImpl->interruptThread = std::thread(&CM_ENET::InterruptReceiver, this);
 
 			BOOST_LOG_SEV(lg::get(), sev::info) << "iMS System " << serial << " connected." << std::endl;
 		}
@@ -797,7 +805,7 @@ static std::string logErrorString(int err = INT_MAX) {
 	{
 		if (DeviceIsOpen)
 		{
-			BOOST_LOG_SEV(lg::get(), sev::info) << "Disconnecting from iMS System " << mImpl->conn_string << " ..." << std::endl;
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Disconnecting from iMS System " << pImpl->conn_string << " ..." << std::endl;
 	
 			// Disable Interrupts
 			BOOST_LOG_SEV(lg::get(), sev::info) << "Disabling interrupts." << std::endl;
@@ -852,26 +860,26 @@ static std::string logErrorString(int err = INT_MAX) {
 			BOOST_LOG_SEV(lg::get(), sev::debug) << "parser thread joined" << std::endl;
 			memoryTransferThread.join();  // TODO: need to abort in-flight transfers
 			BOOST_LOG_SEV(lg::get(), sev::debug) << "memory transfer thread joined" << std::endl;
-			mImpl->interruptThread.join();
+			pImpl->interruptThread.join();
 			BOOST_LOG_SEV(lg::get(), sev::debug) << "interrupt thread joined" << std::endl;
 			
 			BOOST_LOG_SEV(lg::get(), sev::info) << "Closing sockets" << std::endl;
-			//shutdown(mImpl->msgSock, SD_BOTH);
-			//shutdown(mImpl->intrSock, SD_BOTH);
+			//shutdown(pImpl->msgSock, SD_BOTH);
+			//shutdown(pImpl->intrSock, SD_BOTH);
 #ifdef WIN32
-			if (closesocket(mImpl->msgSock) != 0) {
+			if (closesocket(pImpl->msgSock) != 0) {
 				BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"SendingSocket\" socket.  Err: " <<  logErrorString() << std::endl;
 			}
-			if (mImpl->intrSock != INVALID_SOCKET) {
-				if (closesocket(mImpl->intrSock) != 0) {
+			if (pImpl->intrSock != INVALID_SOCKET) {
+				if (closesocket(pImpl->intrSock) != 0) {
 					BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"InterruptSocket\" socket.  Err: " <<  logErrorString() << std::endl;
 				}
 			}
 #else
-			if (close(mImpl->msgSock) != 0)
+			if (close(pImpl->msgSock) != 0)
 				BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"SendingSocket\" socket.  Err: " <<  logErrorString() << std::endl;
-			if (mImpl->intrSock != INVALID_SOCKET) {
-				if (close(mImpl->intrSock) != 0)
+			if (pImpl->intrSock != INVALID_SOCKET) {
+				if (close(pImpl->intrSock) != 0)
 					BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"InterruptSocket\" socket.  Err: " <<  logErrorString() << std::endl;
 			}
 #endif
@@ -885,7 +893,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		sendTimeout = std::chrono::milliseconds(send_timeout_ms);
 		rxTimeout = std::chrono::milliseconds(rx_timeout_ms);
 		autoFreeTimeout = std::chrono::milliseconds(free_timeout_ms);
-		mImpl->discovery_timeout = discover_timeout_ms;
+		pImpl->discovery_timeout = discover_timeout_ms;
 	}
 
 	void CM_ENET::MessageSender()
@@ -920,7 +928,7 @@ static std::string logErrorString(int err = INT_MAX) {
             outContext->bufLen = (LONG)outContext->Buffer->size();
             outContext->DataBuf.buf = (CHAR *)&outContext->Buffer->at(0);
             outContext->DataBuf.len = outContext->bufLen;
-            int ret = WSASend(mImpl->msgSock, &outContext->DataBuf, 1, NULL, 0, &outContext->OvLap, NULL);
+            int ret = WSASend(pImpl->msgSock, &outContext->DataBuf, 1, NULL, 0, &outContext->OvLap, NULL);
 
             if ((ret == SOCKET_ERROR) && (WSA_IO_PENDING != (err = WSAGetLastError()))) {
                 // Handle Error
@@ -948,7 +956,7 @@ static std::string logErrorString(int err = INT_MAX) {
             } 
 
             DWORD Flags;
-            ret = WSAGetOverlappedResult(mImpl->msgSock, &outContext->OvLap, &outContext->BytesXfer, FALSE, &Flags);
+            ret = WSAGetOverlappedResult(pImpl->msgSock, &outContext->OvLap, &outContext->BytesXfer, FALSE, &Flags);
             if (ret == FALSE || outContext->BytesXfer == 0)
             {
                 // Handle Error
@@ -969,7 +977,7 @@ static std::string logErrorString(int err = INT_MAX) {
 #else
             outContext->bufLen = (unsigned long)outContext->Buffer->size();
 
-            /*int ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(0), outContext->bufLen, 0);
+            /*int ret = send(pImpl->msgSock, (const void *)&outContext->Buffer->at(0), outContext->bufLen, 0);
             err = errno;
 
             if (0 > ret) {
@@ -984,7 +992,7 @@ static std::string logErrorString(int err = INT_MAX) {
             int ret;
             while (m->getStatus() == Message::Status::UNSENT) {
                 struct pollfd fds;
-                fds.fd = mImpl->msgSock;
+                fds.fd = pImpl->msgSock;
                 fds.events = POLLOUT;
 
                 if (-1 == (ret = poll(&fds, 1, sendTimeout.count())))
@@ -1010,7 +1018,7 @@ static std::string logErrorString(int err = INT_MAX) {
                         #ifndef MSG_EOR
                         #define MSG_EOR 0
                         #endif
-                        ret = send(mImpl->msgSock, (const void *)&outContext->Buffer->at(outContext->BytesXfer), (outContext->bufLen-outContext->BytesXfer), MSG_EOR);
+                        ret = send(pImpl->msgSock, (const void *)&outContext->Buffer->at(outContext->BytesXfer), (outContext->bufLen-outContext->BytesXfer), MSG_EOR);
                         err = errno;
 
                         if (0 > ret) {
@@ -1047,16 +1055,16 @@ static std::string logErrorString(int err = INT_MAX) {
 		while (DeviceIsOpen == true)
 		{
 			FD_ZERO(&Read);
-			FD_SET(mImpl->msgSock, &Read);
-			select(mImpl->msgSock+1, &Read, NULL, NULL, &Timeout);
-			if (FD_ISSET(mImpl->msgSock, &Read)) {
+			FD_SET(pImpl->msgSock, &Read);
+			select(pImpl->msgSock+1, &Read, NULL, NULL, &Timeout);
+			if (FD_ISSET(pImpl->msgSock, &Read)) {
 				// Receive any bytes present in socket
 				//{
-				//std::unique_lock<std::mutex> lck{ mImpl->m_rxBufmutex };
-				//mImpl->m_rxBufcond.wait_for(lck, std::chrono::milliseconds(25));
+				//std::unique_lock<std::mutex> lck{ pImpl->m_rxBufmutex };
+				//pImpl->m_rxBufcond.wait_for(lck, std::chrono::milliseconds(25));
 
 				// Receive any bytes present in socket
-				int ret = recv(mImpl->msgSock, szBuffer, CM_ENET::MsgContext::MaxPacketSize, 0);
+				int ret = recv(pImpl->msgSock, szBuffer, CM_ENET::MsgContext::MaxPacketSize, 0);
 #ifdef WIN32
 				int err = WSAGetLastError();
 				if ((ret == SOCKET_ERROR) && (WSAEWOULDBLOCK != err))
@@ -1106,7 +1114,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		{
             ENET_Policy policy(uuid);
 			std::unique_lock<std::mutex> tfr_lck{ m_tfrmutex };
-			mImpl->m_fti = new FastTransfer(arr, length, policy);
+			pImpl->m_fti = new FastTransfer(arr, length, policy);
 		}
 
 		// Signal thread to do the grunt work
@@ -1129,7 +1137,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		{
             ENET_Policy policy(uuid);
 			std::unique_lock<std::mutex> tfr_lck{ m_tfrmutex };
-			mImpl->m_fti = new FastTransfer(arr, 0, policy);
+			pImpl->m_fti = new FastTransfer(arr, 0, policy);
 		}
 
 		// Signal thread to do the grunt work
@@ -1146,7 +1154,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		{
 			{
 				std::unique_lock<std::mutex> lck{ m_tfrmutex };
-				while (!m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return mImpl->m_fti != nullptr; }))
+				while (!m_tfrcond.wait_for(lck, std::chrono::milliseconds(100), [&] {return pImpl->m_fti != nullptr; }))
 				{
 					if (FastTransferStatus.load() != _FastTransferStatus::IDLE)
 					{
@@ -1167,7 +1175,7 @@ static std::string logErrorString(int err = INT_MAX) {
 				
 				//int i = sizeof(struct sockaddr_in);
 				try {
-					client = new TFTPClient(&mImpl->ConnectedServer, TFTP_DEFAULT_PORT);
+					client = new TFTPClient(&pImpl->ConnectedServer, TFTP_DEFAULT_PORT);
 				} catch (ETFTPSocketCreate e)
 				{
 					//std::cout << "Unable to connect to iMS Image Server" << std::endl;
@@ -1178,22 +1186,22 @@ static std::string logErrorString(int err = INT_MAX) {
 				}
 
 				if (FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING) {
-					if (!client->sendFile(mImpl->m_fti->m_data, UUIDToStr(mImpl->m_fti->m_policy.uuid).c_str()))
+					if (!client->sendFile(pImpl->m_fti->m_data, UUIDToStr(pImpl->m_fti->m_policy.uuid).c_str()))
 					{
 						mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_ERROR, -1);
 					}
 				}
 				else if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
-					if (!client->getFile(UUIDToStr(mImpl->m_fti->m_policy.uuid).c_str(), mImpl->m_fti->m_data))
+					if (!client->getFile(UUIDToStr(pImpl->m_fti->m_policy.uuid).c_str(), pImpl->m_fti->m_data))
 					{
 						mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_ERROR, -1);
 					}
 				}
 				delete client;
 
-				int bytesTransferred = (int)mImpl->m_fti->m_data.size();
-				delete mImpl->m_fti;
-				mImpl->m_fti = nullptr;
+				int bytesTransferred = (int)pImpl->m_fti->m_data.size();
+				delete pImpl->m_fti;
+				pImpl->m_fti = nullptr;
 
 				FastTransferStatus.store(_FastTransferStatus::IDLE);
 				mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_COMPLETE, bytesTransferred);
@@ -1214,8 +1222,8 @@ static std::string logErrorString(int err = INT_MAX) {
 
 			fd_set Read;
 			FD_ZERO(&Read);
-			FD_SET(mImpl->intrSock, &Read);
-			int rc = select(mImpl->intrSock + 1, &Read, NULL, NULL, &Timeout);
+			FD_SET(pImpl->intrSock, &Read);
+			int rc = select(pImpl->intrSock + 1, &Read, NULL, NULL, &Timeout);
 			if (rc < 0) {
 				// Error
 #ifdef WIN32
@@ -1233,9 +1241,9 @@ static std::string logErrorString(int err = INT_MAX) {
 			}
 			else {
 
-				if (FD_ISSET(mImpl->intrSock, &Read)) {
+				if (FD_ISSET(pImpl->intrSock, &Read)) {
 					// Receive any bytes present in socket
-					int ret = recv(mImpl->intrSock, (char*)&interruptData[0], 64, 0);
+					int ret = recv(pImpl->intrSock, (char*)&interruptData[0], 64, 0);
 #ifdef WIN32
 					int err = WSAGetLastError();
 					if ((ret == SOCKET_ERROR) && (WSAEWOULDBLOCK != err))

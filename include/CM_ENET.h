@@ -36,7 +36,7 @@ namespace iMS
 	class CM_ENET : public CM_Common
 	{
 	public:
-		CM_ENET();
+        static std::shared_ptr<IConnectionManager> Create();
 		~CM_ENET();
 
 		const std::string& Ident() const;
@@ -50,6 +50,7 @@ namespace iMS
 		bool MemoryUpload(boost::container::deque<std::uint8_t>& arr, std::uint32_t start_addr, int len, int image_index, const std::array<std::uint8_t, 16>& uuid);
 
 	private:
+		CM_ENET();
 		// Make this object non-copyable
 		CM_ENET(const CM_ENET &);
 		const CM_ENET &operator =(const CM_ENET &);
@@ -67,7 +68,7 @@ namespace iMS
 		class MsgContext;
 
 		class Impl;
-		Impl *mImpl;
+		Impl *pImpl;
 
 		void MessageSender();
 		void ResponseReceiver();

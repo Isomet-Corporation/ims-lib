@@ -41,7 +41,7 @@ namespace iMS
 	class CM_CYUSB : public CM_Common
 	{
 	public:
-		CM_CYUSB();
+        static std::shared_ptr<IConnectionManager> Create();
 		~CM_CYUSB();
 
 		const std::string& Ident() const;
@@ -56,6 +56,7 @@ namespace iMS
 		int MemoryProgress() ;
 
 	private:
+		CM_CYUSB();
 		// Make this object non-copyable
 		CM_CYUSB(const CM_CYUSB &);
 		const CM_CYUSB &operator =(const CM_CYUSB &);
@@ -77,7 +78,7 @@ namespace iMS
         using FastTransfer = CM_Common::FastTransfer<CYUSB_Policy>;
 
 		class Impl;
-		Impl *mImpl;
+		Impl *pImpl;
 
 		void MessageSender();
 		void ResponseReceiver();

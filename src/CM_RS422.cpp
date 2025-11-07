@@ -54,7 +54,7 @@ namespace iMS {
 	class CM_RS422::Impl
 	{
 	public:
-		Impl(IConnectionManager* parent);
+		Impl();
 		~Impl();
 
 		static const int MaxMessageSize = 73;
@@ -81,11 +81,12 @@ namespace iMS {
 #ifdef WIN32
         HANDLE hShutdown;
 #endif
+        void SetOwner(std::shared_ptr<IConnectionManager> mgr) {m_parent = mgr;}
 	private:
-		IConnectionManager * m_parent;
+		std::shared_ptr<IConnectionManager> m_parent;
 	};
 
-	CM_RS422::Impl::Impl(IConnectionManager* parent) : m_parent(parent)
+	CM_RS422::Impl::Impl()
 	{
 	}
 
@@ -97,6 +98,12 @@ namespace iMS {
 		}
 	}
 	
+    std::shared_ptr<IConnectionManager> CM_RS422::Create() {
+        auto instance = std::shared_ptr<CM_RS422>(new CM_RS422());
+        instance->pImpl->SetOwner(instance);  // safe now
+        return instance;
+    }
+
 	std::vector<std::shared_ptr<IMSSystem>> CM_RS422::Impl::ListConnectedDevices()
 	{
 		//CEnumerateSerial::CPortsArray ports;
@@ -193,7 +200,7 @@ namespace iMS {
 	}
 
 	// Default Constructor
-	CM_RS422::CM_RS422() : pImpl(new CM_RS422::Impl(this))
+	CM_RS422::CM_RS422() : pImpl(new CM_RS422::Impl())
 	{
 		sendTimeout = std::chrono::milliseconds(1000);  // needs to be a bit longer than some of the other CMs otherwise connection attempt can fail
 		rxTimeout = std::chrono::milliseconds(5000);

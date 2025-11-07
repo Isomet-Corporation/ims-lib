@@ -142,7 +142,7 @@ namespace iMS
 				for (int i = 0; i <= 1; i++) {
 					if ((!m_parent->VelocityHandle[i].empty()) && (param == m_parent->VelocityHandle[i].front()))
 					{
-						IConnectionManager* object = static_cast<IConnectionManager*>(sender);
+						auto object = static_cast<IConnectionManager*>(sender);
 						IOReport resp = object->Response(param);
 
 						std::unique_lock<std::mutex> lck{ m_parent->m_bkmutex };
@@ -1726,7 +1726,7 @@ namespace iMS
         {            
             if (!ims->Synth().IsValid()) return false;
 
-            IConnectionManager* const conn = ims->Connection();
+            auto conn = ims->Connection();
 
             HostReport* iorpt;
             std::vector<std::uint16_t> data;
@@ -1921,7 +1921,7 @@ namespace iMS
             BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("SignalPath::UpdateLocalToneBuffer(const unsigned int index)");
             if (!ims->Synth().IsValid()) return false;
 
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
 
             HostReport *iorpt;
 
