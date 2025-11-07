@@ -211,7 +211,7 @@ namespace iMS
 		/// \param[in] strm An std::istream object from which to obtain the new firmware  data, usually a std::ifstream from an upgrade file.
 		/// THe file format needs to be in MCS format and should be opened in Text mode (not Binary).
 		/// \since 1.6.0
-		FirmwareUpgrade(const IMSSystem& ims, std::istream& strm);
+		FirmwareUpgrade(std::shared_ptr<IMSSystem> ims, std::istream& strm);
 		///
 		/// \brief Destructor for FirmwareUpgrade Object
 		~FirmwareUpgrade();

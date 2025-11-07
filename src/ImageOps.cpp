@@ -49,7 +49,7 @@ namespace iMS
 //	};
 
 	// Free function for formatting Image objects into bytestreams
-	int FormatImage(const Image& img, const IMSSystem& ims, boost::container::deque < std::uint8_t >& img_data, ImageFormat formatSpec, int MSBFirst)
+	int FormatImage(const Image& img, std::shared_ptr<IMSSystem> ims, boost::container::deque < std::uint8_t >& img_data, ImageFormat formatSpec, int MSBFirst)
 	{
 		// These are the old resolutions that must be used if the iMS is in LSB first mode.  Newer firmware supports MSB first mode with variable resolution
 		const int lsb_freqbits = 16;
@@ -64,7 +64,7 @@ namespace iMS
 		int sync_anlg_channels = formatSpec.SyncAnlgChannels();
 		if (sync_anlg_channels > 2) sync_anlg_channels = 2;
 		// Restrict to maximum size of Controller memory;
-		//length = std::min(length, ims.Ctlr().GetCap().MaxImageSize);
+		//length = std::min(length, ims->Ctlr().GetCap().MaxImageSize);
 
 		Image::const_iterator it = img.cbegin();
 		while ((img_index < length) && (it < img.cend()))
@@ -80,15 +80,15 @@ namespace iMS
 				std::uint32_t phase = PhaseRenderer::RenderAsImagePoint(ims, fap.phase);
 
 				if (!MSBFirst) {
-					for (int i = (ims.Synth().GetCap().freqBits - lsb_freqbits); i <= (ims.Synth().GetCap().freqBits - 1); i+=8) {
+					for (int i = (ims->Synth().GetCap().freqBits - lsb_freqbits); i <= (ims->Synth().GetCap().freqBits - 1); i+=8) {
 						img_data.push_back(static_cast<std::uint8_t>((freq >> i) & 0xFF));
 						if (!img_index) bytesPerPoint++;
 					}
-					for (int i = (ims.Synth().GetCap().amplBits - lsb_amplbits); i <= (ims.Synth().GetCap().amplBits - 1); i+=8) {
+					for (int i = (ims->Synth().GetCap().amplBits - lsb_amplbits); i <= (ims->Synth().GetCap().amplBits - 1); i+=8) {
 						img_data.push_back(static_cast<std::uint8_t>((ampl >> i) & 0xFF));
 						if (!img_index) bytesPerPoint++;
 					}
-					for (int i = (ims.Synth().GetCap().phaseBits - lsb_phasebits); i <= (ims.Synth().GetCap().phaseBits - 1); i+=8) {
+					for (int i = (ims->Synth().GetCap().phaseBits - lsb_phasebits); i <= (ims->Synth().GetCap().phaseBits - 1); i+=8) {
 						img_data.push_back(static_cast<std::uint8_t>((phase >> i) & 0xFF));
 						if (!img_index) bytesPerPoint++;
 					}
@@ -97,16 +97,16 @@ namespace iMS
 				}
 				else {
 					// Add FAP
-					int freqEndBit = ims.Synth().GetCap().freqBits - formatSpec.FreqBytes() * 8;
+					int freqEndBit = ims->Synth().GetCap().freqBits - formatSpec.FreqBytes() * 8;
 					if (freqEndBit < -8) freqEndBit = -8;
 
-					int amplEndBit = ims.Synth().GetCap().amplBits - formatSpec.AmplBytes() * 8;
+					int amplEndBit = ims->Synth().GetCap().amplBits - formatSpec.AmplBytes() * 8;
 					if (amplEndBit < -8) amplEndBit = -8;
 
-					int phsEndBit = ims.Synth().GetCap().phaseBits - formatSpec.PhaseBytes() * 8;
+					int phsEndBit = ims->Synth().GetCap().phaseBits - formatSpec.PhaseBytes() * 8;
 					if (phsEndBit < -8) phsEndBit = -8;
 
-					for (int i = ims.Synth().GetCap().freqBits - 8; i >= freqEndBit; i-=8) {
+					for (int i = ims->Synth().GetCap().freqBits - 8; i >= freqEndBit; i-=8) {
 						if (i < 0) {
 							img_data.push_back(static_cast<std::uint8_t>((freq << -i) & 0xFF));  // Accounts for zero filling bottom byte for non multiple-of-8 bit sizes
 						}
@@ -116,7 +116,7 @@ namespace iMS
 						if (!img_index) bytesPerPoint++;
 					}
 					if (formatSpec.EnableAmpl()) {
-						for (int i = ims.Synth().GetCap().amplBits - 8; i >= amplEndBit; i-=8) {
+						for (int i = ims->Synth().GetCap().amplBits - 8; i >= amplEndBit; i-=8) {
 							if (i < 0) {
 								img_data.push_back(static_cast<std::uint8_t>((ampl << -i) & 0xFF));
 							}
@@ -127,7 +127,7 @@ namespace iMS
 						}
 					}
 					if (formatSpec.EnablePhase()) {
-						for (int i = ims.Synth().GetCap().phaseBits - 8; i >= phsEndBit; i-=8) {
+						for (int i = ims->Synth().GetCap().phaseBits - 8; i >= phsEndBit; i-=8) {
 							if (i < 0) {
 								img_data.push_back(static_cast<std::uint8_t>((phase << -i) & 0xFF));
 							}
@@ -153,17 +153,17 @@ namespace iMS
 
 			float synca[2] = { pt.GetSyncA(0), pt.GetSyncA(1) };
 			unsigned int syncd = pt.GetSyncD();
-			std::uint32_t syncd_mod = syncd & ((1 << ims.Synth().GetCap().LUTSyncDBits) - 1);
+			std::uint32_t syncd_mod = syncd & ((1 << ims->Synth().GetCap().LUTSyncDBits) - 1);
 
 			if (!MSBFirst) {
-				for (int i = (ims.Synth().GetCap().LUTSyncDBits - lsb_syncdbits); i <= (ims.Synth().GetCap().LUTSyncDBits - 1); i += 8) {
+				for (int i = (ims->Synth().GetCap().LUTSyncDBits - lsb_syncdbits); i <= (ims->Synth().GetCap().LUTSyncDBits - 1); i += 8) {
 					img_data.push_back(static_cast<std::uint8_t>((syncd_mod >> i) & 0xFF));
 					if (!img_index) bytesPerPoint++;
 				}
 
 				for (int j = 0; j < 2; j++) {
-					std::uint32_t synca_int = (std::uint32_t)((1 << ims.Synth().GetCap().LUTSyncABits) * synca[j]);
-					for (int i = (ims.Synth().GetCap().LUTSyncABits - lsb_syncabits); i <= (ims.Synth().GetCap().LUTSyncABits - 1); i += 8) {
+					std::uint32_t synca_int = (std::uint32_t)((1 << ims->Synth().GetCap().LUTSyncABits) * synca[j]);
+					for (int i = (ims->Synth().GetCap().LUTSyncABits - lsb_syncabits); i <= (ims->Synth().GetCap().LUTSyncABits - 1); i += 8) {
 						img_data.push_back(static_cast<std::uint8_t>((synca_int >> i) & 0xFF));
 						if (!img_index) bytesPerPoint++;
 					}
@@ -171,14 +171,14 @@ namespace iMS
 			}
 			else {
 				// Add Sync
-				int syncDEndBit = ims.Synth().GetCap().LUTSyncDBits - formatSpec.SyncBytes() * 8;
+				int syncDEndBit = ims->Synth().GetCap().LUTSyncDBits - formatSpec.SyncBytes() * 8;
 				if (syncDEndBit < -8) syncDEndBit = -8;
 
-				int syncAEndBit = ims.Synth().GetCap().LUTSyncABits - formatSpec.SyncBytes() * 8;
+				int syncAEndBit = ims->Synth().GetCap().LUTSyncABits - formatSpec.SyncBytes() * 8;
 				if (syncAEndBit < -8) syncAEndBit = -8;
 
 				if (formatSpec.EnableSyncDig()) {
-					for (int i = ims.Synth().GetCap().LUTSyncDBits - 8; i >= syncDEndBit; i -= 8) {
+					for (int i = ims->Synth().GetCap().LUTSyncDBits - 8; i >= syncDEndBit; i -= 8) {
 						if (i < 0) {
 							img_data.push_back(static_cast<std::uint8_t>((syncd_mod << -i) & 0xFF));
 						}
@@ -190,8 +190,8 @@ namespace iMS
 				}
 
 				for (int j = 0; j < sync_anlg_channels; j++) {
-					std::uint32_t synca_int = (std::uint32_t)((1 << ims.Synth().GetCap().LUTSyncABits) * synca[j]);
-					for (int i = ims.Synth().GetCap().LUTSyncABits - 8; i >= syncAEndBit; i -= 8) {
+					std::uint32_t synca_int = (std::uint32_t)((1 << ims->Synth().GetCap().LUTSyncABits) * synca[j]);
+					for (int i = ims->Synth().GetCap().LUTSyncABits - 8; i >= syncAEndBit; i -= 8) {
 						if (i < 0) {
 							img_data.push_back(static_cast<std::uint8_t>((synca_int << -i) & 0xFF));
 						}
@@ -211,7 +211,7 @@ namespace iMS
 		return bytesPerPoint;
 	}
 
-	std::uint8_t FormatSequenceEntry(const std::shared_ptr<SequenceEntry>& seq_entry, const IMSSystem& ims, std::vector < std::uint8_t >& seq_data)
+	std::uint8_t FormatSequenceEntry(const std::shared_ptr<SequenceEntry>& seq_entry, std::shared_ptr<IMSSystem> ims, std::vector < std::uint8_t >& seq_data)
 	{
 		/* Add Entries */
 		/* v1 Payload
@@ -247,7 +247,7 @@ namespace iMS
 		* [63:60] = synth prog reg 7
 		*/
 		std::uint8_t type;
-		bool adv_seq = (ims.Ctlr().GetVersion().major >= 2);
+		bool adv_seq = (ims->Ctlr().GetVersion().major >= 2);
 
 		const std::shared_ptr<ToneSequenceEntry> tone_entry = std::dynamic_pointer_cast<ToneSequenceEntry>(seq_entry);
 		const std::shared_ptr<ImageSequenceEntry> img_entry = std::dynamic_pointer_cast<ImageSequenceEntry>(seq_entry);
@@ -292,7 +292,7 @@ namespace iMS
 
 		if (img_entry != nullptr) {
 			unsigned int int_clk;
-			if (ims.Ctlr().GetVersion().revision < 38) {
+			if (ims->Ctlr().GetVersion().revision < 38) {
 				int_clk = FrequencyRenderer::RenderAsPointRate(ims, img_entry->IntOsc(), false);
 			}
 			else {
@@ -360,7 +360,7 @@ namespace iMS
 				tonedata += (tone_entry->InitialIndex() & 0xFF);
 			}
 			uint16_t toneaddr = SYNTH_REG_UseLocalIndex;
-			if (ims.Synth().GetVersion().revision < 90) {
+			if (ims->Synth().GetVersion().revision < 90) {
 				// overwrites Compensation Use bits
 				toneaddr = SYNTH_REG_UseLocal;
 				// make them active
@@ -375,7 +375,7 @@ namespace iMS
 		return type;
 	}
 
-	int FormatSequenceBuffer(const ImageSequence& seq, const IMSSystem& ims, boost::container::deque < std::uint8_t >& seq_data)
+	int FormatSequenceBuffer(const ImageSequence& seq, std::shared_ptr<IMSSystem> ims, boost::container::deque < std::uint8_t >& seq_data)
 	{
 		static const char signature[] = "iMS_SEQ";
 		static const char signature2[] = "iMS_SQ2";
@@ -449,14 +449,14 @@ namespace iMS
 	class ImageDownload::Impl
 	{
 	public:
-		Impl(IMSSystem&, const Image&);
+		Impl(std::shared_ptr<IMSSystem>, const Image&);
 		~Impl();
 
         LazyWorker downloadWorker;
         LazyWorker verifyWorker;
         LazyWorker rxWorker;
         
-		IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		const Image& m_Image;
 		ImageFormat m_fmt;
 
@@ -510,15 +510,15 @@ namespace iMS
 		BulkVerifier verifier;
 	};
 
-	ImageDownload::Impl::Impl(IMSSystem& iMS, const Image& img) : 
-		myiMS(iMS),
+	ImageDownload::Impl::Impl(std::shared_ptr<IMSSystem> ims, const Image& img) : 
+		m_ims(ims),
 		m_Image(img),
 		m_imgdata(new boost::container::deque<std::uint8_t>()),
 		m_vfydata(new boost::container::deque<std::uint8_t>()),
 		m_Event(new ImageDownloadEventTrigger()),
 		Receiver(new ResponseReceiver(this)),
 		vfyResult(new VerifyResult(this)),
-		verifier(iMS),
+		verifier(ims),
         downloadWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
             DownloadWorkerLoop(running, cond, mtx);
         }),
@@ -529,17 +529,17 @@ namespace iMS
             RxWorkerLoop(running, cond, mtx);
         })
 	{
-		m_fmt = ImageFormat(myiMS);
+		m_fmt = ImageFormat(ims);
 
 		// Subscribe listeners
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
 
 		verifier.BulkVerifierEventSubscribe(BulkVerifierEvents::VERIFY_SUCCESS, vfyResult);
 		verifier.BulkVerifierEventSubscribe(BulkVerifierEvents::VERIFY_FAIL, vfyResult);
@@ -550,14 +550,16 @@ namespace iMS
 	ImageDownload::Impl::~Impl()
 	{
 		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) {   
+            auto conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        });
 
 		verifier.BulkVerifierEventUnsubscribe(BulkVerifierEvents::VERIFY_SUCCESS, vfyResult);
 		verifier.BulkVerifierEventUnsubscribe(BulkVerifierEvents::VERIFY_FAIL, vfyResult);
@@ -598,7 +600,7 @@ namespace iMS
 		}
 	}
 
-	ImageDownload::ImageDownload(IMSSystem& iMS, const Image& img) : p_Impl(new Impl(iMS, img))	{}
+	ImageDownload::ImageDownload(std::shared_ptr<IMSSystem> ims, const Image& img) : p_Impl(new Impl(ims, img))	{}
 
 	ImageDownload::~ImageDownload() { delete p_Impl; p_Impl = nullptr; }
 
@@ -619,18 +621,20 @@ namespace iMS
 
 	bool ImageDownload::StartDownload()
 	{
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return false;
+        auto conn = ims->Connection();
+
 		p_Impl->m_startaddr = -1;
 
 		// Make sure Controller and Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
-
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+		if (!ims->Ctlr().IsValid()) return false;
+		if (!ims->Synth().IsValid()) return false;
 
 		// Check to see if Controller supports simultaneous download or Fast Transfer
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
+		IMSController::Capabilities cap = ims->Ctlr().GetCap();
 		if (cap.FastImageTransfer) {
-			ImageTableViewer itv(p_Impl->myiMS);
+			ImageTableViewer itv(ims);
 			for (const auto& ite : itv) {
 				if (ite.Matches(p_Impl->m_Image)) {
 					// Image already present on Controller
@@ -647,7 +651,7 @@ namespace iMS
 				// Check to see if Controller is currently playing out
 				HostReport iorpt(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_Ctrl);
 
-				DeviceReport ioresp = myiMSConn->SendMsgBlocking(iorpt);
+				DeviceReport ioresp = conn->SendMsgBlocking(iorpt);
 
 				if (ioresp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_IOS_Busy)
 				{
@@ -688,8 +692,12 @@ namespace iMS
 
 	bool ImageDownload::StartVerify()
 	{
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return false;
+        auto conn = ims->Connection();
+
 		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
+		if (!ims->Ctlr().IsValid()) return false;
 
         p_Impl->verifyWorker.start();
         p_Impl->rxWorker.start();
@@ -751,8 +759,9 @@ namespace iMS
 	// Image Downloading Thread
     void ImageDownload::Impl::DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-		IMSController::Capabilities cap = myiMS.Ctlr().GetCap();
-		IConnectionManager * const myiMSConn = myiMS.Connection();
+        auto ims = m_ims.lock();
+        if (!ims) return;
+		IMSController::Capabilities cap = ims->Ctlr().GetCap();
 		HostReport * iorpt;
     
 		while (true) {
@@ -765,13 +774,17 @@ namespace iMS
 			if (!running) break;
             downloadRequested = false;
 
+            auto ims = m_ims.lock();
+            if (!ims) break;
+            auto conn = ims->Connection();
+                        
 			// Download loop			
 			if (cap.FastImageTransfer) {
 				// Fast transfer to large capacity memory
 
 				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_FPIFormat);
 
-				DeviceReport ioresp = myiMSConn->SendMsgBlocking(*iorpt);
+				DeviceReport ioresp = conn->SendMsgBlocking(*iorpt);
 
 				if (ioresp.Payload<std::uint16_t>() & 1)
 				{
@@ -783,7 +796,7 @@ namespace iMS
 					iorpt->Payload<std::uint16_t>(ioresp.Payload<std::uint16_t>() << 1);
 
 					// Set Controller to download mode
-					if (NullMessage == myiMSConn->SendMsg(*iorpt))
+					if (NullMessage == conn->SendMsg(*iorpt))
 					{
 						BOOST_LOG_SEV(lg::get(), sev::error) << "Failed to set MSB Mode";
 
@@ -796,7 +809,7 @@ namespace iMS
 
 				// Create Byte Vector
 				m_imgdata->clear();
-				int BytesInImagePoint = FormatImage(m_Image, myiMS, *m_imgdata, m_fmt, m_msbFirst);
+				int BytesInImagePoint = FormatImage(m_Image, ims, *m_imgdata, m_fmt, m_msbFirst);
 				std::uint32_t ImageBytes = BytesInImagePoint * m_Image.Size();
 
 				/*std::uint32_t checksum = 0;
@@ -842,7 +855,7 @@ namespace iMS
 
 				iorpt->Payload<std::vector<std::uint8_t>>(data);
 
-				ioresp = myiMSConn->SendMsgBlocking(*iorpt);
+				ioresp = conn->SendMsgBlocking(*iorpt);
 				if (ioresp.Done() && !ioresp.GeneralError()) {
 					ImageIndex ImageMemoryIndex = ioresp.Fields().addr;
 					std::uint32_t ImageMemoryAddress = ioresp.Payload<std::uint32_t>();
@@ -850,24 +863,24 @@ namespace iMS
 					m_Event->Trigger<int>((void *)this, ImageDownloadEvents::IMAGE_DOWNLOAD_NEW_HANDLE, ImageMemoryIndex);
 
 					dmah = new DMASupervisor();
-					myiMSConn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+					conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
 
 					// Start memory download
-					myiMSConn->MemoryDownload(*m_imgdata, ImageMemoryAddress, ImageMemoryIndex, uuid);
+					conn->MemoryDownload(*m_imgdata, ImageMemoryAddress, ImageMemoryIndex, uuid);
 
 					while (dmah->Busy()) {
 						std::this_thread::sleep_for(std::chrono::milliseconds(5));
 					}
 					//std::cout << "Memory Download complete" << std::endl;
 
-					myiMSConn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+					conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
 
 					int tfr_size = dmah->GetTransferredSize();
 					delete dmah;
 
 					if (tfr_size > 0) {
 						// Transfer complete.  Add data to index table
-						const IMSController& c = myiMS.Ctlr();
+						const IMSController& c = ims->Ctlr();
 						ImageTable imgtbl = c.ImgTable();
 
 						ImageTableEntry ite(ImageMemoryIndex, ImageMemoryAddress, ImageSize, tfr_size, 0, m_Image.GetUUID(), m_Image.Name());
@@ -879,7 +892,7 @@ namespace iMS
 							}
 							++iter;
 						} while (1);
-						myiMS.Ctlr(IMSController(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), imgtbl));
+						ims->Ctlr(IMSController(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), imgtbl));
 
 						m_Event->Trigger<int>((void *)this, ImageDownloadEvents::DOWNLOAD_FINISHED, tfr_size);
 					}
@@ -904,7 +917,7 @@ namespace iMS
 				iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Ctrl_DL_Active);
 
 				// Set Controller to download mode
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				if (NullMessage == conn->SendMsg(*iorpt))
 				{
 					delete iorpt;
 					lck.unlock();
@@ -931,9 +944,9 @@ namespace iMS
 				Image::const_iterator it = m_Image.cbegin();
 
 				// Restrict to maximum size of Controller memory;
-				length = std::min(length, myiMS.Ctlr().GetCap().MaxImageSize);
+				length = std::min(length, ims->Ctlr().GetCap().MaxImageSize);
 				if (!CommonChannels) {
-					length = std::min(length, (myiMS.Ctlr().GetCap().MaxImageSize / 4));
+					length = std::min(length, (ims->Ctlr().GetCap().MaxImageSize / 4));
 				}
 
 				while ((img_index < length) && (it < m_Image.cend()))
@@ -946,10 +959,10 @@ namespace iMS
 						{
 							ImagePoint pt = (*it);
 							FAP fap = pt.GetFAP(1);
-							unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
-							img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
-							img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 8)) & 0xFF));
-							std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, fap.ampl);
+							unsigned int freq = FrequencyRenderer::RenderAsImagePoint(ims, fap.freq);
+							img_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
+							img_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 8)) & 0xFF));
+							std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(ims, fap.ampl);
 							img_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 							img_data.push_back(static_cast<std::uint8_t>(0));  // No phase data in Common Channels mode
 							img_data.push_back(static_cast<std::uint8_t>(0));
@@ -968,12 +981,12 @@ namespace iMS
 							ImagePoint pt = (*it);
 							for (int chan = 1; chan <= 4; chan++) {
 								FAP fap = pt.GetFAP(chan);
-								unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
-								img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
-								img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 8)) & 0xFF));
-								std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, fap.ampl);
+								unsigned int freq = FrequencyRenderer::RenderAsImagePoint(ims, fap.freq);
+								img_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
+								img_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 8)) & 0xFF));
+								std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(ims, fap.ampl);
 								img_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
-								std::uint16_t phase = PhaseRenderer::RenderAsImagePoint(myiMS, fap.phase);
+								std::uint16_t phase = PhaseRenderer::RenderAsImagePoint(ims, fap.phase);
 								img_data.push_back(static_cast<std::uint8_t>(phase & 0xFF));
 								img_data.push_back(static_cast<std::uint8_t>((phase >> 8) & 0xFF));
 							}
@@ -987,7 +1000,7 @@ namespace iMS
 
 					iorpt = new HostReport(HostReport::Actions::CTRLR_IMAGE, HostReport::Dir::WRITE, img_addr);
 					iorpt->Payload<std::vector<std::uint8_t>>(img_data);
-					MessageHandle h = myiMSConn->SendMsg(*iorpt);
+					MessageHandle h = conn->SendMsg(*iorpt);
 					delete iorpt;
 
 					// Add message handle to download list so we can check the responses
@@ -1006,7 +1019,7 @@ namespace iMS
 				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_NumPts);
 				iorpt->Payload<std::uint16_t>(length - 1); // program in one less than the number of points in the image
 
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				if (NullMessage == conn->SendMsg(*iorpt))
 				{
 					delete iorpt;
 					lck.unlock();
@@ -1020,7 +1033,7 @@ namespace iMS
 				std::array<std::uint8_t, 16> uuid = m_Image.GetUUID();
 				std::vector<std::uint8_t> v(uuid.begin(), uuid.begin() + 16);
 				iorpt->Payload<std::vector<std::uint8_t>>(v);
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				if (NullMessage == conn->SendMsg(*iorpt))
 				{
 					delete iorpt;
 					lck.unlock();
@@ -1029,26 +1042,13 @@ namespace iMS
 				delete iorpt;
 
 				// Transfer complete.  Add data to index table
-				const IMSController& c = myiMS.Ctlr();
+				const IMSController& c = ims->Ctlr();
 				ImageTable imgtbl = c.ImgTable();
 
 				ImageTableEntry ite(0, 0, length, length*20, 0, m_Image.GetUUID(), m_Image.Name());
 				imgtbl.clear();
 				imgtbl.push_back(ite);
-				myiMS.Ctlr(IMSController(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), imgtbl));
-
-				// Program Image Internal Oscillator Frequency into OscFreq register
-				// v1.0.1 - moved this to the Image::ConfigurePlayback() function
-				/*iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
-				iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(myiMS, m_Image.ClockRate()));
-
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
-				{
-				delete iorpt;
-				lck.unlock();
-				continue;
-				}
-				delete iorpt;*/
+				ims->Ctlr(IMSController(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), imgtbl));
 
 				// Clear download mode and set Common Channels bit if relevant
 				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Ctrl);
@@ -1058,7 +1058,7 @@ namespace iMS
 				else {
 					iorpt->Payload<std::uint16_t>(0);
 				}
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
+				if (NullMessage == conn->SendMsg(*iorpt))
 				{
 					delete iorpt;
 					lck.unlock();
@@ -1075,7 +1075,9 @@ namespace iMS
 	// Image Verifying Thread
     void ImageDownload::Impl::VerifyWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-		IMSController::Capabilities cap = myiMS.Ctlr().GetCap();
+        auto ims = m_ims.lock();
+        if (!ims) return;
+        IMSController::Capabilities cap = ims->Ctlr().GetCap();
 		HostReport* iorpt;
 
 		while (true) {
@@ -1088,7 +1090,9 @@ namespace iMS
 			if (!running) break;
             verifyRequested = false;
 
-			IConnectionManager * const myiMSConn = myiMS.Connection();
+            auto ims = m_ims.lock();
+            if (!ims) break;
+            auto conn = ims->Connection();
 
 			// Verify loop
 			if (cap.FastImageTransfer) {
@@ -1096,32 +1100,32 @@ namespace iMS
 
 				// Create Byte Vector
 				m_imgdata->clear();
-				/*int BytesInImagePoint = */FormatImage(m_Image, myiMS, *m_imgdata, m_fmt, m_msbFirst);
+				/*int BytesInImagePoint = */FormatImage(m_Image, ims, *m_imgdata, m_fmt, m_msbFirst);
 				//std::uint32_t ImageBytes = BytesInImagePoint * m_Image.Size();
 
 				// Find image in image table by checking UUID
 				int h = -1;
-				for (ImageTable::const_iterator it = myiMS.Ctlr().ImgTable().cbegin(); it != myiMS.Ctlr().ImgTable().cend(); ++it)
+				for (ImageTable::const_iterator it = ims->Ctlr().ImgTable().cbegin(); it != ims->Ctlr().ImgTable().cend(); ++it)
 				{
-					if (it->UUID() == m_Image.GetUUID()) h = std::distance(myiMS.Ctlr().ImgTable().cbegin(), it);
+					if (it->UUID() == m_Image.GetUUID()) h = std::distance(ims->Ctlr().ImgTable().cbegin(), it);
 				}
 				if (h < 0) {
 					// Failed. Abort.  TODO: Added error event
 					continue;
 				}
-				ImageTableEntry ite = *(std::next(myiMS.Ctlr().ImgTable().cbegin(), h));
+				ImageTableEntry ite = *(std::next(ims->Ctlr().ImgTable().cbegin(), h));
 
 				dmah = new DMASupervisor();
-				myiMSConn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+				conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
 
 				// Start memory upload
-				myiMSConn->MemoryUpload(*m_vfydata, ite.Address(), ite.Size(), h, ite.UUID());
+				conn->MemoryUpload(*m_vfydata, ite.Address(), ite.Size(), h, ite.UUID());
 
 				while (dmah->Busy()) {
 					std::this_thread::sleep_for(std::chrono::milliseconds(5));
 				}
 
-				myiMSConn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+				conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
 
 				//int tfr_size = dmah->GetTransferredSize();
 				delete dmah;
@@ -1170,10 +1174,10 @@ namespace iMS
 				}
 
 				// Restrict to maximum size of Controller memory;
-				length = std::min(length, myiMS.Ctlr().GetCap().MaxImageSize);
+				length = std::min(length, ims->Ctlr().GetCap().MaxImageSize);
 				if (!CommonChannels)
 				{
-					length = std::min(length, (myiMS.Ctlr().GetCap().MaxImageSize / 4));
+					length = std::min(length, (ims->Ctlr().GetCap().MaxImageSize / 4));
 				}
 
 				std::vector<std::uint8_t> img_data;
@@ -1188,10 +1192,10 @@ namespace iMS
 						{
 							ImagePoint pt = (*it);
 							FAP fap = pt.GetFAP(1);
-							unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
-							img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
-							img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 8)) & 0xFF));
-							std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, fap.ampl);
+							unsigned int freq = FrequencyRenderer::RenderAsImagePoint(ims, fap.freq);
+							img_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
+							img_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 8)) & 0xFF));
+							std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(ims, fap.ampl);
 							img_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 							img_data.push_back(static_cast<std::uint8_t>(0)); // No phase data in Common Channels mode
 							img_data.push_back(static_cast<std::uint8_t>(0));
@@ -1210,12 +1214,12 @@ namespace iMS
 							ImagePoint pt = (*it);
 							for (int chan = 1; chan <= 4; chan++) {
 								FAP fap = pt.GetFAP(chan);
-								unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, fap.freq);
-								img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
-								img_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 8)) & 0xFF));
-								std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, fap.ampl);
+								unsigned int freq = FrequencyRenderer::RenderAsImagePoint(ims, fap.freq);
+								img_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 16)) & 0xFF));  // Top 16 bits only
+								img_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 8)) & 0xFF));
+								std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(ims, fap.ampl);
 								img_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
-								std::uint16_t phase = PhaseRenderer::RenderAsImagePoint(myiMS, fap.phase);
+								std::uint16_t phase = PhaseRenderer::RenderAsImagePoint(ims, fap.phase);
 								img_data.push_back(static_cast<std::uint8_t>(phase & 0xFF));
 								img_data.push_back(static_cast<std::uint8_t>((phase >> 8) & 0xFF));
 							}
@@ -1232,7 +1236,7 @@ namespace iMS
 					ReportFields f = iorpt->Fields();
 					f.len = static_cast<std::uint16_t>(img_data.size());
 					iorpt->Fields(f);
-					MessageHandle h = myiMSConn->SendMsg(*iorpt);
+					MessageHandle h = conn->SendMsg(*iorpt);
 					delete iorpt;
 
 					// Add image data to verify memory
@@ -1258,7 +1262,6 @@ namespace iMS
 
             // Allow thread to terminate 
 			if (!running) break;
-			//IConnectionManager * const myiMSConn = myiMS.Connection();
 
 			while (!rxok_list.empty())
 			{
@@ -1330,12 +1333,12 @@ namespace iMS
 	class ImagePlayer::Impl
 	{
 	public:
-		Impl(const IMSSystem&, const Image&, const PlayConfiguration*);
-		Impl(const IMSSystem&, const ImageTableEntry&, const PlayConfiguration*, const kHz InternalClock);
-		Impl(const IMSSystem&, const ImageTableEntry&, const PlayConfiguration*, const int ExtClockDivide);
+		Impl(std::shared_ptr<IMSSystem>, const Image&, const PlayConfiguration*);
+		Impl(std::shared_ptr<IMSSystem>, const ImageTableEntry&, const PlayConfiguration*, const kHz InternalClock);
+		Impl(std::shared_ptr<IMSSystem>, const ImageTableEntry&, const PlayConfiguration*, const int ExtClockDivide);
 		~Impl();
 
-		const IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		//const Image& img;
 		const std::array<std::uint8_t, 16> uuid;
 		const int img_size;
@@ -1346,7 +1349,7 @@ namespace iMS
 		ImageFormat m_fmt;
 
 		std::unique_ptr<ImagePlayerEventTrigger> m_Event;
-		bool ConfigurePlayback();
+		bool ConfigurePlayback(std::shared_ptr<IMSSystem> ims);
 
 		class ResponseReceiver : public IEventHandler
 		{
@@ -1370,8 +1373,8 @@ namespace iMS
 		bool ImagePlaying{ false };
 	};
 
-	ImagePlayer::Impl::Impl(const IMSSystem& iMS, const Image& img, const PlayConfiguration* cfg) :
-		myiMS(iMS),
+	ImagePlayer::Impl::Impl(std::shared_ptr<IMSSystem> ims, const Image& img, const PlayConfiguration* cfg) :
+		m_ims(ims),
 		uuid(img.GetUUID()),
 		img_size(img.Size()),
 		int_clk(img.ClockRate()),
@@ -1384,20 +1387,20 @@ namespace iMS
 		BackgroundThread = std::thread(&ImagePlayer::Impl::BackgroundWorker, this);
 
 		// Subscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46)
-			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46)
+			conn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 	}
 
-	ImagePlayer::Impl::Impl(const IMSSystem& iMS, const ImageTableEntry& ite, const PlayConfiguration* cfg, const kHz InternalClock) :
-		myiMS(iMS),
+	ImagePlayer::Impl::Impl(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const PlayConfiguration* cfg, const kHz InternalClock) :
+		m_ims(ims),
 		uuid(ite.UUID()),
 		img_size(ite.NPts()),
 		int_clk(InternalClock),
@@ -1410,20 +1413,20 @@ namespace iMS
 		BackgroundThread = std::thread(&ImagePlayer::Impl::BackgroundWorker, this);
 
 		// Subscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46)
-			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46)
+			conn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 	}
 
-	ImagePlayer::Impl::Impl(const IMSSystem& iMS, const ImageTableEntry& ite, const PlayConfiguration* cfg, const int ExtClockDivide) :
-		myiMS(iMS),
+	ImagePlayer::Impl::Impl(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const PlayConfiguration* cfg, const int ExtClockDivide) :
+		m_ims(ims),
 		uuid(ite.UUID()),
 		img_size(ite.NPts()),
 		int_clk(kHz(1.0)),
@@ -1436,16 +1439,16 @@ namespace iMS
 		BackgroundThread = std::thread(&ImagePlayer::Impl::BackgroundWorker, this);
 
 		// Subscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46)
-			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46)
+			conn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 	}
 
 	ImagePlayer::Impl::~Impl()
@@ -1457,418 +1460,428 @@ namespace iMS
 		BackgroundThread.join();
 
 		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46)
-			myiMSConn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) {  
+            IConnectionManager * const conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+            if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46)
+                conn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+        });
 	}
 
-	ImagePlayer::ImagePlayer(const IMSSystem& ims, const Image& img) :
+	ImagePlayer::ImagePlayer(std::shared_ptr<IMSSystem> ims, const Image& img) :
 			p_Impl(new Impl(ims, img, &(this->cfg))) {};
 
-	ImagePlayer::ImagePlayer(const IMSSystem& ims, const Image& img, const PlayConfiguration& cfg) :
+	ImagePlayer::ImagePlayer(std::shared_ptr<IMSSystem> ims, const Image& img, const PlayConfiguration& cfg) :
 			cfg(cfg), p_Impl(new Impl(ims, img, &(this->cfg))) {};
 
-	ImagePlayer::ImagePlayer(const IMSSystem& ims, const ImageTableEntry& ite, const kHz InternalClock) :
+	ImagePlayer::ImagePlayer(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const kHz InternalClock) :
 			p_Impl(new Impl(ims, ite, &(this->cfg), InternalClock)) {};
 
-	ImagePlayer::ImagePlayer(const IMSSystem& ims, const ImageTableEntry& ite, const int ExtClockDivide) :
+	ImagePlayer::ImagePlayer(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const int ExtClockDivide) :
 			p_Impl(new Impl(ims, ite, &(this->cfg), ExtClockDivide)) {};
 
-	ImagePlayer::ImagePlayer(const IMSSystem& ims, const ImageTableEntry& ite, const PlayConfiguration& cfg, const kHz InternalClock) :
+	ImagePlayer::ImagePlayer(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const PlayConfiguration& cfg, const kHz InternalClock) :
 			cfg(cfg), p_Impl(new Impl(ims, ite, &(this->cfg), InternalClock)) {};
 
-	ImagePlayer::ImagePlayer(const IMSSystem& ims, const ImageTableEntry& ite, const PlayConfiguration& cfg, const int ExtClockDivide) :
+	ImagePlayer::ImagePlayer(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const PlayConfiguration& cfg, const int ExtClockDivide) :
 			cfg(cfg), p_Impl(new Impl(ims, ite, &(this->cfg), ExtClockDivide)) {};
 
 	ImagePlayer::~ImagePlayer()	{ delete p_Impl; p_Impl = nullptr; };
 
-	bool ImagePlayer::Impl::ConfigurePlayback()
+	bool ImagePlayer::Impl::ConfigurePlayback(std::shared_ptr<IMSSystem> ims)
 	{
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		HostReport* iorpt;
+        auto conn = ims->Connection();
+        HostReport* iorpt;
 
-		int ckgen_mode = 0;
+        int ckgen_mode = 0;
 
-		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_ClockOutput);
-		DeviceReport resp = myiMSConn->SendMsgBlocking(*iorpt);
-		if (resp.Done()) {
-			ckgen_mode = resp.Payload<std::uint16_t>() & 0x1;
-		}
-		delete iorpt;
+        iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_ClockOutput);
+        DeviceReport resp = conn->SendMsgBlocking(*iorpt);
+        if (resp.Done()) {
+            ckgen_mode = resp.Payload<std::uint16_t>() & 0x1;
+        }
+        delete iorpt;
 
-		// Set ImgModes CTRLR_REG_ImgModesExt
-		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgModes);
-		int TFR{ 0 };
-		if (cfg->int_ext == PointClock::EXTERNAL)
-		{
-			TFR |= 4;
-		}
-		switch (cfg->trig)
-		{
-		case ImageTrigger::CONTINUOUS: TFR |= 3; break;
-		case ImageTrigger::EXTERNAL: TFR |= 1; break;
-		case ImageTrigger::HOST: TFR |= 2; break;
-		case ImageTrigger::POST_DELAY: TFR |= 0; break;
-		}
-		if (cfg->rpts == Repeats::FOREVER)
-		{
-			TFR |= 8;
-		}
-		else if (cfg->rpts != Repeats::NONE) {
-			int i = cfg->n_rpts & 0xFF;
-			TFR |= (i << 8);
-		}
-		iorpt->Payload<std::uint16_t>(TFR);
+        // Set ImgModes CTRLR_REG_ImgModesExt
+        iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgModes);
+        int TFR{ 0 };
+        if (cfg->int_ext == PointClock::EXTERNAL)
+        {
+            TFR |= 4;
+        }
+        switch (cfg->trig)
+        {
+        case ImageTrigger::CONTINUOUS: TFR |= 3; break;
+        case ImageTrigger::EXTERNAL: TFR |= 1; break;
+        case ImageTrigger::HOST: TFR |= 2; break;
+        case ImageTrigger::POST_DELAY: TFR |= 0; break;
+        }
+        if (cfg->rpts == Repeats::FOREVER)
+        {
+            TFR |= 8;
+        }
+        else if (cfg->rpts != Repeats::NONE) {
+            int i = cfg->n_rpts & 0xFF;
+            TFR |= (i << 8);
+        }
+        iorpt->Payload<std::uint16_t>(TFR);
 
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		if (cfg->rpts == Repeats::PROGRAM) {
-			// extend repeats to 24 bit
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgModesExt);
-			iorpt->Payload<std::uint16_t>((cfg->n_rpts >> 8) & 0xFF);
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-		}
+        if (NullMessage == conn->SendMsg(*iorpt))
+        {
+            delete iorpt;
+            return false;
+        }
+        delete iorpt;
+        if (cfg->rpts == Repeats::PROGRAM) {
+            // extend repeats to 24 bit
+            iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgModesExt);
+            iorpt->Payload<std::uint16_t>((cfg->n_rpts >> 8) & 0xFF);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+        }
 
 
-		// Set Post-Image Delay, if required
-		if (cfg->trig == ImageTrigger::POST_DELAY)
-		{
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgDelay);
-			// Resolution of 1/10 millisecond, max 6.5s
-			iorpt->Payload<std::uint16_t>(cfg->del.count());
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-		}
+        // Set Post-Image Delay, if required
+        if (cfg->trig == ImageTrigger::POST_DELAY)
+        {
+            iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ImgDelay);
+            // Resolution of 1/10 millisecond, max 6.5s
+            iorpt->Payload<std::uint16_t>(cfg->del.count());
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+        }
 
-		// Set external signal polarity, if required
-		if (!ckgen_mode && ((cfg->trig == ImageTrigger::EXTERNAL) || (cfg->int_ext == PointClock::EXTERNAL) ) )
-		{
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ExtPolarity);
+        // Set external signal polarity, if required
+        if (!ckgen_mode && ((cfg->trig == ImageTrigger::EXTERNAL) || (cfg->int_ext == PointClock::EXTERNAL) ) )
+        {
+            iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ExtPolarity);
 
-			// bit 0 = clock; bit 1 = trigger
-			// <0> = rising edge; <1> = falling edge
-			std::uint16_t d = 0;
-			d |= (cfg->clk_pol == Polarity::INVERSE) ? 1 : 0;
-			d |= (cfg->trig_pol == Polarity::INVERSE) ? 2 : 0;
-			iorpt->Payload<std::uint16_t>(d);
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-		}
+            // bit 0 = clock; bit 1 = trigger
+            // <0> = rising edge; <1> = falling edge
+            std::uint16_t d = 0;
+            d |= (cfg->clk_pol == Polarity::INVERSE) ? 1 : 0;
+            d |= (cfg->trig_pol == Polarity::INVERSE) ? 2 : 0;
+            iorpt->Payload<std::uint16_t>(d);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+        }
 
-		// Set Internal Oscillator clock rate or exteral clock divider, as appropriate
-		if (!ckgen_mode) {
-			bool PrescalerDisable = true;
-			if ((int_clk < 5000.0) || !myiMS.Ctlr().GetCap().FastImageTransfer) {
-				PrescalerDisable = false;
-			}
-			if (myiMS.Ctlr().GetCap().FastImageTransfer) {
-				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Ctrl);
-				if (PrescalerDisable) {
-					iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Ctrl_Prescaler_Disable);
-				}
-				else {
-					iorpt->Payload<std::uint16_t>(0);
-				}
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
-				{
-					delete iorpt;
-					return false;
-				}
-				delete iorpt;
-			}
-			if (cfg->int_ext == PointClock::INTERNAL)
-			{
-				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
-				iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(myiMS, int_clk, PrescalerDisable));
+        // Set Internal Oscillator clock rate or exteral clock divider, as appropriate
+        if (!ckgen_mode) {
+            bool PrescalerDisable = true;
+            if ((int_clk < 5000.0) || !ims->Ctlr().GetCap().FastImageTransfer) {
+                PrescalerDisable = false;
+            }
+            if (ims->Ctlr().GetCap().FastImageTransfer) {
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Ctrl);
+                if (PrescalerDisable) {
+                    iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Ctrl_Prescaler_Disable);
+                }
+                else {
+                    iorpt->Payload<std::uint16_t>(0);
+                }
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
+            }
+            if (cfg->int_ext == PointClock::INTERNAL)
+            {
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
+                iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(ims, int_clk, PrescalerDisable));
 
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
-				{
-					delete iorpt;
-					return false;
-				}
-				delete iorpt;
-			}
-		}
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
+            }
+        }
 
-		if (cfg->int_ext == PointClock::EXTERNAL) {
-			if (ckgen_mode) {
-				BOOST_LOG_SEV(lg::get(), sev::warning) << "External Image Clock requested with Signal Generator On.  Disabling signal generator";
-				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ClockOutput);
-				iorpt->Payload<uint16_t>(0);
-				MessageHandle h = myiMSConn->SendMsg(*iorpt);
-				if (NullMessage == h)
-				{
-					delete iorpt;
-					return false;
-				}
-				delete iorpt;
-			}
-			int lcl_ext_div = (ext_div < 1) ? 1 : (ext_div > 65535) ? 65535 : ext_div;
-			if (myiMS.Ctlr().GetCap().FastImageTransfer) {
-				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ExtDiv);
-			}
-			else {
-				// iMS Lite reuses OscFreq field
-				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
-			}
-			iorpt->Payload<std::uint16_t>(lcl_ext_div);
+        if (cfg->int_ext == PointClock::EXTERNAL) {
+            if (ckgen_mode) {
+                BOOST_LOG_SEV(lg::get(), sev::warning) << "External Image Clock requested with Signal Generator On.  Disabling signal generator";
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ClockOutput);
+                iorpt->Payload<uint16_t>(0);
+                MessageHandle h = conn->SendMsg(*iorpt);
+                if (NullMessage == h)
+                {
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
+            }
+            int lcl_ext_div = (ext_div < 1) ? 1 : (ext_div > 65535) ? 65535 : ext_div;
+            if (ims->Ctlr().GetCap().FastImageTransfer) {
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ExtDiv);
+            }
+            else {
+                // iMS Lite reuses OscFreq field
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
+            }
+            iorpt->Payload<std::uint16_t>(lcl_ext_div);
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-		}
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+        }
 
-		// Set ImageFormat (v1.8 - use auto mode only for now)
-		//if (m_fmt.IsAuto()) {
-		//	iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Img_FormatLo);
-		//	iorpt->Payload<uint32_t>(0x80000fff);
+        // Set ImageFormat (v1.8 - use auto mode only for now)
+        //if (m_fmt.IsAuto()) {
+        //	iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Img_FormatLo);
+        //	iorpt->Payload<uint32_t>(0x80000fff);
 
-		//	if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		//	{
-		//		delete iorpt;
-		//		return false;
-		//	}
-		//	delete iorpt;
-		//}
+        //	if (NullMessage == conn->SendMsg(*iorpt))
+        //	{
+        //		delete iorpt;
+        //		return false;
+        //	}
+        //	delete iorpt;
+        //}
 
-		return true;
+        return true;
 	}
 
 	bool ImagePlayer::Play(ImageTrigger start_trig)
 	{
-		// Make sure Controller & Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        { 
+            // Make sure Controller & Synthesiser are present
+            if (!ims->Ctlr().IsValid()) return false;
+            if (!ims->Synth().IsValid()) return false;
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
+            auto conn = ims->Connection();
+            IMSController::Capabilities cap = ims->Ctlr().GetCap();
 
-		// Check to see if we are already playing back or downloading
-		HostReport *iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_Ctrl);
-        DeviceReport resp = myiMSConn->SendMsgBlocking(*iorpt);
-		if ((resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_IOS_Busy) ||
-			((cap.SimultaneousPlayback == false) && (resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_DL_Active)) ) {
-              if (resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_IOS_Busy)
-                BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Already playing back";
-              else
-                BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Simultaneous playback/download not supported";
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
+            // Check to see if we are already playing back or downloading
+            HostReport *iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_Ctrl);
+            DeviceReport resp = conn->SendMsgBlocking(*iorpt);
+            if ((resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_IOS_Busy) ||
+                ((cap.SimultaneousPlayback == false) && (resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_DL_Active)) ) {
+                if (resp.Payload<std::uint16_t>() & CTRLR_REG_Img_Ctrl_IOS_Busy)
+                    BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Already playing back";
+                else
+                    BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Simultaneous playback/download not supported";
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
 
-		// Readback UUID from hardware to check the Image has been downloaded and is identical to the one we're being asked to play
-		// (only for Lite Controller which has a single Image Memory)
-		if (!cap.FastImageTransfer) {
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_UUID);
-			ReportFields f = iorpt->Fields();
-			f.len = static_cast<std::uint16_t>(p_Impl->uuid.size());
-			iorpt->Fields(f);
-			resp = myiMSConn->SendMsgBlocking(*iorpt);
-			if (!resp.Done()) {
-                BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Couldn't read back UUID";
-				delete iorpt;
-				return false;
-			}
-			else {
-				std::vector<std::uint8_t> v = resp.Payload<std::vector<std::uint8_t>>();
-				std::array<std::uint8_t, 16> uuid;
-				v.resize(16);
-				std::copy(v.begin(), v.end(), uuid.begin());
-				if (uuid != p_Impl->uuid) {
-				    BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: UUID Mismatch";
+            // Readback UUID from hardware to check the Image has been downloaded and is identical to the one we're being asked to play
+            // (only for Lite Controller which has a single Image Memory)
+            if (!cap.FastImageTransfer) {
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_UUID);
+                ReportFields f = iorpt->Fields();
+                f.len = static_cast<std::uint16_t>(p_Impl->uuid.size());
+                iorpt->Fields(f);
+                resp = conn->SendMsgBlocking(*iorpt);
+                if (!resp.Done()) {
+                    BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Couldn't read back UUID";
                     delete iorpt;
-					return false;
-				}
-			}
-			delete iorpt;
-		}
-		
-		if (!p_Impl->ConfigurePlayback()) return false;
+                    return false;
+                }
+                else {
+                    std::vector<std::uint8_t> v = resp.Payload<std::vector<std::uint8_t>>();
+                    std::array<std::uint8_t, 16> uuid;
+                    v.resize(16);
+                    std::copy(v.begin(), v.end(), uuid.begin());
+                    if (uuid != p_Impl->uuid) {
+                        BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: UUID Mismatch";
+                        delete iorpt;
+                        return false;
+                    }
+                }
+                delete iorpt;
+            }
+            
+            if (!p_Impl->ConfigurePlayback(ims)) return false;
 
-		// For large memory capacity controllers, Start DMA Engine and program NumPts
-		if (cap.FastImageTransfer) {
-			std::array<std::uint8_t, 16> uuid = p_Impl->uuid;
-			std::vector<std::uint8_t> data(uuid.begin(), uuid.begin() + 16);
-			data.push_back(static_cast<std::uint8_t>(cfg.n_rpts & 0xFF));
-			if (p_Impl->myiMS.Ctlr().Model() != "iMSP" || p_Impl->myiMS.Ctlr().GetVersion().major > 1) {
-				data.push_back(static_cast<std::uint8_t>((cfg.n_rpts >> 8) & 0xFF));
-				data.push_back(static_cast<std::uint8_t>((cfg.n_rpts >> 16) & 0xFF));
-			}
-			data.push_back(static_cast<std::uint8_t>(cfg.rpts));
+            // For large memory capacity controllers, Start DMA Engine and program NumPts
+            if (cap.FastImageTransfer) {
+                std::array<std::uint8_t, 16> uuid = p_Impl->uuid;
+                std::vector<std::uint8_t> data(uuid.begin(), uuid.begin() + 16);
+                data.push_back(static_cast<std::uint8_t>(cfg.n_rpts & 0xFF));
+                if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().major > 1) {
+                    data.push_back(static_cast<std::uint8_t>((cfg.n_rpts >> 8) & 0xFF));
+                    data.push_back(static_cast<std::uint8_t>((cfg.n_rpts >> 16) & 0xFF));
+                }
+                data.push_back(static_cast<std::uint8_t>(cfg.rpts));
 
-			iorpt = new HostReport(HostReport::Actions::CTRLR_SYNDMA, HostReport::Dir::WRITE, CTRLR_SYNDMA_Start_DMA);
-			iorpt->Payload<std::vector<std::uint8_t>>(data);
-			resp = myiMSConn->SendMsgBlocking(*iorpt);
-			if (!resp.Done() || resp.GeneralError())
-			{
-                BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Unable to start DMA";
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
+                iorpt = new HostReport(HostReport::Actions::CTRLR_SYNDMA, HostReport::Dir::WRITE, CTRLR_SYNDMA_Start_DMA);
+                iorpt->Payload<std::vector<std::uint8_t>>(data);
+                resp = conn->SendMsgBlocking(*iorpt);
+                if (!resp.Done() || resp.GeneralError())
+                {
+                    BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Unable to start DMA";
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
 
-			int length = p_Impl->img_size;
-			// Restrict to maximum size of Controller memory;
-			length = std::min(length, p_Impl->myiMS.Ctlr().GetCap().MaxImageSize);
-			// Program Image Length into NumPts register
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_NumPtsLo);
-			iorpt->Payload<std::uint32_t>(length);
+                int length = p_Impl->img_size;
+                // Restrict to maximum size of Controller memory;
+                length = std::min(length, ims->Ctlr().GetCap().MaxImageSize);
+                // Program Image Length into NumPts register
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_NumPtsLo);
+                iorpt->Payload<std::uint32_t>(length);
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-                BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Image Length Program Failed";
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-		}
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Image Length Program Failed";
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
+            }
 
-		// Play Image
-		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Play);
-		if (start_trig == ImageTrigger::EXTERNAL) {
-			iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Play_ERUN);
-		}
-		else {
-			iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Play_RUN);
-		}
+            // Play Image
+            iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Play);
+            if (start_trig == ImageTrigger::EXTERNAL) {
+                iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Play_ERUN);
+            }
+            else {
+                iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Play_RUN);
+            }
 
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-            BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Play Command Failed";
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                BOOST_LOG_SEV(lg::get(), sev::error) << "Image Playback Start Failed: Play Command Failed";
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
 
-		{
-			std::unique_lock<std::mutex> lck{ p_Impl->m_bkmutex };
-			p_Impl->ImagePlaying = true;
-			p_Impl->m_bkcond.notify_one();
-			lck.unlock();
-			p_Impl->m_Event->Trigger<int>(this, ImagePlayerEvents::IMAGE_STARTED, 0);
-		}
-		BOOST_LOG_SEV(lg::get(), sev::info) << "Image Playback Start request sent";
-		return true;
+            {
+                std::unique_lock<std::mutex> lck{ p_Impl->m_bkmutex };
+                p_Impl->ImagePlaying = true;
+                p_Impl->m_bkcond.notify_one();
+                lck.unlock();
+                p_Impl->m_Event->Trigger<int>(this, ImagePlayerEvents::IMAGE_STARTED, 0);
+            }
+            BOOST_LOG_SEV(lg::get(), sev::info) << "Image Playback Start request sent";
+            return true;
+        }).value_or(false);
 	}
 
 	bool ImagePlayer::GetProgress()
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        { 
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
 
-		if (!p_Impl->ImagePlaying) return false;
+            if (!p_Impl->ImagePlaying) return false;
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
+            auto conn = ims->Connection();
+            IMSController::Capabilities cap = ims->Ctlr().GetCap();
 
-		HostReport *iorpt;
-		if (cap.FastImageTransfer) {
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_ProgressLo);
-			ReportFields f = iorpt->Fields();
-			f.len = 4;
-			iorpt->Fields(f);
-		}
-		else {
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_Progress);
-		}
+            HostReport *iorpt;
+            if (cap.FastImageTransfer) {
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_ProgressLo);
+                ReportFields f = iorpt->Fields();
+                f.len = 4;
+                iorpt->Fields(f);
+            }
+            else {
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_Progress);
+            }
 
-		{
-			std::unique_lock<std::mutex> lck{ p_Impl->m_bkmutex };
-			p_Impl->progressHandle.push(myiMSConn->SendMsg(*iorpt));
-			delete iorpt;
+            {
+                std::unique_lock<std::mutex> lck{ p_Impl->m_bkmutex };
+                p_Impl->progressHandle.push(conn->SendMsg(*iorpt));
+                delete iorpt;
 
-			if (NullMessage == p_Impl->progressHandle.back())
-			{
-				lck.unlock();
-				return false;
-			}
-			//std::cout << "Get Progress {" << p_Impl->progressHandle.front() << " " << p_Impl->progressHandle.back() << "} ";
-			BOOST_LOG_SEV(lg::get(), sev::info) << "Image Progress request sent";
-			lck.unlock();
-			return true;
-		}
+                if (NullMessage == p_Impl->progressHandle.back())
+                {
+                    lck.unlock();
+                    return false;
+                }
+                //std::cout << "Get Progress {" << p_Impl->progressHandle.front() << " " << p_Impl->progressHandle.back() << "} ";
+                BOOST_LOG_SEV(lg::get(), sev::info) << "Image Progress request sent";
+            }
+            return true;
+        }).value_or(false);            
 	}
 	
 	bool ImagePlayer::Stop(StopStyle s)
 	{
-		// Make sure Controller & Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        { 
+            // Make sure Controller & Synthesiser are present
+            if (!ims->Ctlr().IsValid()) return false;
+            if (!ims->Synth().IsValid()) return false;
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport *iorpt;
-		
-		if (ImagePlayer::StopStyle::IMMEDIATELY == s)
-		{
-			// Force Stop Image
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Play);
-			iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Play_FSTOP);
-			BOOST_LOG_SEV(lg::get(), sev::info) << "Image Playback Force Stop request sent";
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-			IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
-			if (cap.FastImageTransfer) {
-				iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Stop);
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
-				{
-					delete iorpt;
-					return false;
-				}
-				delete iorpt;
-				iorpt = new HostReport(HostReport::Actions::CTRLR_SYNDMA, HostReport::Dir::WRITE, CTRLR_SYNDMA_DMA_Abort);
-				if (NullMessage == myiMSConn->SendMsg(*iorpt))
-				{
-					delete iorpt;
-					return false;
-				}
-				delete iorpt;
-			}
-		}
-		else {
-			// Gracefully Stop Image at end of currenr repeat
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Play);
-			iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Play_STOP);
-			BOOST_LOG_SEV(lg::get(), sev::info) << "Image Playback Graceful Stop request sent";
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-		}
-		return true;
+            IConnectionManager * const conn = ims->Connection();
+            HostReport *iorpt;
+            
+            if (ImagePlayer::StopStyle::IMMEDIATELY == s)
+            {
+                // Force Stop Image
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Play);
+                iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Play_FSTOP);
+                BOOST_LOG_SEV(lg::get(), sev::info) << "Image Playback Force Stop request sent";
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
+                IMSController::Capabilities cap = ims->Ctlr().GetCap();
+                if (cap.FastImageTransfer) {
+                    iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Stop);
+                    if (NullMessage == conn->SendMsg(*iorpt))
+                    {
+                        delete iorpt;
+                        return false;
+                    }
+                    delete iorpt;
+                    iorpt = new HostReport(HostReport::Actions::CTRLR_SYNDMA, HostReport::Dir::WRITE, CTRLR_SYNDMA_DMA_Abort);
+                    if (NullMessage == conn->SendMsg(*iorpt))
+                    {
+                        delete iorpt;
+                        return false;
+                    }
+                    delete iorpt;
+                }
+            }
+            else {
+                // Gracefully Stop Image at end of currenr repeat
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Play);
+                iorpt->Payload<std::uint16_t>(CTRLR_REG_Img_Play_STOP);
+                BOOST_LOG_SEV(lg::get(), sev::info) << "Image Playback Graceful Stop request sent";
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
+            }
+            return true;
+        }).value_or(false);  
 	}
 
 	void ImagePlayer::SetPostDelay(const std::chrono::duration<double>& d)
@@ -1879,9 +1892,13 @@ namespace iMS
 
 	void ImagePlayer::Impl::ResponseReceiver::EventAction(void* sender, const int message, const int param)
 	{
+        auto ims = m_parent->m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
 		while (!m_parent->progressHandle.empty() && 
 			((NullMessage == m_parent->progressHandle.front()) || (param > (m_parent->progressHandle.front())))) m_parent->progressHandle.pop();
-		if (m_parent->myiMS.Ctlr().Model() == "iMSP" && m_parent->myiMS.Ctlr().GetVersion().revision <= 46) {
+		if (ims->Ctlr().Model() == "iMSP" && ims->Ctlr().GetVersion().revision <= 46) {
 			while (!m_parent->finishHandle.empty() &&
 				((NullMessage == m_parent->finishHandle.front()) || (param > (m_parent->finishHandle.front())))) m_parent->finishHandle.pop();
 		}
@@ -1910,7 +1927,7 @@ namespace iMS
 					IOReport resp = object->Response(param);
 
 					std::unique_lock<std::mutex> lck{ m_parent->m_bkmutex };
-					if (m_parent->myiMS.Ctlr().GetCap().FastImageTransfer) {
+					if (ims->Ctlr().GetCap().FastImageTransfer) {
 						m_parent->latestProgress = resp.Payload<std::uint32_t>();
 					}
 					else {
@@ -1922,7 +1939,7 @@ namespace iMS
 					//std::cout << "Recvd " << param << std::endl;
 
 				}
-				if (m_parent->myiMS.Ctlr().Model() != "iMSP" || m_parent->myiMS.Ctlr().GetVersion().revision > 46) break;
+				if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46) break;
 				else if ((!m_parent->finishHandle.empty()) && (param == m_parent->finishHandle.front()))
 				{
 					IConnectionManager* object = static_cast<IConnectionManager*>(sender);
@@ -1969,7 +1986,12 @@ namespace iMS
 	void ImagePlayer::ImagePlayerEventSubscribe(const int message, IEventHandler* handler)
 	{
 		p_Impl->m_Event->Subscribe(message, handler);
-		if (p_Impl->myiMS.Ctlr().Model() != "iMSP" || p_Impl->myiMS.Ctlr().GetVersion().revision > 46) {
+
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
+		if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46) {
 			int IntrMask;
 			if (message == ImagePlayerEvents::IMAGE_FINISHED) {
 				IntrMask = (int)(1 << CTRLR_INTERRUPT_SINGLE_IMAGE_FINISHED);
@@ -1979,7 +2001,7 @@ namespace iMS
 				ReportFields f = iorpt->Fields();
 				f.len = sizeof(IntrMask);
 				iorpt->Fields(f);
-				p_Impl->myiMS.Connection()->SendMsg(*iorpt);
+				ims->Connection()->SendMsg(*iorpt);
 				delete iorpt;
 			}
 		}
@@ -1988,6 +2010,11 @@ namespace iMS
 	void ImagePlayer::ImagePlayerEventUnsubscribe(const int message, const IEventHandler* handler)
 	{
 		p_Impl->m_Event->Unsubscribe(message, handler);
+
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
 		if (!p_Impl->m_Event->Subscribers(message) && (message == ImagePlayerEvents::IMAGE_FINISHED)) {
 			int IntrMask = (int)~(1 << CTRLR_INTERRUPT_SINGLE_IMAGE_FINISHED);
 			HostReport *iorpt;
@@ -1996,7 +2023,7 @@ namespace iMS
 			ReportFields f = iorpt->Fields();
 			f.len = sizeof(IntrMask);
 			iorpt->Fields(f);
-			p_Impl->myiMS.Connection()->SendMsg(*iorpt);
+			ims->Connection()->SendMsg(*iorpt);
 			delete iorpt;
 		}
 	}
@@ -2007,19 +2034,22 @@ namespace iMS
 		std::unique_lock<std::mutex> lck{ m_bkmutex };
 		std::chrono::time_point<std::chrono::high_resolution_clock> last_progress_check = std::chrono::high_resolution_clock::now();
 
+        auto ims = m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
 		while (BackgroundThreadRunning) {
 			//while (std::cv_status::timeout == m_bkcond.wait_for(lck, poll_interval))
 			m_bkcond.wait_for(lck, poll_interval);
 
-			if ((myiMS.Ctlr().Model() == "iMSP" && myiMS.Ctlr().GetVersion().revision <= 46) && (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - last_progress_check) > poll_interval))
+			if ((ims->Ctlr().Model() == "iMSP" && ims->Ctlr().GetVersion().revision <= 46) && (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - last_progress_check) > poll_interval))
 			{
 				// Controllers with FW revision greater than 46 use interrupt driven image notifications
 				if (ImagePlaying) {
 
-					IConnectionManager * const myiMSConn = myiMS.Connection();
 					HostReport *iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_Img_Ctrl);
 
-					finishHandle.push(myiMSConn->SendMsg(*iorpt));
+					finishHandle.push(conn->SendMsg(*iorpt));
 					delete iorpt;
 				}
 
@@ -2051,7 +2081,7 @@ namespace iMS
 	}
 
 	/* IMAGE TABLE READER */
-	ImageTableReader::ImageTableReader(const IMSSystem& ims) : myiMS(ims)
+	ImageTableReader::ImageTableReader(std::shared_ptr<IMSSystem> ims) : m_ims(ims)
 	{}
 
 	ImageTableReader::~ImageTableReader()
@@ -2062,128 +2092,154 @@ namespace iMS
 		std::unique_ptr<ImageTable> imgt(new ImageTable());
 		std::array<std::uint8_t, 16> uuid;
 
-		// Read back ImageTable from iMS Controller
-		if (!myiMS.Ctlr().IsValid()) return ImageTable();
+        return with_locked_value(m_ims, [&](std::shared_ptr<IMSSystem> ims) -> ImageTable
+        {  
+            // Read back ImageTable from iMS Controller
+            if (!ims->Ctlr().IsValid()) return ImageTable();
 
-		IConnectionManager * const myiMSConn = myiMS.Connection();
+            auto conn = ims->Connection();
 
-		// Get number of entries in table
-		std::size_t tbl_size;
-		HostReport *iorpt;
-		IMSController::Capabilities cap = myiMS.Ctlr().GetCap();
-		if (!cap.FastImageTransfer) {
-			// Only ever 1 entry in a Controller Lite
-			tbl_size = 1;
+            // Get number of entries in table
+            std::size_t tbl_size;
+            HostReport *iorpt;
+            IMSController::Capabilities cap = ims->Ctlr().GetCap();
+            if (!cap.FastImageTransfer) {
+                // Only ever 1 entry in a Controller Lite
+                tbl_size = 1;
 
-			// Read Image Length
-			int img_len = 0;
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_NumPts);
-			DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-			delete iorpt;
-			if (Resp.Done()) {
-				img_len = Resp.Payload<std::uint16_t>();
-			}
-			else return ImageTable();
+                // Read Image Length
+                int img_len = 0;
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_NumPts);
+                DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+                delete iorpt;
+                if (Resp.Done()) {
+                    img_len = Resp.Payload<std::uint16_t>();
+                }
+                else return ImageTable();
 
-			// Read Image UUID
-			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_UUID);
-			ReportFields f = iorpt->Fields();
-			f.len = static_cast<std::uint16_t>(uuid.size());
-			iorpt->Fields(f);
-			Resp = myiMSConn->SendMsgBlocking(*iorpt);
-			if (!Resp.Done()) {
-				delete iorpt;
-				return ImageTable();
-			}
-			else {
-				std::vector<std::uint8_t> v = Resp.Payload<std::vector<std::uint8_t>>();
-				//std::array<std::uint8_t, 16> uuid;
-				v.resize(16);
-				std::copy(v.begin(), v.end(), uuid.begin());
-				ImageTableEntry ite(0, 0, img_len, img_len * 20, 0, uuid, std::string("solo_img"));
-				imgt->push_back(ite);
-			}
-			delete iorpt;
-		}
-		else {
-			iorpt = new HostReport(HostReport::Actions::CTRLR_IMGIDX, HostReport::Dir::READ, 0);
-			ReportFields f = iorpt->Fields();
-			f.context = 4; // Get Image Table Size
-			f.len = 2;
-			iorpt->Fields(f);
-			DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-			delete iorpt;
-			if (Resp.Done()) {
-				tbl_size = Resp.Payload<std::uint16_t>();
-			}
-			else return ImageTable();
+                // Read Image UUID
+                iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, CTRLR_REG_UUID);
+                ReportFields f = iorpt->Fields();
+                f.len = static_cast<std::uint16_t>(uuid.size());
+                iorpt->Fields(f);
+                Resp = conn->SendMsgBlocking(*iorpt);
+                if (!Resp.Done()) {
+                    delete iorpt;
+                    return ImageTable();
+                }
+                else {
+                    std::vector<std::uint8_t> v = Resp.Payload<std::vector<std::uint8_t>>();
+                    //std::array<std::uint8_t, 16> uuid;
+                    v.resize(16);
+                    std::copy(v.begin(), v.end(), uuid.begin());
+                    ImageTableEntry ite(0, 0, img_len, img_len * 20, 0, uuid, std::string("solo_img"));
+                    imgt->push_back(ite);
+                }
+                delete iorpt;
+            }
+            else {
+                iorpt = new HostReport(HostReport::Actions::CTRLR_IMGIDX, HostReport::Dir::READ, 0);
+                ReportFields f = iorpt->Fields();
+                f.context = 4; // Get Image Table Size
+                f.len = 2;
+                iorpt->Fields(f);
+                DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+                delete iorpt;
+                if (Resp.Done()) {
+                    tbl_size = Resp.Payload<std::uint16_t>();
+                }
+                else return ImageTable();
 
-			for (ImageIndex idx = 0; idx < (int)tbl_size; idx++) {
-				iorpt = new HostReport(HostReport::Actions::CTRLR_IMGIDX, HostReport::Dir::READ, static_cast<std::uint16_t>(idx));
-				f = iorpt->Fields();
-				f.context = static_cast < std::uint8_t>(HostReport::ImageIndexOperations::GET_ENTRY); 
-				f.len = 49;
-				iorpt->Fields(f);
-				Resp = myiMSConn->SendMsgBlocking(*iorpt);
-				delete iorpt;
-				if (Resp.Done() && !Resp.GeneralError()) {
-					ImageTableEntry ite(idx, Resp.Payload<std::vector<std::uint8_t>>());
-					imgt->push_back(ite);
-				}
-			}
-		}
+                for (ImageIndex idx = 0; idx < (int)tbl_size; idx++) {
+                    iorpt = new HostReport(HostReport::Actions::CTRLR_IMGIDX, HostReport::Dir::READ, static_cast<std::uint16_t>(idx));
+                    f = iorpt->Fields();
+                    f.context = static_cast < std::uint8_t>(HostReport::ImageIndexOperations::GET_ENTRY); 
+                    f.len = 49;
+                    iorpt->Fields(f);
+                    Resp = conn->SendMsgBlocking(*iorpt);
+                    delete iorpt;
+                    if (Resp.Done() && !Resp.GeneralError()) {
+                        ImageTableEntry ite(idx, Resp.Payload<std::vector<std::uint8_t>>());
+                        imgt->push_back(ite);
+                    }
+                }
+            }
+            // Return by value
+            return (*imgt);
 
-		// Return by value
-		return (*imgt);
+        }).value_or(ImageTable());
+
 	}
 
 	/* IMAGE TABLE VIEWER */
 	class ImageTableViewer::Impl
 	{
 	public:
-		Impl(IMSSystem& ims) : myiMS(ims) {}
+		Impl(std::shared_ptr<IMSSystem> ims) : m_ims(ims) {}
 
-		IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 	};
 
-	ImageTableViewer::ImageTableViewer(IMSSystem& ims) : p_Impl(new Impl(ims)) {}
+	ImageTableViewer::ImageTableViewer(std::shared_ptr<IMSSystem> ims) : p_Impl(new Impl(ims)) {}
 
 	ImageTableViewer::~ImageTableViewer() { delete p_Impl; p_Impl = nullptr; }
 
 	const int ImageTableViewer::Entries() const
 	{
-		return (int)p_Impl->myiMS.Ctlr().ImgTable().size();
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> int
+        { 
+    		return (int)ims->Ctlr().ImgTable().size();
+        }).value_or(0);
 	}
 
 	const ImageTableEntry ImageTableViewer::operator[](const std::size_t idx) const
 	{
-		ImageTable t = p_Impl->myiMS.Ctlr().ImgTable();
-		if (idx < (std::size_t)this->Entries()) {
-			return *(std::next(t.begin(), idx));
-		}
-		else {
-			return ImageTableEntry();
-		}
+        std::size_t entries = (std::size_t)this->Entries();
+
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> ImageTableEntry
+        {         
+            ImageTable t = ims->Ctlr().ImgTable();
+            if (idx < entries) {
+                return *(std::next(t.begin(), idx));
+            }
+            else {
+                return ImageTableEntry();
+            }
+        }).value_or(ImageTableEntry());
 	}
 
-	ImageTableViewer::const_iterator ImageTableViewer::begin() { return p_Impl->myiMS.Ctlr().ImgTable().begin(); }
-	ImageTableViewer::const_iterator ImageTableViewer::end() { return p_Impl->myiMS.Ctlr().ImgTable().end(); }
+	ImageTableViewer::const_iterator ImageTableViewer::begin() 
+    {
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> ImageTableViewer::const_iterator
+        {         
+            return ims->Ctlr().ImgTable().begin(); 
+        }).value();  // This can throw a bad_optional_access if m_ims is invalid
+    }
+
+	ImageTableViewer::const_iterator ImageTableViewer::end() { 
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> ImageTableViewer::const_iterator
+        {   
+            return ims->Ctlr().ImgTable().end(); 
+        }).value();
+    }
 
 	bool ImageTableViewer::Erase(const std::size_t idx)
 	{
-		// Read back ImageTable from iMS Controller
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return false;
+        auto conn = ims->Connection();
 
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+		// Read back ImageTable from iMS Controller
+		if (!ims->Ctlr().IsValid()) return false;
 
 		HostReport* iorpt;
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
+		IMSController::Capabilities cap = ims->Ctlr().GetCap();
 
 		// Can't delete images in single image controllers. Just download a replacement image.
 		if (!cap.FastImageTransfer) return false;
 
 		if (idx < (std::size_t)this->Entries()) {
-			ImageTable t = p_Impl->myiMS.Ctlr().ImgTable();
+			ImageTable t = ims->Ctlr().ImgTable();
 			ImageTableEntry ite = *(std::next(t.begin(), idx));
 
 			iorpt = new HostReport(HostReport::Actions::CTRLR_IMGIDX, HostReport::Dir::WRITE, 0);
@@ -2196,7 +2252,7 @@ namespace iMS
 			std::vector<std::uint8_t> data(uuid.begin(), uuid.begin() + 16);
 			iorpt->Payload<std::vector<std::uint8_t>>(data);
 
-			DeviceReport ioresp = myiMSConn->SendMsgBlocking(*iorpt);
+			DeviceReport ioresp = conn->SendMsgBlocking(*iorpt);
 			if (!ioresp.Done() || ioresp.GeneralError()) {
 				// Most likely image UUID doesn't exist on Controller.  How did we get out of sync?
 				BOOST_LOG_SEV(lg::get(), sev::error) << "Erase of image index " << idx << " [" << ite.Name() << "] requested but no matching UUID found on Controller.";
@@ -2214,7 +2270,7 @@ namespace iMS
 			f.len = 0;
 			iorpt->Fields(f);
 
-			ioresp = myiMSConn->SendMsgBlocking(*iorpt);
+			ioresp = conn->SendMsgBlocking(*iorpt);
 			if (!ioresp.Done() || ioresp.GeneralError()) {
 				// Erase failed. As image must exist (we checked for this above) a DMA operation must be in progress
 				BOOST_LOG_SEV(lg::get(), sev::error) << "Erase of image index " << idx << " [" << ite.Name() << "] failed. Image Upload / Download in progress.";
@@ -2226,8 +2282,8 @@ namespace iMS
 
 			// Remove from Image Table
 			t.erase(std::next(t.begin(), idx));
-			const IMSController& c = p_Impl->myiMS.Ctlr();
-			p_Impl->myiMS.Ctlr(IMSController(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), t));
+			const IMSController& c = ims->Ctlr();
+			ims->Ctlr(IMSController(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), t));
 
 			return true;
 		}
@@ -2252,44 +2308,46 @@ namespace iMS
 
 	bool ImageTableViewer::Clear()
 	{
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {  
+            if (!ims->Ctlr().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport* iorpt;
+            IMSController::Capabilities cap = ims->Ctlr().GetCap();
 
-		HostReport* iorpt;
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
+            // Can't delete images in single image controllers. Just download a replacement image.
+            if (!cap.FastImageTransfer) return false;
 
-		// Can't delete images in single image controllers. Just download a replacement image.
-		if (!cap.FastImageTransfer) return false;
+            // Try an erase all command
+            iorpt = new HostReport(HostReport::Actions::CTRLR_IMGIDX, HostReport::Dir::WRITE, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = static_cast<std::uint8_t>(HostReport::ImageIndexOperations::ERASE_ALL);
+            f.len = 0;
+            iorpt->Fields(f);
 
-		// Try an erase all command
-		iorpt = new HostReport(HostReport::Actions::CTRLR_IMGIDX, HostReport::Dir::WRITE, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = static_cast<std::uint8_t>(HostReport::ImageIndexOperations::ERASE_ALL);
-		f.len = 0;
-		iorpt->Fields(f);
+            DeviceReport ioresp = conn->SendMsgBlocking(*iorpt);
+            delete iorpt;
+            if (!ioresp.Done() || ioresp.GeneralError()) {
+                // Try clearing images individually
+                int images_total = this->Entries();
+                for (int i = 0; i < images_total; i++) {
+                    if (!this->Erase((*this)[0])) {
+                        BOOST_LOG_SEV(lg::get(), sev::error) << "Unable to Clear Image Table";
+                        return false;
+                    }
+                }
+            }
+            // All done OK
+            BOOST_LOG_SEV(lg::get(), sev::info) << "Image Table Cleared";
 
-		DeviceReport ioresp = myiMSConn->SendMsgBlocking(*iorpt);
-		delete iorpt;
-		if (!ioresp.Done() || ioresp.GeneralError()) {
-			// Try clearing images individually
-			int images_total = this->Entries();
-			for (int i = 0; i < images_total; i++) {
-				if (!this->Erase((*this)[0])) {
-					BOOST_LOG_SEV(lg::get(), sev::error) << "Unable to Clear Image Table";
-					return false;
-				}
-			}
-		}
-		// All done OK
-		BOOST_LOG_SEV(lg::get(), sev::info) << "Image Table Cleared";
+            // Reset local image table
+            const IMSController& c = ims->Ctlr();
+            ImageTable empty_table;
+            ims->Ctlr(IMSController(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), empty_table));
 
-		// Reset local image table
-		const IMSController& c = p_Impl->myiMS.Ctlr();
-		ImageTable empty_table;
-		p_Impl->myiMS.Ctlr(IMSController(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), empty_table));
-
-		return true;
+            return true;
+        }).value_or(false);
 	}
 
 	std::ostream& operator <<(std::ostream& stream, const ImageTableViewer& itv) {
@@ -2331,12 +2389,12 @@ namespace iMS
 	class SequenceDownload::Impl
 	{
 	public:
-		Impl(IMSSystem&, const ImageSequence&);
+		Impl(std::shared_ptr<IMSSystem>, const ImageSequence&);
 		~Impl();
 
         LazyWorker downloadWorker;
 
-		IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		const ImageSequence& m_Seq;
 
 		const std::unique_ptr<boost::container::deque<std::uint8_t>> m_seqdata;
@@ -2371,8 +2429,8 @@ namespace iMS
 		bool large_seq_supported{ false };
 	};
 
-	SequenceDownload::Impl::Impl(IMSSystem& ims, const ImageSequence& seq) :
-		myiMS(ims), m_Seq(seq),
+	SequenceDownload::Impl::Impl(std::shared_ptr<IMSSystem> ims, const ImageSequence& seq) :
+		m_ims(ims), m_Seq(seq),
 		m_seqdata(new boost::container::deque<std::uint8_t>()),
 		Receiver(new ResponseReceiver(this)),
 		m_Event(new SequenceDownloadEventTrigger()),
@@ -2385,9 +2443,9 @@ namespace iMS
 		large_seq_supported = false;
 
 		// Subscribe listener
-		IConnectionManager* const myiMSConn = myiMS.Connection();
-		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46) {
-			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+		auto conn = ims->Connection();
+		if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46) {
+			conn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 			int IntrMask = (int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
 
 			HostReport* iorpt;
@@ -2396,46 +2454,51 @@ namespace iMS
 			ReportFields f = iorpt->Fields();
 			f.len = sizeof(IntrMask);
 			iorpt->Fields(f);
-			myiMS.Connection()->SendMsg(*iorpt);
+			conn->SendMsg(*iorpt);
 			delete iorpt;
 		}
 
-		myiMSConn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+		conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
 	}
 
 	SequenceDownload::Impl::~Impl() 
 	{
-		// Unsubscribe listener
-		IConnectionManager* const myiMSConn = myiMS.Connection();
-		if (myiMS.Ctlr().Model() != "iMSP" || myiMS.Ctlr().GetVersion().revision > 46) {
-			myiMSConn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
-			int IntrMask = ~(int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
+        with_locked(m_ims, [&](std::shared_ptr<IMSSystem> ims) {         
+            // Unsubscribe listener
+            IConnectionManager* const conn = ims->Connection();
+            if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46) {
+                conn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+                int IntrMask = ~(int)((1 << CTRLR_INTERRUPT_SEQDL_ERROR) | (1 << CTRLR_INTERRUPT_SEQDL_COMPLETE) | (1 << CTRLR_INTERRUPT_SEQDL_BUFFER_PROCESSED));
 
-			HostReport* iorpt;
-			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
-			iorpt->Payload<int>(IntrMask);
-			ReportFields f = iorpt->Fields();
-			f.len = sizeof(IntrMask);
-			iorpt->Fields(f);
-			myiMS.Connection()->SendMsg(*iorpt);
-			delete iorpt;
-		}
+                HostReport* iorpt;
+                iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
+                iorpt->Payload<int>(IntrMask);
+                ReportFields f = iorpt->Fields();
+                f.len = sizeof(IntrMask);
+                iorpt->Fields(f);
+                ims->Connection()->SendMsg(*iorpt);
+                delete iorpt;
+            }
 
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+            conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+        });
+
 		delete dmah;
 		delete Receiver;
 	}
 
-	SequenceDownload::SequenceDownload(IMSSystem& ims, const ImageSequence& seq) : p_Impl(new Impl(ims, seq)) {}
+	SequenceDownload::SequenceDownload(std::shared_ptr<IMSSystem> ims, const ImageSequence& seq) : p_Impl(new Impl(ims, seq)) {}
 
 	SequenceDownload::~SequenceDownload() { delete p_Impl; p_Impl = nullptr; }
 
 	bool SequenceDownload::Download(bool asynchronous)
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return false;
+        auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+		// Make sure Controller is present
+		if (!ims->Ctlr().IsValid()) return false;
 		int entries = (int)p_Impl->m_Seq.size();
 
 		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
@@ -2443,9 +2506,8 @@ namespace iMS
 		f.context = 0;
 		f.len = 3;
 		iorpt->Fields(f);
-		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
+		DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
 		delete iorpt;
-
 
 		if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 2) {}
 		else {
@@ -2502,7 +2564,7 @@ namespace iMS
 		v.push_back(entries & 0xff);
 		v.push_back(entries >> 8);
 		iorpt->Payload<std::vector<std::uint8_t>>(v);
-		Resp = myiMSConn->SendMsgBlocking(*iorpt);
+		Resp = conn->SendMsgBlocking(*iorpt);
 		if (!Resp.Done() || Resp.GeneralError()) {
 			BOOST_LOG_SEV(lg::get(), sev::error) << "Sequence Download: Sequence creation failed.  Insufficient device memory for sequence entries";
 			p_Impl->m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_ERROR, 0);
@@ -2517,7 +2579,7 @@ namespace iMS
 			f = iorpt->Fields();
 
 			const std::shared_ptr<SequenceEntry> seq_entry = *it;
-			f.context = FormatSequenceEntry(*it, p_Impl->myiMS, v);
+			f.context = FormatSequenceEntry(*it, ims, v);
 			if (f.context == 0) {
 				delete iorpt;
 				return false;
@@ -2525,7 +2587,7 @@ namespace iMS
 			iorpt->Fields(f);
 
 			iorpt->Payload<std::vector<std::uint8_t>>(v);
-			Resp = myiMSConn->SendMsgBlocking(*iorpt);
+			Resp = conn->SendMsgBlocking(*iorpt);
 			if (!Resp.Done() || Resp.GeneralError()) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "Sequence Download: Sequence creation failed.  Error on sequence entry " << entry;
 				p_Impl->m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_ERROR, entry);
@@ -2560,7 +2622,7 @@ namespace iMS
 		}
 
 		iorpt->Payload<std::vector<std::uint8_t>>(v);
-		Resp = myiMSConn->SendMsgBlocking(*iorpt);
+		Resp = conn->SendMsgBlocking(*iorpt);
 		if (!Resp.Done() || Resp.GeneralError()) {
 			BOOST_LOG_SEV(lg::get(), sev::error) << "Sequence Download: Sequence commit failed.";
 			p_Impl->m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_FAIL_TRANSFER_ABORT, 0);
@@ -2586,7 +2648,6 @@ namespace iMS
 	// Sequence Downloading Thread
 	void SequenceDownload::Impl::DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-		IConnectionManager* const myiMSConn = myiMS.Connection();
 		HostReport* iorpt;
 
 		while (true) {
@@ -2599,8 +2660,12 @@ namespace iMS
 			if (!running) break;
             downloadRequested = false;
 
+            auto ims = m_ims.lock();
+            if (!ims) break;
+            auto conn = ims->Connection();
+
 			// Create Byte Vector
-			std::uint32_t BytesInSequenceBuffer = FormatSequenceBuffer(m_Seq, myiMS, *m_seqdata);
+			std::uint32_t BytesInSequenceBuffer = FormatSequenceBuffer(m_Seq, ims, *m_seqdata);
 			if (BytesInSequenceBuffer == 0) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "FormatSequenceBuffer: Unable to create sequence buffer";
 				m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_ERROR, 0);
@@ -2650,7 +2715,7 @@ namespace iMS
 				v.push_back((entries >> 24) & 0xff);
 			}
 			iorpt->Payload<std::vector<std::uint8_t>>(v);
-			DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
+			DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
 			if (!Resp.Done() || Resp.GeneralError()) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "Sequence Download (DownloadWorker): Sequence creation failed.  Insufficient device memory for sequence entries";
 				m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_ERROR, 0);
@@ -2695,7 +2760,7 @@ namespace iMS
 					}
 				}
 				boost::container::deque<std::uint8_t> copy_buf(boost::make_move_iterator(bufs), boost::make_move_iterator(bufe));
-				myiMSConn->MemoryDownload(copy_buf, SeqMemoryAddress, 0, uuid);
+				conn->MemoryDownload(copy_buf, SeqMemoryAddress, 0, uuid);
 				uuid[0]++;
 
 				while (dmah->Busy()) {
@@ -2746,7 +2811,7 @@ namespace iMS
 				}
 
 				iorpt->Payload<std::vector<std::uint8_t>>(v);
-				myiMSConn->SendMsg(*iorpt);
+				conn->SendMsg(*iorpt);
 				delete iorpt;
 
 				m_Event->Trigger<int>((void*)this, DownloadEvents::DOWNLOAD_FINISHED, tfr_size);
@@ -2807,7 +2872,7 @@ namespace iMS
 	class SequenceManager::Impl
 	{
 	public:
-		Impl(const IMSSystem&);
+		Impl(std::shared_ptr<IMSSystem>);
 		~Impl();
 
 		std::unique_ptr<SequenceEventTrigger> m_Event;
@@ -2823,52 +2888,56 @@ namespace iMS
 		};
 		ResponseReceiver* Receiver;
 
-		const IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 	};
 
-	SequenceManager::Impl::Impl(const IMSSystem& ims) :
+	SequenceManager::Impl::Impl(std::shared_ptr<IMSSystem> ims) :
 		m_Event(new SequenceEventTrigger()),
 		Receiver(new ResponseReceiver(this)),
-		myiMS(ims)
+		m_ims(ims)
 	{
 		// Subscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		if (myiMS.Ctlr().GetVersion().revision > 46) {
-			myiMSConn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+		IConnectionManager * const conn = ims->Connection();
+		if (ims->Ctlr().GetVersion().revision > 46) {
+			conn->MessageEventSubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
 		}
 
 	}
 
 	SequenceManager::Impl::~Impl() 
 	{
-		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		if (myiMS.Ctlr().GetVersion().revision > 46)
-			myiMSConn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+        with_locked(m_ims, [&](std::shared_ptr<IMSSystem> ims) {               
+            // Unsubscribe listener
+            auto conn = ims->Connection();
+            if (ims->Ctlr().GetVersion().revision > 46)
+                conn->MessageEventUnsubscribe(MessageEvents::INTERRUPT_RECEIVED, Receiver);
+        });
 
 		delete Receiver;
 	}
 
-	SequenceManager::SequenceManager(const IMSSystem& ims) : p_Impl(new Impl(ims)) {}
+	SequenceManager::SequenceManager(std::shared_ptr<IMSSystem> ims) : p_Impl(new Impl(ims)) {}
 
 	SequenceManager::~SequenceManager() { delete p_Impl; p_Impl = nullptr; }
 
 	bool SequenceManager::StartSequenceQueue(const SequenceManager::SeqConfiguration& cfg, ImageTrigger start_trig)
 	{
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return false;
+        auto conn = ims->Connection();
+
 		// Make sure Controller & Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+		if (!ims->Ctlr().IsValid()) return false;
+		if (!ims->Synth().IsValid()) return false;
 
 		// Sequences require interrupts, which are only available on Controller firmware versions > 46
-		if (p_Impl->myiMS.Ctlr().GetVersion().revision <= 46) {
+		if (ims->Ctlr().GetVersion().revision <= 46) {
 			BOOST_LOG_SEV(lg::get(), sev::error) << "Sequence Playback failed: Require Controller F/W revision > 46. Yours = " << 
-				p_Impl->myiMS.Ctlr().GetVersion().revision;
+				ims->Ctlr().GetVersion().revision;
 			return false;
 		}
 
-
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
+		IMSController::Capabilities cap = ims->Ctlr().GetCap();
 
 		if (!cap.FastImageTransfer) return false;
 
@@ -2877,7 +2946,7 @@ namespace iMS
 			HostReport* iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Img_FormatLo);
 			iorpt->Payload<uint32_t>(0x80000fff);
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
+			if (NullMessage == conn->SendMsg(*iorpt))
 			{
 				delete iorpt;
 				return false;
@@ -2920,7 +2989,7 @@ namespace iMS
 			v.push_back(Play);
 
 			iorpt->Payload < std::vector<std::uint8_t>>(v);
-			myiMSConn->SendMsg(*iorpt);
+			conn->SendMsg(*iorpt);
 			delete iorpt;
 		}
 
@@ -2931,213 +3000,238 @@ namespace iMS
 
 	void SequenceManager::SendHostTrigger()
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return;
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_USR_Trig);
-		myiMSConn->SendMsg(*iorpt);
-		delete iorpt;
-	}
+        with_locked(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) {  
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return;
+            HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_USR_Trig);
+            ims->Connection()->SendMsg(*iorpt);
+            delete iorpt;
+        });
+	}   
 
 	bool SequenceManager::Stop(ImagePlayer::StopStyle style)
 	{
-		// Make sure Controller & Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {
+            // Make sure Controller & Synthesiser are present
+            if (!ims->Ctlr().IsValid()) return false;
+            if (!ims->Synth().IsValid()) return false;
 
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
-		if (!cap.FastImageTransfer) {
-			return false;
-		}
+            IMSController::Capabilities cap = ims->Ctlr().GetCap();
+            if (!cap.FastImageTransfer) {
+                return false;
+            }
 
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport* iorpt;
+            IConnectionManager* const conn = ims->Connection();
+            HostReport* iorpt;
 
-		iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Stop);
-		if (ImagePlayer::StopStyle::IMMEDIATELY == style)
-		{
-			// Force Stop Image
-			BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Force Stop request sent";
-			iorpt->Payload<std::uint8_t>(0);
-		}
-		else {
-			// Gracefully Stop Image at end of currenr repeat
-			BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Graceful Stop request sent";
-			iorpt->Payload<std::uint8_t>(1);
-		}
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Stop);
+            if (ImagePlayer::StopStyle::IMMEDIATELY == style)
+            {
+                // Force Stop Image
+                BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Force Stop request sent";
+                iorpt->Payload<std::uint8_t>(0);
+            }
+            else {
+                // Gracefully Stop Image at end of currenr repeat
+                BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Graceful Stop request sent";
+                iorpt->Payload<std::uint8_t>(1);
+            }
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false); 
 	}
 
 	bool SequenceManager::StopAtEndOfSequence()
 	{
-		// Make sure Controller & Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {        
+            // Make sure Controller & Synthesiser are present
+            if (!ims->Ctlr().IsValid()) return false;
+            if (!ims->Synth().IsValid()) return false;
 
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
-		if (!cap.FastImageTransfer) {
-			return false;
-		}
+            IMSController::Capabilities cap = ims->Ctlr().GetCap();
+            if (!cap.FastImageTransfer) {
+                return false;
+            }
 
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport* iorpt;
+            IConnectionManager* const conn = ims->Connection();
+            HostReport* iorpt;
 
-		iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Stop);
+            iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Stop);
 
-		BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Programmed Stop (end of sequence) request sent";
-		iorpt->Payload<std::uint8_t>(2);
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Programmed Stop (end of sequence) request sent";
+            iorpt->Payload<std::uint8_t>(2);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);        
 	}
 
 	bool SequenceManager::Pause(ImagePlayer::StopStyle style)
 	{
-		// Make sure Controller & Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {           
+            // Make sure Controller & Synthesiser are present
+            if (!ims->Ctlr().IsValid()) return false;
+            if (!ims->Synth().IsValid()) return false;
 
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
-		if (!cap.FastImageTransfer) {
-			return false;
-		}
+            IMSController::Capabilities cap = ims->Ctlr().GetCap();
+            if (!cap.FastImageTransfer) {
+                return false;
+            }
 
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport* iorpt;
+            IConnectionManager* const conn = ims->Connection();
+            HostReport* iorpt;
 
-		iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Pause);
-		if (ImagePlayer::StopStyle::IMMEDIATELY == style)
-		{
-			// Force Stop Image
-			BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Immediate Pause request sent";
-			iorpt->Payload<std::uint8_t>(0);
-		}
-		else {
-			// Gracefully Stop Image at end of currenr repeat
-			BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Pause after Entry request sent";
-			iorpt->Payload<std::uint8_t>(1);
-		}
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Pause);
+            if (ImagePlayer::StopStyle::IMMEDIATELY == style)
+            {
+                // Force Stop Image
+                BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Immediate Pause request sent";
+                iorpt->Payload<std::uint8_t>(0);
+            }
+            else {
+                // Gracefully Stop Image at end of currenr repeat
+                BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Pause after Entry request sent";
+                iorpt->Payload<std::uint8_t>(1);
+            }
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);          
 	}
 
 	bool SequenceManager::Resume()
 	{
-		// Make sure Controller & Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            // Make sure Controller & Synthesiser are present
+            if (!ims->Ctlr().IsValid()) return false;
+            if (!ims->Synth().IsValid()) return false;
 
-		IMSController::Capabilities cap = p_Impl->myiMS.Ctlr().GetCap();
-		if (!cap.FastImageTransfer) {
-			return false;
-		}
+            IMSController::Capabilities cap = ims->Ctlr().GetCap();
+            if (!cap.FastImageTransfer) {
+                return false;
+            }
 
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport* iorpt;
+            IConnectionManager* const conn = ims->Connection();
+            HostReport* iorpt;
 
-		iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Restart);
-		BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Resume request sent";
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            iorpt = new HostReport(HostReport::Actions::CTRLR_SEQPLAY, HostReport::Dir::WRITE, CTRLR_SEQPLAY_Seq_Restart);
+            BOOST_LOG_SEV(lg::get(), sev::info) << "Sequence Resume request sent";
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);   
 	}
 
 	std::uint16_t SequenceManager::QueueCount()
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return -1;
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = 0;
-		f.len = 2;
-		iorpt->Fields(f);
-		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-		delete iorpt;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> std::uint16_t
+        {         
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return -1;
+            IConnectionManager * const conn = ims->Connection();
+            HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = 0;
+            f.len = 2;
+            iorpt->Fields(f);
+            DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+            delete iorpt;
 
-		if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 2) return 0;
-		else {
-			return Resp.Payload<std::uint16_t>();
-		}
+            if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 2) return 0;
+            else {
+                return Resp.Payload<std::uint16_t>();
+            }
+        }).value_or(0);         
 	}
 
 	bool SequenceManager::GetSequenceUUID(int index, std::array<std::uint8_t, 16>& uuid)
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, index);
-		ReportFields f = iorpt->Fields();
-		f.context = 1;
-		f.len = 16;
-		iorpt->Fields(f);
-		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-		delete iorpt;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {        
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
+            IConnectionManager * const conn = ims->Connection();
+            HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, index);
+            ReportFields f = iorpt->Fields();
+            f.context = 1;
+            f.len = 16;
+            iorpt->Fields(f);
+            DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+            delete iorpt;
 
-		if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 16) return false;
-		else {
-			std::vector<std::uint8_t> v = Resp.Payload<std::vector<std::uint8_t>>();
-			v.resize(16);
-			std::copy(v.cbegin(), v.cend(), uuid.begin());
-		}
-		return true;
+            if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 16) return false;
+            else {
+                std::vector<std::uint8_t> v = Resp.Payload<std::vector<std::uint8_t>>();
+                v.resize(16);
+                std::copy(v.cbegin(), v.cend(), uuid.begin());
+            }
+            return true;
+        }).value_or(false);          
 	}
 
 	bool SequenceManager::QueueClear()
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = 5;
-		f.len = 0;
-		iorpt->Fields(f);
-		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-		delete iorpt;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {          
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
+            IConnectionManager * const conn = ims->Connection();
+            HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = 5;
+            f.len = 0;
+            iorpt->Fields(f);
+            DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+            delete iorpt;
 
-		if (!Resp.Done() || Resp.GeneralError()) return false;
-		return true;
+            if (!Resp.Done() || Resp.GeneralError()) return false;
+            return true;
+        }).value_or(false); 
 	}
 
 	bool SequenceManager::RemoveSequence(const std::array<std::uint8_t, 16>& uuid)
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = 4;
-		f.len = 16;
-		iorpt->Fields(f);
-		std::vector<std::uint8_t> v;
-		v.assign(uuid.cbegin(), uuid.cbegin() + 16);
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
+            IConnectionManager * const conn = ims->Connection();
+            HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = 4;
+            f.len = 16;
+            iorpt->Fields(f);
+            std::vector<std::uint8_t> v;
+            v.assign(uuid.cbegin(), uuid.cbegin() + 16);
 
-		iorpt->Payload<std::vector<std::uint8_t>>(v);
-		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-		delete iorpt;
+            iorpt->Payload<std::vector<std::uint8_t>>(v);
+            DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+            delete iorpt;
 
-		if (!Resp.Done() || Resp.GeneralError()) return false;
-		return true;
+            if (!Resp.Done() || Resp.GeneralError()) return false;
+            return true;
+        }).value_or(false); 
 	}
 
 	bool SequenceManager::RemoveSequence(const ImageSequence& seq)
@@ -3148,56 +3242,62 @@ namespace iMS
 
 	bool SequenceManager::UpdateTermination(const std::array<std::uint8_t, 16>& uuid, SequenceTermAction term, int term_val)
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = 3;
-		f.len = 21;
-		iorpt->Fields(f);
-		std::vector<std::uint8_t> v;
-		v.assign(uuid.cbegin(), uuid.cbegin() + 16);
-		v.push_back(static_cast<std::uint8_t>(term));
-		v.push_back(static_cast<std::uint8_t>(term_val & 0xff));
-		v.push_back(static_cast<std::uint8_t>((term_val >> 8) & 0xff));
-		v.push_back(static_cast<std::uint8_t>((term_val >> 16) & 0xff));
-		v.push_back(static_cast<std::uint8_t>((term_val >> 24) & 0xff));
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {          
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
+            IConnectionManager * const conn = ims->Connection();
+            HostReport * iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = 3;
+            f.len = 21;
+            iorpt->Fields(f);
+            std::vector<std::uint8_t> v;
+            v.assign(uuid.cbegin(), uuid.cbegin() + 16);
+            v.push_back(static_cast<std::uint8_t>(term));
+            v.push_back(static_cast<std::uint8_t>(term_val & 0xff));
+            v.push_back(static_cast<std::uint8_t>((term_val >> 8) & 0xff));
+            v.push_back(static_cast<std::uint8_t>((term_val >> 16) & 0xff));
+            v.push_back(static_cast<std::uint8_t>((term_val >> 24) & 0xff));
 
-		iorpt->Payload<std::vector<std::uint8_t>>(v);
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            iorpt->Payload<std::vector<std::uint8_t>>(v);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false); 
 	}
 
 	bool SequenceManager::UpdateTermination(const std::array<std::uint8_t, 16>& uuid, SequenceTermAction term, const std::array<std::uint8_t, 16>& term_uuid)
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = 3;
-		f.len = 37;
-		iorpt->Fields(f);
-		std::vector<std::uint8_t> v;
-		v.assign(uuid.cbegin(), uuid.cbegin() + 16);
-		v.push_back(static_cast<std::uint8_t>(term));
-		v.insert(v.end(), { 0, 0, 0, 0 });
-		v.insert(v.end(), term_uuid.begin(), term_uuid.begin() + 16);
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {          
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
+            IConnectionManager* const conn = ims->Connection();
+            HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = 3;
+            f.len = 37;
+            iorpt->Fields(f);
+            std::vector<std::uint8_t> v;
+            v.assign(uuid.cbegin(), uuid.cbegin() + 16);
+            v.push_back(static_cast<std::uint8_t>(term));
+            v.insert(v.end(), { 0, 0, 0, 0 });
+            v.insert(v.end(), term_uuid.begin(), term_uuid.begin() + 16);
 
-		iorpt->Payload<std::vector<std::uint8_t>>(v);
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            iorpt->Payload<std::vector<std::uint8_t>>(v);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);         
 	}
 
 	bool SequenceManager::UpdateTermination(ImageSequence& seq, SequenceTermAction term, int term_val)
@@ -3220,126 +3320,139 @@ namespace iMS
 
 	bool SequenceManager::MoveSequence(const ImageSequence& dest, const ImageSequence& src)
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = 9;
-		f.len = 32;
-		iorpt->Fields(f);
-		std::vector<std::uint8_t> v;
-		auto s = src.GetUUID();
-		auto d = dest.GetUUID();
-		v.assign(d.cbegin(), d.cbegin() + 16);
-		v.insert(v.end(), s.cbegin(), s.cbegin() + 16);
-		iorpt->Payload<std::vector<std::uint8_t>>(v);
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
+            IConnectionManager* const conn = ims->Connection();
+            HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = 9;
+            f.len = 32;
+            iorpt->Fields(f);
+            std::vector<std::uint8_t> v;
+            auto s = src.GetUUID();
+            auto d = dest.GetUUID();
+            v.assign(d.cbegin(), d.cbegin() + 16);
+            v.insert(v.end(), s.cbegin(), s.cbegin() + 16);
+            iorpt->Payload<std::vector<std::uint8_t>>(v);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);        
 	}
 
 	bool SequenceManager::MoveSequenceToEnd(const ImageSequence& src)
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = 10;
-		f.len = 16;
-		iorpt->Fields(f);
-		std::vector<std::uint8_t> v;
-		auto s = src.GetUUID();
-		v.assign(s.cbegin(), s.cbegin() + 16);
-		iorpt->Payload<std::vector<std::uint8_t>>(v);
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {          
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
+            IConnectionManager* const conn = ims->Connection();
+            HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::WRITE, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = 10;
+            f.len = 16;
+            iorpt->Fields(f);
+            std::vector<std::uint8_t> v;
+            auto s = src.GetUUID();
+            v.assign(s.cbegin(), s.cbegin() + 16);
+            iorpt->Payload<std::vector<std::uint8_t>>(v);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);           
 	}
 
 	bool SequenceManager::GetCurrentPosition()
 	{
-		// Make sure Controller is present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
-		ReportFields f = iorpt->Fields();
-		f.context = 8;
-		f.len = 21;
-		iorpt->Fields(f);
-		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-		delete iorpt;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {          
+            // Make sure Controller is present
+            if (!ims->Ctlr().IsValid()) return false;
+            IConnectionManager* const conn = ims->Connection();
+            HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_SEQQUEUE, HostReport::Dir::READ, 0);
+            ReportFields f = iorpt->Fields();
+            f.context = 8;
+            f.len = 21;
+            iorpt->Fields(f);
+            DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+            delete iorpt;
 
-		if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 21) return false;
-		else {
-			int value = 0;
-			auto d = Resp.Payload<std::vector<uint8_t>>();
-			value |= ((int)d[1]);
-			value |= ((int)d[2] << 8);
-			value |= ((int)d[3] << 16);
-			value |= ((int)d[4] << 24);
+            if (!Resp.Done() || Resp.GeneralError() || Resp.Fields().len < 21) return false;
+            else {
+                int value = 0;
+                auto d = Resp.Payload<std::vector<uint8_t>>();
+                value |= ((int)d[1]);
+                value |= ((int)d[2] << 8);
+                value |= ((int)d[3] << 16);
+                value |= ((int)d[4] << 24);
 
-			std::vector<uint8_t> uuid(d.begin() + 5, d.begin() + 21);
-			p_Impl->m_Event->Trigger<int, std::vector<std::uint8_t>>((void*)p_Impl, SequenceEvents::SEQUENCE_POSITION, value, uuid);
+                std::vector<uint8_t> uuid(d.begin() + 5, d.begin() + 21);
+                p_Impl->m_Event->Trigger<int, std::vector<std::uint8_t>>((void*)p_Impl, SequenceEvents::SEQUENCE_POSITION, value, uuid);
 
-			return true;
-		}
+                return true;
+            }
+        }).value_or(false);           
 	}
 
 	// Notify application when something happens
 	void SequenceManager::SequenceEventSubscribe(const int message, IEventHandler* handler)
 	{
 		p_Impl->m_Event->Subscribe(message, handler);
-		if (p_Impl->myiMS.Ctlr().GetVersion().revision >= 38) {
-			int IntrMask;
-			switch (message) {
-			case SequenceEvents::SEQUENCE_START: IntrMask = (int)(1 << CTRLR_INTERRUPT_SEQUENCE_START); break;
-			case SequenceEvents::SEQUENCE_FINISHED: IntrMask = (int)(1 << CTRLR_INTERRUPT_SEQUENCE_FINISHED); break;
-			case SequenceEvents::SEQUENCE_ERROR: IntrMask = (int)(1 << CTRLR_INTERRUPT_SEQUENCE_ERROR); break;
-			case SequenceEvents::SEQUENCE_TONE: IntrMask = (int)(1 << CTRLR_INTERRUPT_TONE_START); break;
-			default: IntrMask = 0;
-			}
-			HostReport *iorpt;
-			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 1);
-			iorpt->Payload<int>(IntrMask);
-			ReportFields f = iorpt->Fields();
-			f.len = sizeof(IntrMask);
-			iorpt->Fields(f);
-			p_Impl->myiMS.Connection()->SendMsg(*iorpt);
-			delete iorpt;
-		}
+        with_locked(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) {             
+            if (ims->Ctlr().GetVersion().revision >= 38) {
+                int IntrMask;
+                switch (message) {
+                case SequenceEvents::SEQUENCE_START: IntrMask = (int)(1 << CTRLR_INTERRUPT_SEQUENCE_START); break;
+                case SequenceEvents::SEQUENCE_FINISHED: IntrMask = (int)(1 << CTRLR_INTERRUPT_SEQUENCE_FINISHED); break;
+                case SequenceEvents::SEQUENCE_ERROR: IntrMask = (int)(1 << CTRLR_INTERRUPT_SEQUENCE_ERROR); break;
+                case SequenceEvents::SEQUENCE_TONE: IntrMask = (int)(1 << CTRLR_INTERRUPT_TONE_START); break;
+                default: IntrMask = 0;
+                }
+                HostReport *iorpt;
+                iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 1);
+                iorpt->Payload<int>(IntrMask);
+                ReportFields f = iorpt->Fields();
+                f.len = sizeof(IntrMask);
+                iorpt->Fields(f);
+                ims->Connection()->SendMsg(*iorpt);
+                delete iorpt;
+            }
+        });
 	}
 
 	void SequenceManager::SequenceEventUnsubscribe(const int message, const IEventHandler* handler)
 	{
 		p_Impl->m_Event->Unsubscribe(message, handler);
-		int IntrMask;
-		if (!p_Impl->m_Event->Subscribers(message)) {
-			switch (message) {
-			case SequenceEvents::SEQUENCE_START: IntrMask = (int)~(1 << CTRLR_INTERRUPT_SEQUENCE_START); break;
-			case SequenceEvents::SEQUENCE_FINISHED: IntrMask = (int)~(1 << CTRLR_INTERRUPT_SEQUENCE_FINISHED); break;
-			case SequenceEvents::SEQUENCE_ERROR: IntrMask = (int)~(1 << CTRLR_INTERRUPT_SEQUENCE_ERROR); break;
-			case SequenceEvents::SEQUENCE_TONE: IntrMask = (int)~(1 << CTRLR_INTERRUPT_TONE_START); break;
-			default: IntrMask = 0;
-			}
-			HostReport *iorpt;
-			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
-			iorpt->Payload<int>(IntrMask);
-			ReportFields f = iorpt->Fields();
-			f.len = sizeof(IntrMask);
-			iorpt->Fields(f);
-			p_Impl->myiMS.Connection()->SendMsg(*iorpt);
-			delete iorpt;
-		}
+        with_locked(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) {   
+            int IntrMask;
+            if (!p_Impl->m_Event->Subscribers(message)) {
+                switch (message) {
+                case SequenceEvents::SEQUENCE_START: IntrMask = (int)~(1 << CTRLR_INTERRUPT_SEQUENCE_START); break;
+                case SequenceEvents::SEQUENCE_FINISHED: IntrMask = (int)~(1 << CTRLR_INTERRUPT_SEQUENCE_FINISHED); break;
+                case SequenceEvents::SEQUENCE_ERROR: IntrMask = (int)~(1 << CTRLR_INTERRUPT_SEQUENCE_ERROR); break;
+                case SequenceEvents::SEQUENCE_TONE: IntrMask = (int)~(1 << CTRLR_INTERRUPT_TONE_START); break;
+                default: IntrMask = 0;
+                }
+                HostReport *iorpt;
+                iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
+                iorpt->Payload<int>(IntrMask);
+                ReportFields f = iorpt->Fields();
+                f.len = sizeof(IntrMask);
+                iorpt->Fields(f);
+                ims->Connection()->SendMsg(*iorpt);
+                delete iorpt;
+            }
+        });        
 	}
 
 	void SequenceManager::Impl::ResponseReceiver::EventAction(void* sender, const int message, const int param)

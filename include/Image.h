@@ -239,7 +239,7 @@ namespace iMS {
 		/// phase and amplitude depth according to iMS capability.  Frequency depth is set to 2 bytes
 		/// regardless of iMS capability for backwards compatibility.
 		/// 
-		ImageFormat(const IMSSystem& ims);
+		ImageFormat(std::shared_ptr<IMSSystem> ims);
 		~ImageFormat() {}
 
 		/// \brief Copy Constructor

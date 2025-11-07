@@ -63,7 +63,7 @@ namespace iMS {
 		const std::string Ident = "CM_SERIAL";
 		ListBase<std::string> PortMask;
 
-		std::vector<IMSSystem> ListConnectedDevices();
+		std::vector<std::shared_ptr<IMSSystem>> ListConnectedDevices();
 
 		std::map<std::string, std::string>* rs422_list = nullptr;
 		HANDLE fp;
@@ -97,15 +97,15 @@ namespace iMS {
 		}
 	}
 	
-	std::vector<IMSSystem> CM_RS422::Impl::ListConnectedDevices()
+	std::vector<std::shared_ptr<IMSSystem>> CM_RS422::Impl::ListConnectedDevices()
 	{
 		//CEnumerateSerial::CPortsArray ports;
 		CEnumerateSerial::CNamesArray names;
-		std::vector<IMSSystem> IMSList;
+		std::vector<std::shared_ptr<IMSSystem>> IMSList;
 		std::string port;
 
 		// If we have an open connection, we can't allow the driver to be opened again to look for devices
-		if (m_parent->Open()) return (std::vector<IMSSystem>());
+		if (m_parent->Open()) return (std::vector<std::shared_ptr<IMSSystem>>());
 
 #ifdef WIN32
 		// Get available ports
@@ -173,11 +173,11 @@ namespace iMS {
 				{
 					// Found a suitable connection interface, let's query its contents.
 					// An FTDI based board can have a maximum of one controller and one synthesiser.
-					IMSSystem thisiMS(m_parent, serial);
+					auto thisiMS = IMSSystem::Create (m_parent, serial);
 
-					thisiMS.Initialise();
+					thisiMS->Initialise();
 
-					if (thisiMS.Ctlr().IsValid() || thisiMS.Synth().IsValid()) {
+					if (thisiMS->Ctlr().IsValid() || thisiMS->Synth().IsValid()) {
 						IMSList.push_back(thisiMS);
 					}
 				}
@@ -213,12 +213,12 @@ namespace iMS {
 		return pImpl->Ident;
 	}
 
-	std::vector<IMSSystem> CM_RS422::Discover(const ListBase<std::string>& PortMask)
+	std::vector<std::shared_ptr<IMSSystem>> CM_RS422::Discover(const ListBase<std::string>& PortMask)
 	{
 //		std::cout << "CM_RS422::Discover()" << std::endl;
 		pImpl->PortMask = PortMask;
 		pImpl->rs422_list = new std::map<std::string, std::string>();
-		std::vector<IMSSystem> v = pImpl->ListConnectedDevices();
+		std::vector<std::shared_ptr<IMSSystem>> v = pImpl->ListConnectedDevices();
 		return v;
 	}
 

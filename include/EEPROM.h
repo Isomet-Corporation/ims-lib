@@ -86,7 +86,7 @@ namespace iMS
 	class EEPROM
 	{
 	public:
-		EEPROM(const IMSSystem& ims);
+		EEPROM(std::shared_ptr<IMSSystem> ims);
 		~EEPROM();
 		///
 		/// The iMS Synthesiser contains a 1Mbit EEPROM.  Some of it is reserved for system usage,
@@ -200,8 +200,6 @@ namespace iMS
 
 		class Impl;
 		Impl * p_Impl;
-
-		const IMSSystem& myiMS;
 	};
 
 }

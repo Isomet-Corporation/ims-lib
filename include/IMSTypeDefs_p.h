@@ -52,14 +52,14 @@ namespace iMS
 		/// integer representation used by the Image for Internal Oscillator frequency
 		///
 		/// Not intended for use in application code
-		static unsigned int RenderAsPointRate(const IMSSystem&, const Frequency, const bool PrescalerDisable = false);
+		static unsigned int RenderAsPointRate(std::shared_ptr<IMSSystem>, const Frequency, const bool PrescalerDisable = false);
 		/// \brief Used internally by the library to convert a Frequency object into a hardware-dependent
 		/// integer representation used by the Image for RF Output frequency
 		///
 		/// Not intended for use in application code
-		static unsigned int RenderAsImagePoint(const IMSSystem&, const MHz);
-		static unsigned int RenderAsStaticOffset(const IMSSystem& system, const MHz freq, int add_sub);
-		static unsigned int RenderAsDDSValue(const IMSSystem&, const MHz);
+		static unsigned int RenderAsImagePoint(std::shared_ptr<IMSSystem>, const MHz);
+		static unsigned int RenderAsStaticOffset(std::shared_ptr<IMSSystem> system, const MHz freq, int add_sub);
+		static unsigned int RenderAsDDSValue(std::shared_ptr<IMSSystem>, const MHz);
 	private:
 		FrequencyRenderer() {}
 	};
@@ -72,13 +72,13 @@ namespace iMS
 		/// integer representation used by the Image for RF Output amplitude
 		///
 		/// Not intended for use in application code
-		static unsigned int RenderAsImagePoint(const IMSSystem&, const Percent);
+		static unsigned int RenderAsImagePoint(std::shared_ptr<IMSSystem>, const Percent);
 
 		/// \brief Used internally by the library to convert a Percent object into a hardware-dependent
 		/// integer representation used by the Compensation Table for Compensation amplitude
 		///
 		/// Not intended for use in application code
-		static unsigned int RenderAsCompensationPoint(const IMSSystem&, const Percent);
+		static unsigned int RenderAsCompensationPoint(std::shared_ptr<IMSSystem>, const Percent);
 
 		/// \brief Used internally by the library to convert a Percent object into a hardware-dependent
 		/// integer representation used by the Calibration Tone for Single Tone amplitude
@@ -86,8 +86,8 @@ namespace iMS
 		/// Not intended for use in application code
 		///
 		/// \since 1.1.0
-		static unsigned int RenderAsCalibrationTone(const IMSSystem&, const Percent);
-		static unsigned int RenderAsChirp(const IMSSystem&, const Percent);
+		static unsigned int RenderAsCalibrationTone(std::shared_ptr<IMSSystem>, const Percent);
+		static unsigned int RenderAsChirp(std::shared_ptr<IMSSystem>, const Percent);
 	private:
 		AmplitudeRenderer() {}
 		static const int CalibAmplBits = 10;
@@ -100,13 +100,13 @@ namespace iMS
 		/// integer representation used by the Image for RF Output phase
 		///
 		/// Not intended for use in application code
-		static unsigned int RenderAsImagePoint(const IMSSystem&, const Degrees);
+		static unsigned int RenderAsImagePoint(std::shared_ptr<IMSSystem>, const Degrees);
 
 		/// \brief Used internally by the library to convert a Degrees object into a hardware-dependent
 		/// integer representation used by the Compensation Table for channel phase increment
 		///
 		/// Not intended for use in application code
-		static unsigned int RenderAsCompensationPoint(const IMSSystem&, const Degrees);
+		static unsigned int RenderAsCompensationPoint(std::shared_ptr<IMSSystem>, const Degrees);
 
 		/// \brief Used internally by the library to convert a Degrees object into a hardware-dependent
 		/// integer representation used by the Calibration Tone for channel phase increment
@@ -114,8 +114,8 @@ namespace iMS
 		/// Not intended for use in application code
 		///
 		/// \since 1.1.0
-		static unsigned int RenderAsCalibrationTone(const IMSSystem&, const Degrees);
-		static unsigned int RenderAsChirp(const IMSSystem&, const Degrees);
+		static unsigned int RenderAsCalibrationTone(std::shared_ptr<IMSSystem>, const Degrees);
+		static unsigned int RenderAsChirp(std::shared_ptr<IMSSystem>, const Degrees);
 	private:
 		static const int CalibPhaseBits = 14;
 

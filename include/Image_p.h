@@ -74,7 +74,7 @@ namespace iMS {
 	class ImageTableReader
 	{
 	public:
-		ImageTableReader(const IMSSystem& ims);
+		ImageTableReader(std::shared_ptr<IMSSystem> ims);
 		~ImageTableReader();
 		ImageTable Readback();
 	private:
@@ -83,7 +83,7 @@ namespace iMS {
 		const ImageTableReader &operator =(const ImageTableReader &);
 
 		// Declare IMS System
-		const IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 	};
 
 }

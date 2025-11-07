@@ -241,7 +241,7 @@ namespace iMS
 		///
 		/// \param[in] ims A const reference to the iMS System whose FileSystemTable is to be viewed.
 		/// \since 1.1
-		FileSystemTableViewer(const IMSSystem& ims) : myiMS(ims) {};
+		FileSystemTableViewer(std::shared_ptr<IMSSystem> ims) : m_ims(ims) {};
 		//@}
 
 		/// \name FileSystem Table Information
@@ -267,7 +267,7 @@ namespace iMS
 		///
 		/// For example:
 		/// \code
-		/// FileSystemTableViewer fstv(myiMS);
+		/// FileSystemTableViewer fstv(m_ims);
 		/// if (fstv.IsValid()) {
 		///		int length = 0;
 		///		for (int i=0; i<fstv.Entries(); i++) {
@@ -284,7 +284,7 @@ namespace iMS
 		/// 
 		/// Example usage:
 		/// \code
-		/// FileSystemTableViewer fstv(myiMS);
+		/// FileSystemTableViewer fstv(m_ims);
 		/// if (!fstv.IsValid()) {
 		///		std::cout << "No Filesystem found" << std::endl;
 		///	}
@@ -311,7 +311,7 @@ namespace iMS
 		FileSystemTableViewer(const FileSystemTableViewer& other);
 		FileSystemTableViewer& operator= (const FileSystemTableViewer& other);
 
-		const IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 	};
 
 	///
@@ -338,7 +338,7 @@ namespace iMS
 		///
 		/// \param[in] ims A const reference to the iMS System whose FileSystemTable is to be operated upon.
 		/// \since 1.1
-		FileSystemManager(IMSSystem& ims);
+		FileSystemManager(std::shared_ptr<IMSSystem> ims);
 		/// \brief Destructor for FileSystemManager object
 		~FileSystemManager();
 		//@}
@@ -472,13 +472,13 @@ namespace iMS
 		/// \param[in] ims A const reference to the iMS System whose FileSystemTable should be used for reading back data
 		/// \param[in] index the Entry in the FileSystemTable containing USER_DATA file data to readback
 		/// \since 1.1
-		UserFileReader(const IMSSystem& ims, const FileSystemIndex index);
+		UserFileReader(std::shared_ptr<IMSSystem> ims, const FileSystemIndex index);
 		/// \brief Constructor for UserFileReader Object (referenced by File Name)
 		///
 		/// \param[in] ims A const reference to the iMS System whose FileSystemTable should be used for reading back data
 		/// \param[in] FileName a string representing the name of the entry containing USER_DATA file data to readback
 		/// \since 1.1
-		UserFileReader(const IMSSystem& ims, const std::string& FileName);
+		UserFileReader(std::shared_ptr<IMSSystem> ims, const std::string& FileName);
 		/// \brief UserFileReader destructor
 		~UserFileReader();
 		//@}
@@ -536,7 +536,7 @@ namespace iMS
 		/// \param[in] file_data an unformatted byte array containing the User File contents to program
 		/// \param[in] file_name a string representing the name of the file to be allocated in the FileSystemTable
 		/// \since 1.1
-		UserFileWriter(IMSSystem& ims, const std::vector<std::uint8_t>& file_data, const std::string file_name);
+		UserFileWriter(std::shared_ptr<IMSSystem> ims, const std::vector<std::uint8_t>& file_data, const std::string file_name);
 		/// \brief Destructor for UserFileWriter
 		~UserFileWriter();
 		//@}

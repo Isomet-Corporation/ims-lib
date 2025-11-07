@@ -154,15 +154,15 @@ namespace iMS {
 	class ToneBufferDownload::Impl
 	{
 	public:
-		Impl(IMSSystem&, const ToneBuffer& tb);
+		Impl(std::shared_ptr<IMSSystem>, const ToneBuffer& tb);
 		~Impl();
 
-		IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		const ToneBuffer& m_tb;
 
 		ToneBufferEventTrigger m_Event;
 
-		void AddPointToVector(std::vector<std::uint8_t>&, const TBEntry&, bool toEEPROM);
+		void AddPointToVector(std::shared_ptr<IMSSystem> ims, std::vector<std::uint8_t>&, const TBEntry&, bool toEEPROM);
 
 		class ResponseReceiver : public IEventHandler
 		{
@@ -197,8 +197,8 @@ namespace iMS {
 		FileSystemWriter* fsw;
 	};
 
-	ToneBufferDownload::Impl::Impl(IMSSystem& iMS, const ToneBuffer& tb) :
-		myiMS(iMS), m_tb(tb), Receiver(new ResponseReceiver(this)),
+	ToneBufferDownload::Impl::Impl(std::shared_ptr<IMSSystem> ims, const ToneBuffer& tb) :
+		m_ims(ims), m_tb(tb), Receiver(new ResponseReceiver(this)),
         downloadWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
             DownloadWorkerLoop(running, cond, mtx);
         }),
@@ -207,26 +207,28 @@ namespace iMS {
         })
 	{
 		// Subscribe listeners
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
 	}
 
 	ToneBufferDownload::Impl::~Impl() {
 		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) {         
+            auto conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        });
 
 		delete Receiver;
 	}
@@ -263,7 +265,7 @@ namespace iMS {
 		}
 	}
 
-	ToneBufferDownload::ToneBufferDownload(IMSSystem& iMS, const ToneBuffer& tb) : p_Impl(new Impl(iMS, tb))	{}
+	ToneBufferDownload::ToneBufferDownload(std::shared_ptr<IMSSystem> ims, const ToneBuffer& tb) : p_Impl(new Impl(ims, tb))	{}
 
 	ToneBufferDownload::~ToneBufferDownload() { delete p_Impl; p_Impl = nullptr; }
 
@@ -295,47 +297,50 @@ namespace iMS {
 
 	bool ToneBufferDownload::StartDownload(ToneBuffer::const_iterator first, ToneBuffer::const_iterator last)
 	{
-        BOOST_LOG_SEV(lg::get(), sev::trace) << "ToneBufferDownload::StartDownload(ToneBuffer::const_iterator first, ToneBuffer::const_iterator last)";
-		p_Impl->first = first;
-		p_Impl->last = last;
-		p_Impl->offset = static_cast<int>(std::distance(p_Impl->m_tb.cbegin(), first));
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            BOOST_LOG_SEV(lg::get(), sev::trace) << "ToneBufferDownload::StartDownload(ToneBuffer::const_iterator first, ToneBuffer::const_iterator last)";
+            p_Impl->first = first;
+            p_Impl->last = last;
+            p_Impl->offset = static_cast<int>(std::distance(p_Impl->m_tb.cbegin(), first));
 
-		// Make sure Synthesiser is present
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+            // Make sure Synthesiser is present
+            if (!ims->Synth().IsValid()) return false;
 
-        p_Impl->rxWorker.start();
-        p_Impl->downloadWorker.start();
+            p_Impl->rxWorker.start();
+            p_Impl->downloadWorker.start();
 
-        int retries=10;
-        while (retries)
-		{
-			std::unique_lock<std::mutex> lck{ p_Impl->downloadWorker.mutex(), std::try_to_lock };
+            int retries=10;
+            while (retries)
+            {
+                std::unique_lock<std::mutex> lck{ p_Impl->downloadWorker.mutex(), std::try_to_lock };
 
-			if (!lck.owns_lock()) {
-                if (!--retries) return false;
-				// Mutex lock failed, Downloader must be busy, try again later
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-				continue;
-			}
+                if (!lck.owns_lock()) {
+                    if (!--retries) return false;
+                    // Mutex lock failed, Downloader must be busy, try again later
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
 
-            std::unique_lock<std::mutex> rxlck{ p_Impl->rxWorker.mutex(), std::try_to_lock };
+                std::unique_lock<std::mutex> rxlck{ p_Impl->rxWorker.mutex(), std::try_to_lock };
 
-            if (!rxlck.owns_lock()) {
-                if (!--retries) return false;
-                // Mutex lock failed, Rx must be busy, try again later
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-				continue;
+                if (!rxlck.owns_lock()) {
+                    if (!--retries) return false;
+                    // Mutex lock failed, Rx must be busy, try again later
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+
+                p_Impl->dl_list.clear();
+                p_Impl->downloadRequested = true;
+                lck.unlock();
+
+                break;
             }
-
-			p_Impl->dl_list.clear();
-            p_Impl->downloadRequested = true;
-			lck.unlock();
-
-            break;
-		}
-		
-        p_Impl->downloadWorker.notify();
-		return true;
+            
+            p_Impl->downloadWorker.notify();
+            return true;   
+        }).value_or(false); 
 	}
 
 	void ToneBufferDownload::ToneBufferDownloadEventSubscribe(const int message, IEventHandler* handler)
@@ -348,19 +353,19 @@ namespace iMS {
 		p_Impl->m_Event.Unsubscribe(message, handler);
 	}
 
-	void ToneBufferDownload::Impl::AddPointToVector(std::vector<std::uint8_t>& ltb_data, const TBEntry& tbe, bool toEEPROM)
+	void ToneBufferDownload::Impl::AddPointToVector(std::shared_ptr<IMSSystem> ims, std::vector<std::uint8_t>& ltb_data, const TBEntry& tbe, bool toEEPROM)
 	{
-		int freqBits = myiMS.Synth().GetCap().freqBits;
+		int freqBits = ims->Synth().GetCap().freqBits;
 		// Note that for-construct here enters infinite loop as can't increment past 4
 		RFChannel chan(RFChannel::min);
 		do {
-			unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, tbe.GetFAP(chan).freq);
+			unsigned int freq = FrequencyRenderer::RenderAsImagePoint(ims, tbe.GetFAP(chan).freq);
 			if (!toEEPROM) {
 				if ((chan == RFChannel::min) || (freqBits <= 16))
 				{
 					// The first two entries were previously the lower frequency bits but became unused.  Now using them for sync data (not to EEPROM)
 					unsigned int syncd = tbe.GetSyncD();
-					std::uint16_t syncd_mod = syncd & ((1 << myiMS.Synth().GetCap().LUTSyncDBits) - 1);
+					std::uint16_t syncd_mod = syncd & ((1 << ims->Synth().GetCap().LUTSyncDBits) - 1);
 					ltb_data.push_back(static_cast<std::uint8_t>(syncd_mod & 0xFF));
 					ltb_data.push_back(static_cast<std::uint8_t>((syncd_mod >> 8) & 0xFF));
 				}
@@ -371,10 +376,10 @@ namespace iMS {
 			}
 			ltb_data.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 16)) & 0xFF));
 			ltb_data.push_back(static_cast<std::uint8_t>((freq >> (freqBits - 8)) & 0xFF));
-			std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(myiMS, tbe.GetFAP(chan).ampl);
+			std::uint16_t ampl = AmplitudeRenderer::RenderAsImagePoint(ims, tbe.GetFAP(chan).ampl);
 			ltb_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 			ltb_data.push_back(static_cast<std::uint8_t>((ampl >> 8) & 0xFF));
-			std::uint16_t phase = PhaseRenderer::RenderAsImagePoint(myiMS, tbe.GetFAP(chan).phase);
+			std::uint16_t phase = PhaseRenderer::RenderAsImagePoint(ims, tbe.GetFAP(chan).phase);
 			ltb_data.push_back(static_cast<std::uint8_t>(phase & 0xFF));
 			ltb_data.push_back(static_cast<std::uint8_t>((phase >> 8) & 0xFF));
 		} while (chan++ < RFChannel::max);
@@ -393,8 +398,11 @@ namespace iMS {
 			if (!running) break;
             downloadRequested = false;
 
+            auto ims = m_ims.lock();
+            if (!ims) break;
+            auto conn = ims->Connection();
+
 			// Download loop
-			IConnectionManager * const myiMSConn = myiMS.Connection();
 			HostReport *iorpt;
 			int index = offset;
 			int length = static_cast<int>(std::distance(first, last));
@@ -409,7 +417,7 @@ namespace iMS {
 			while (((index - offset) < length) && (it < last) && running)
 			{
 				// Add one TBEntry to vector: build packet data
-				AddPointToVector(ltb_data, (*it), false);
+				AddPointToVector(ims, ltb_data, (*it), false);
 
                 if (buf_bytes <= 0)
                 {
@@ -419,7 +427,7 @@ namespace iMS {
 
 				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ProgSyncDig);
 				iorpt->Payload<std::vector<std::uint8_t>>(ltb_data);
-				MessageHandle h = myiMSConn->SendMsg(*iorpt);
+				MessageHandle h = conn->SendMsg(*iorpt);
 				delete iorpt;
 
                 // THROTTLE: wait until dl_list has room (atomically)
@@ -439,14 +447,14 @@ namespace iMS {
 
 				ltb_data.clear();
 
-				if (myiMS.Synth().GetCap().freqBits > 16)
+				if (ims->Synth().GetCap().freqBits > 16)
 				{
-					unsigned int freq = FrequencyRenderer::RenderAsImagePoint(myiMS, it->GetFAP(RFChannel::min).freq);
-					ltb_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 32)) & 0xFF));
-					ltb_data.push_back(static_cast<std::uint8_t>((freq >> (myiMS.Synth().GetCap().freqBits - 24)) & 0xFF));
+					unsigned int freq = FrequencyRenderer::RenderAsImagePoint(ims, it->GetFAP(RFChannel::min).freq);
+					ltb_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 32)) & 0xFF));
+					ltb_data.push_back(static_cast<std::uint8_t>((freq >> (ims->Synth().GetCap().freqBits - 24)) & 0xFF));
 					iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ProgFreq0L);
 					iorpt->Payload<std::vector<std::uint8_t>>(ltb_data);
-					myiMSConn->SendMsg(*iorpt);
+					conn->SendMsg(*iorpt);
 					delete iorpt;
 				}
 
@@ -455,7 +463,7 @@ namespace iMS {
 				// Send message to program entry into an LTB index
 				iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_ProgLocal);
 				iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(index++));
-				h2 = myiMSConn->SendMsg(*iorpt);
+				h2 = conn->SendMsg(*iorpt);
 				delete iorpt;
 
 				++it;
@@ -485,7 +493,7 @@ namespace iMS {
 
             // Allow thread to terminate 
 			if (!running) break;
-
+                        
 			while (!rxok_list.empty())
 			{
 				int param = rxok_list.front();
@@ -560,22 +568,25 @@ namespace iMS {
 
 	const FileSystemIndex ToneBufferDownload::Store(const std::string& FileName, FileDefault def) const
 	{
-		FileSystemManager fsm(p_Impl->myiMS);
-		std::uint32_t addr;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> FileSystemIndex
+        {         
+            FileSystemManager fsm(ims);
+            std::uint32_t addr;
 
-		std::vector<std::uint8_t> data;
-		for (ToneBuffer::const_iterator it = p_Impl->m_tb.cbegin(); it != p_Impl->m_tb.cend(); ++it)
-		{
-			p_Impl->AddPointToVector(data, (*it), true);
-		}
+            std::vector<std::uint8_t> data;
+            for (ToneBuffer::const_iterator it = p_Impl->m_tb.cbegin(); it != p_Impl->m_tb.cend(); ++it)
+            {
+                p_Impl->AddPointToVector(ims, data, (*it), true);
+            }
 
-		if (!fsm.FindSpace(addr, data)) return -1;
-		FileSystemTableEntry fste(FileSystemTypes::TONE_BUFFER, addr, data.size(), def, FileName);
-		p_Impl->fsw = new FileSystemWriter(p_Impl->myiMS, fste, data);
+            if (!fsm.FindSpace(addr, data)) return -1;
+            FileSystemTableEntry fste(FileSystemTypes::TONE_BUFFER, addr, data.size(), def, FileName);
+            p_Impl->fsw = new FileSystemWriter(ims, fste, data);
 
-		FileSystemIndex result = p_Impl->fsw->Program();
-		delete p_Impl->fsw;
-		return result;
+            FileSystemIndex result = p_Impl->fsw->Program();
+            delete p_Impl->fsw;
+            return result;
+        }).value_or(false);          
 	}
 
 	class ToneSequenceEntry::Impl {

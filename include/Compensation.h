@@ -442,7 +442,7 @@ namespace iMS
 		/// order to determine the correct depth of the LUT memory.
 		/// \param[in] iMS the IMSSystem object representing the system the CompensationTable will be constructed for
 		/// \since 1.0
-		CompensationTable(const IMSSystem& iMS);
+		CompensationTable(std::shared_ptr<IMSSystem> iMS);
 		/// This Explicit Empty Constructor makes it possible to create Compensation Tables without being physically connected
 		/// to an iMS System.
 		/// \param[in] LUTDepth the number of entries in the Compensation Look-Up Table
@@ -458,7 +458,7 @@ namespace iMS
 		/// \param[in] iMS the IMSSystem object representing the system the CompensationTable will be constructed for
 		/// \param[in] pt The CompensationPoint that will fill each of the new elements of the CompensationTable
 		/// \since 1.0
-		CompensationTable(const IMSSystem& iMS, const CompensationPoint& pt);
+		CompensationTable(std::shared_ptr<IMSSystem> iMS, const CompensationPoint& pt);
 		/// This Explicit Fill Constructor makes it possible to create Compensation Tables without being physically connected
 		/// to an iMS System.
 		/// \param[in] LUTDepth the number of entries in the Compensation Look-Up Table
@@ -475,7 +475,7 @@ namespace iMS
 		/// \param[in] fileName A string pointing to a '*.lut' file on the filesystem containing preexisting CompensationTable data
 		/// \param[in] chan For .lut files containing multiple tables, select which table to import
 		/// \since 1.0
-		CompensationTable(const IMSSystem& iMS, const std::string& fileName, const RFChannel& chan = RFChannel::all);
+		CompensationTable(std::shared_ptr<IMSSystem> iMS, const std::string& fileName, const RFChannel& chan = RFChannel::all);
 		/// This Explicit File Read Constructor makes it possible to create Compensation Tables without being physically connected
 		/// to an iMS System.
 		/// \param[in] LUTDepth the number of entries in the Compensation Look-Up Table
@@ -494,7 +494,7 @@ namespace iMS
 		/// \param[in] entry the entry in the FileSystem Table from which to recall a Compensation Table
 		/// CompensationTable data
 		/// \since 1.1
-		CompensationTable(const IMSSystem& iMS, const int entry);
+		CompensationTable(std::shared_ptr<IMSSystem> iMS, const int entry);
 		/// \brief Copy Constructor with resizing
 		///
 		/// This Constructor will create the CompensationTable object from data supplied by another CompensationTable
@@ -507,7 +507,7 @@ namespace iMS
 		/// \param[in] iMS the IMSSystem object representing the system the CompensationTable will be constructed for
 		/// \param[in] tbl the source of Compensation data that will be used to construct the new table
 		/// \since 1.6
-		CompensationTable(const IMSSystem& iMS, const CompensationTable& tbl);
+		CompensationTable(std::shared_ptr<IMSSystem> iMS, const CompensationTable& tbl);
 		/// \brief Copy Constructor with resizing
 		///
 		/// This Constructor will create the CompensationTable object from data supplied by another CompensationTable
@@ -651,7 +651,7 @@ namespace iMS
 		///
 		/// \param[in] ims A const reference to an iMS System
 		/// \since 1.6.0
-		CompensationTableExporter(const IMSSystem& ims);
+		CompensationTableExporter(std::shared_ptr<IMSSystem> ims);
 		///
 		/// \brief Constructor for CompensationTableExporter Object
 		///
@@ -861,7 +861,7 @@ namespace iMS
 		/// \param[in] tbl A const reference to the CompensationTable which shall be downloaded to the target
 		/// \param[in] chan An optional const reference to which RF Channel of the Synthesiser the compensation should be applied to
 		/// \since 1.0
-		CompensationTableDownload(IMSSystem& ims, const CompensationTable& tbl, const RFChannel& chan = RFChannel::all);
+		CompensationTableDownload(std::shared_ptr<IMSSystem> ims, const CompensationTable& tbl, const RFChannel& chan = RFChannel::all);
 		///
 		/// \brief Destructor for CompensationTableDownload Object
 		~CompensationTableDownload();

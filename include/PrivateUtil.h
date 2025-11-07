@@ -31,6 +31,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <optional>
 
 extern "C" {
 #include "sqlite3.h"
@@ -112,5 +113,24 @@ namespace iMS {
 
         WorkerFunc workerFunc;
     };
+
+    // Execute Function only if object pointed to still exists
+    template <typename T, typename Func>
+    void with_locked(const std::weak_ptr<T>& weak, Func&& func)
+    {
+        if (auto shared = weak.lock()) {
+            // Object still alive — call the lambda with shared_ptr
+            func(shared);
+        } 
+    }
+
+    template <typename T, typename Func>
+    auto with_locked_value(const std::weak_ptr<T>& weak, Func&& func)
+        -> std::optional<decltype(func(std::declval<std::shared_ptr<T>>()))>
+    {
+        if (auto shared = weak.lock())
+            return func(shared);
+        return std::nullopt;
+    }     
 }
 #endif

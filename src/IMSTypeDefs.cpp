@@ -87,81 +87,81 @@ namespace iMS {
 		return value;
 	}
 
-	unsigned int FrequencyRenderer::RenderAsPointRate(const IMSSystem& system, const Frequency freq, const bool PrescalerDisable)
+	unsigned int FrequencyRenderer::RenderAsPointRate(std::shared_ptr<IMSSystem> system, const Frequency freq, const bool PrescalerDisable)
 	{
-		double d = freq, cmax = system.Ctlr().GetCap().MaxImageRate, smax = system.Synth().GetCap().MaxImageRate;
+		double d = freq, cmax = system->Ctlr().GetCap().MaxImageRate, smax = system->Synth().GetCap().MaxImageRate;
 		d = 100000000.0 / std::min(d, std::min(cmax, smax));
-		if (!system.Ctlr().GetCap().FastImageTransfer || !PrescalerDisable) {
+		if (!system->Ctlr().GetCap().FastImageTransfer || !PrescalerDisable) {
 			d /= 100.0;
 		}
 
 		return (static_cast<unsigned int>(d));
 	}
 
-	unsigned int FrequencyRenderer::RenderAsImagePoint(const IMSSystem& system, const MHz freq)
+	unsigned int FrequencyRenderer::RenderAsImagePoint(std::shared_ptr<IMSSystem> system, const MHz freq)
 	{
 		double d = freq;
-		d = std::max(d, static_cast<double>(system.Synth().GetCap().lowerFrequency));
-		d = std::min(d, static_cast<double>(system.Synth().GetCap().upperFrequency));
+		d = std::max(d, static_cast<double>(system->Synth().GetCap().lowerFrequency));
+		d = std::min(d, static_cast<double>(system->Synth().GetCap().upperFrequency));
 
-		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().freqBits)) - 0.5);
-		d = (d - static_cast<double>(system.Synth().GetCap().lowerFrequency)) / (static_cast<double>(system.Synth().GetCap().upperFrequency) - static_cast<double>(system.Synth().GetCap().lowerFrequency));
+		double int_repr = std::floor(std::pow(2.0, (system->Synth().GetCap().freqBits)) - 0.5);
+		d = (d - static_cast<double>(system->Synth().GetCap().lowerFrequency)) / (static_cast<double>(system->Synth().GetCap().upperFrequency) - static_cast<double>(system->Synth().GetCap().lowerFrequency));
 		d = d * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1ULL << system.Synth().GetCap().freqBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << system->Synth().GetCap().freqBits) - 1));
 	}
 
-	unsigned int FrequencyRenderer::RenderAsStaticOffset(const IMSSystem& system, const MHz freq, int add_sub)
+	unsigned int FrequencyRenderer::RenderAsStaticOffset(std::shared_ptr<IMSSystem> system, const MHz freq, int add_sub)
 	{
 		double d = freq;
-		double range = static_cast<double>(system.Synth().GetCap().upperFrequency) - static_cast<double>(system.Synth().GetCap().lowerFrequency);
+		double range = static_cast<double>(system->Synth().GetCap().upperFrequency) - static_cast<double>(system->Synth().GetCap().lowerFrequency);
 		d = std::max(d, 0.0);
 		d = std::min(d, 0.5*range);
 
-		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().freqBits)) - 0.5);
+		double int_repr = std::floor(std::pow(2.0, (system->Synth().GetCap().freqBits)) - 0.5);
 		d /= range;
 		d = d * int_repr;
 		if (add_sub) d *= -1.0;
 
-		return static_cast<unsigned int>(static_cast<int>(d)& ((1ULL << system.Synth().GetCap().freqBits) - 1));
+		return static_cast<unsigned int>(static_cast<int>(d)& ((1ULL << system->Synth().GetCap().freqBits) - 1));
 	}
 
-	unsigned int FrequencyRenderer::RenderAsDDSValue(const IMSSystem& system, const MHz freq)
+	unsigned int FrequencyRenderer::RenderAsDDSValue(std::shared_ptr<IMSSystem> system, const MHz freq)
 	{
 		const int DDSFreqBits = 32;
 
-		double d = freq, fmax = static_cast<double>(system.Synth().GetCap().sysClock);
+		double d = freq, fmax = static_cast<double>(system->Synth().GetCap().sysClock);
 		d = std::min(d, fmax/2.0);
 
 		double int_repr = std::floor(std::pow(2.0, DDSFreqBits) - 0.5);
-		d /= static_cast<double>(system.Synth().GetCap().sysClock);
+		d /= static_cast<double>(system->Synth().GetCap().sysClock);
 		d = d * int_repr;
 
 //		return (static_cast<unsigned int>(d)& ((1 << DDSFreqBits) - 1));
 		return (static_cast<unsigned int>(d));
 	}
 
-	unsigned int AmplitudeRenderer::RenderAsImagePoint(const IMSSystem& system, const Percent pct)
+	unsigned int AmplitudeRenderer::RenderAsImagePoint(std::shared_ptr<IMSSystem> system, const Percent pct)
 	{
 		double d = pct;
 
-		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().amplBits)) - 0.5);
+		double int_repr = std::floor(std::pow(2.0, (system->Synth().GetCap().amplBits)) - 0.5);
 		d = (d / 100.0) * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1ULL << system.Synth().GetCap().amplBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << system->Synth().GetCap().amplBits) - 1));
 	}
 
-	unsigned int AmplitudeRenderer::RenderAsCompensationPoint(const IMSSystem& system, const Percent ampl)
+	unsigned int AmplitudeRenderer::RenderAsCompensationPoint(std::shared_ptr<IMSSystem> system, const Percent ampl)
 	{
 		double d = ampl;
 
-		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().LUTAmplBits)) - 0.5);
+		double int_repr = std::floor(std::pow(2.0, (system->Synth().GetCap().LUTAmplBits)) - 0.5);
 		d = (d / 100.0) * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1ULL << system.Synth().GetCap().LUTAmplBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << system->Synth().GetCap().LUTAmplBits) - 1));
 	}
 
-	unsigned int AmplitudeRenderer::RenderAsCalibrationTone(const IMSSystem& system, const Percent ampl)
+	unsigned int AmplitudeRenderer::RenderAsCalibrationTone(std::shared_ptr<IMSSystem> system, const Percent ampl)
 	{
 		double d = ampl;
 
@@ -171,7 +171,7 @@ namespace iMS {
 		return (static_cast<unsigned int>(d)& ((1ULL << CalibAmplBits) - 1));
 	}
 
-	unsigned int AmplitudeRenderer::RenderAsChirp(const IMSSystem& system, const Percent ampl)
+	unsigned int AmplitudeRenderer::RenderAsChirp(std::shared_ptr<IMSSystem> system, const Percent ampl)
 	{
 		unsigned int data = AmplitudeRenderer::RenderAsCalibrationTone(system, ampl);
 		return (data << (32 - CalibAmplBits));
@@ -182,27 +182,27 @@ namespace iMS {
 		return (wrap >= 0.0) ? wrap : 360.0 + wrap;
 	}
 
-	unsigned int PhaseRenderer::RenderAsImagePoint(const IMSSystem& system, const Degrees deg)
+	unsigned int PhaseRenderer::RenderAsImagePoint(std::shared_ptr<IMSSystem> system, const Degrees deg)
 	{
 		double d = ModulusPhase(deg);
 
-		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().phaseBits)) - 0.5);
+		double int_repr = std::floor(std::pow(2.0, (system->Synth().GetCap().phaseBits)) - 0.5);
 		d = (d / 360.0) * int_repr;
 
-		return (static_cast<unsigned int>(d)& ((1ULL << system.Synth().GetCap().phaseBits) - 1));
+		return (static_cast<unsigned int>(d)& ((1ULL << system->Synth().GetCap().phaseBits) - 1));
 	}
 
-	unsigned int PhaseRenderer::RenderAsCompensationPoint(const IMSSystem& system, const Degrees deg)
+	unsigned int PhaseRenderer::RenderAsCompensationPoint(std::shared_ptr<IMSSystem> system, const Degrees deg)
 	{
 		double d = ModulusPhase(deg);
 
-		double int_repr = std::floor(std::pow(2.0, (system.Synth().GetCap().LUTPhaseBits)) - 0.5);
+		double int_repr = std::floor(std::pow(2.0, (system->Synth().GetCap().LUTPhaseBits)) - 0.5);
 		d = (d / 360.0) * int_repr;
 
-		return (static_cast<unsigned int>(d) & ((1ULL << system.Synth().GetCap().LUTPhaseBits)-1));
+		return (static_cast<unsigned int>(d) & ((1ULL << system->Synth().GetCap().LUTPhaseBits)-1));
 	}
 
-	unsigned int PhaseRenderer::RenderAsCalibrationTone(const IMSSystem& system, const Degrees deg)
+	unsigned int PhaseRenderer::RenderAsCalibrationTone(std::shared_ptr<IMSSystem> system, const Degrees deg)
 	{
 		double d = ModulusPhase(deg);
 
@@ -212,7 +212,7 @@ namespace iMS {
 		return (static_cast<unsigned int>(d)& ((1ULL << CalibPhaseBits) - 1));
 	}
 
-	unsigned int PhaseRenderer::RenderAsChirp(const IMSSystem& system, const Degrees deg)
+	unsigned int PhaseRenderer::RenderAsChirp(std::shared_ptr<IMSSystem> system, const Degrees deg)
 	{
 		unsigned int data = PhaseRenderer::RenderAsCalibrationTone(system, deg);
 		return (data << (32 - CalibPhaseBits));

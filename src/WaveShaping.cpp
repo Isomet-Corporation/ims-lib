@@ -31,14 +31,14 @@ namespace iMS
 	class WaveShaping::Impl
 	{
 	public:
-		Impl(IMSSystem&, RFChannel chan);
+		Impl(std::shared_ptr<IMSSystem>, RFChannel chan);
 		~Impl();
-		IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		RFChannel chan;
 	};
 
-	WaveShaping::Impl::Impl(IMSSystem& iMS, RFChannel chan) :
-		myiMS(iMS),
+	WaveShaping::Impl::Impl(std::shared_ptr<IMSSystem> iMS, RFChannel chan) :
+		m_ims(iMS),
 		chan(chan)
 	{
 		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("WaveShaping::WaveShaping()");
@@ -49,7 +49,7 @@ namespace iMS
 		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("WaveShaping::~WaveShaping()");
 	}
 
-	WaveShaping::WaveShaping(IMSSystem& iMS, RFChannel chan) : p_Impl(new Impl(iMS, chan))
+	WaveShaping::WaveShaping(std::shared_ptr<IMSSystem> ims, RFChannel chan) : p_Impl(new Impl(ims, chan))
 	{
 	}
 
@@ -61,123 +61,127 @@ namespace iMS
 
 	bool WaveShaping::FreeRunningPulseGating(unsigned int gate_interval, unsigned int gate_width, StartingEdge edge)
 	{
-		// Make sure Synthesiser is present
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            // Make sure Synthesiser is present
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport* iorpt;
+            ReportFields f;
 
-		HostReport* iorpt;
-		ReportFields f;
+            // Send Gate Width in Half cycles
+            iorpt = new HostReport(HostReport::Actions::WAVE_SHAPING, HostReport::Dir::WRITE, 0);
 
-		// Send Gate Width in Half cycles
-		iorpt = new HostReport(HostReport::Actions::WAVE_SHAPING, HostReport::Dir::WRITE, 0);
+            int i = 0;
+            do
+            {
+                if (!p_Impl->chan.IsAll()) {
+                    i = static_cast<int>(p_Impl->chan) - 1;
+                }
+                f = iorpt->Fields();
+                f.addr = 0 + (i * 0x100);
+                iorpt->Fields(f);
 
-		int i = 0;
-		do
-		{
-			if (!p_Impl->chan.IsAll()) {
-				i = static_cast<int>(p_Impl->chan) - 1;
-			}
-			f = iorpt->Fields();
-			f.addr = 0 + (i * 0x100);
-			iorpt->Fields(f);
+                iorpt->Payload<std::uint16_t>(gate_width);
 
-			iorpt->Payload<std::uint16_t>(gate_width);
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
+                f.addr = 1 + (i * 0x100);
+                iorpt->Fields(f);
 
-			f.addr = 1 + (i * 0x100);
-			iorpt->Fields(f);
+                // Send free running Gate Interval
+                iorpt->Payload<std::uint16_t>(gate_interval);
 
-			// Send free running Gate Interval
-			iorpt->Payload<std::uint16_t>(gate_interval);
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
+                f.addr = 2 + (i * 0x100);
+                iorpt->Fields(f);
+                iorpt->Payload<std::uint16_t>(static_cast<uint16_t>(edge) | 0x0002);
 
-			f.addr = 2 + (i * 0x100);
-			iorpt->Fields(f);
-			iorpt->Payload<std::uint16_t>(static_cast<uint16_t>(edge) | 0x0002);
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
+                /* Send prescale value */
+                f.addr = 3 + (i * 0x100);
+                iorpt->Fields(f);
+                iorpt->Payload<std::uint16_t>(ims->Synth().GetCap().sysClock);
 
-			/* Send prescale value */
-			f.addr = 3 + (i * 0x100);
-			iorpt->Fields(f);
-			iorpt->Payload<std::uint16_t>(p_Impl->myiMS.Synth().GetCap().sysClock);
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
+            } while (i++ < (ims->Synth().GetCap().channels) && p_Impl->chan.IsAll());
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-		} while (i++ < (p_Impl->myiMS.Synth().GetCap().channels) && p_Impl->chan.IsAll());
-
-		delete iorpt;
-		return true;
+            delete iorpt;
+            return true;
+        }).value_or(false);
 	}
 
 	bool WaveShaping::OnTriggerPulseGating(unsigned int gate_width, StartingEdge edge)
 	{
-		// Make sure Synthesiser is present
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            // Make sure Synthesiser is present
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport* iorpt;
+            ReportFields f;
 
-		HostReport* iorpt;
-		ReportFields f;
+            // Send Gate Width in Half cycles
+            iorpt = new HostReport(HostReport::Actions::WAVE_SHAPING, HostReport::Dir::WRITE, 0);
 
-		// Send Gate Width in Half cycles
-		iorpt = new HostReport(HostReport::Actions::WAVE_SHAPING, HostReport::Dir::WRITE, 0);
+            int i = 0;
+            do
+            {
+                if (!p_Impl->chan.IsAll()) {
+                    i = static_cast<int>(p_Impl->chan) - 1;
+                }
+                f = iorpt->Fields();
+                f.addr = 0 + (i * 0x100);
+                iorpt->Fields(f);
 
-		int i = 0;
-		do
-		{
-			if (!p_Impl->chan.IsAll()) {
-				i = static_cast<int>(p_Impl->chan) - 1;
-			}
-			f = iorpt->Fields();
-			f.addr = 0 + (i * 0x100);
-			iorpt->Fields(f);
+                iorpt->Payload<std::uint16_t>(gate_width);
 
-			iorpt->Payload<std::uint16_t>(gate_width);
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
+                f.addr = 2 + (i * 0x100);
+                iorpt->Fields(f);
+                iorpt->Payload<std::uint16_t>(static_cast<uint16_t>(edge) & ~0x0002);
 
-			f.addr = 2 + (i * 0x100);
-			iorpt->Fields(f);
-			iorpt->Payload<std::uint16_t>(static_cast<uint16_t>(edge) & ~0x0002);
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
 
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
+                /* Send prescale value */
+                f.addr = 3 + (i * 0x100);
+                iorpt->Fields(f);
+                iorpt->Payload<std::uint16_t>(ims->Synth().GetCap().sysClock);
 
-			/* Send prescale value */
-			f.addr = 3 + (i * 0x100);
-			iorpt->Fields(f);
-			iorpt->Payload<std::uint16_t>(p_Impl->myiMS.Synth().GetCap().sysClock);
+            } while (i++ < (ims->Synth().GetCap().channels) && p_Impl->chan.IsAll());
 
-		} while (i++ < (p_Impl->myiMS.Synth().GetCap().channels) && p_Impl->chan.IsAll());
-
-		delete iorpt;
-		return true;
+            delete iorpt;
+            return true;
+        }).value_or(false);
 
 	}
 

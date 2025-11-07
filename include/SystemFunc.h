@@ -138,7 +138,7 @@ namespace iMS
     ///
     /// \param[in] ims A const reference to the iMS System
     /// \since 1.0
-		SystemFunc(IMSSystem& ims);
+		SystemFunc(std::shared_ptr<IMSSystem> ims);
     ///
     /// \brief Destructor for SystemFunc Object
 		~SystemFunc();

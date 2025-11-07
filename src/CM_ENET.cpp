@@ -195,7 +195,7 @@ static std::string logErrorString(int err = INT_MAX) {
 
 		int discovery_timeout;
 
-		std::vector<IMSSystem> ListConnectedDevices();
+		std::vector<std::shared_ptr<IMSSystem>> ListConnectedDevices();
 
 		//std::shared_ptr<CM_ENET::MsgContext> SocketArray[WSA_MAXIMUM_WAIT_EVENTS];
 #ifdef WIN32
@@ -264,7 +264,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		return mImpl->Ident;
 	}
 
-	std::vector<IMSSystem> CM_ENET::Impl::ListConnectedDevices()
+	std::vector<std::shared_ptr<IMSSystem>> CM_ENET::Impl::ListConnectedDevices()
 	{
 		SOCKET  AnnounceSocket;
 		SOCKADDR_IN  AnnounceSrcAddr, AnnounceDestAddr;
@@ -282,7 +282,7 @@ static std::string logErrorString(int err = INT_MAX) {
 
 		if (AnnounceSocket == INVALID_SOCKET) {
 			BOOST_LOG_SEV(lg::get(), sev::error) << "announce: unable to create socket: " << WSAGetLastError() << std::endl;
-			return std::vector<IMSSystem>();
+			return std::vector<std::shared_ptr<IMSSystem>>();
 		}
 
 		unsigned long nBytesReturned;
@@ -291,7 +291,7 @@ static std::string logErrorString(int err = INT_MAX) {
 
 			BOOST_LOG_SEV(lg::get(), sev::error) << "announce: get interface list error: " << WSAGetLastError() << std::endl;
 			//std::cout << "Failed calling WSAIoctl: error " << WSAGetLastError() << std::endl;
-			return std::vector<IMSSystem>();
+			return std::vector<std::shared_ptr<IMSSystem>>();
 		}
 
 		closesocket(AnnounceSocket);
@@ -302,7 +302,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		int n;
 		if (getifaddrs(&ifaddr) == -1) {
 			BOOST_LOG_SEV(lg::get(), sev::error) << "getifaddrs error: " << strerror(errno) << std::endl;
-			return std::vector<IMSSystem>();
+			return std::vector<std::shared_ptr<IMSSystem>>();
 		}
 
 		/* Walk through linked list, maintaining head pointer so we can free list later */
@@ -363,7 +363,7 @@ static std::string logErrorString(int err = INT_MAX) {
 			AnnounceSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			if (INVALID_SOCKET == AnnounceSocket) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "announce socket error: " << logErrorString() << std::endl;
-				return std::vector<IMSSystem>();
+				return std::vector<std::shared_ptr<IMSSystem>>();
 			}
 			// Set socket to non-blocking
 #ifdef WIN32
@@ -377,12 +377,12 @@ static std::string logErrorString(int err = INT_MAX) {
 				// Clean out any old fragments of socket connections hanging around
 			if (setsockopt(AnnounceSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on)) == -1) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "announce: setsockopt (SO_REUSEADDR) " << logErrorString() << std::endl;
-					return std::vector<IMSSystem>();
+					return std::vector<std::shared_ptr<IMSSystem>>();
 			}
 				// Enable Broadcast Transmission
 			if (setsockopt(AnnounceSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&on, sizeof(on)) == -1) {
 				BOOST_LOG_SEV(lg::get(), sev::error) << "announce: setsockopt (SO_REUSEADDR) " << logErrorString() << std::endl;
-					return std::vector<IMSSystem>();
+					return std::vector<std::shared_ptr<IMSSystem>>();
 			}
 
 				// Copy source IP address
@@ -428,7 +428,7 @@ static std::string logErrorString(int err = INT_MAX) {
 #endif
 						BOOST_LOG_SEV(lg::get(), sev::error) << "announce: recvfrom error" << logErrorString(err) << std::endl;
 
-								return std::vector<IMSSystem>();
+								return std::vector<std::shared_ptr<IMSSystem>>();
 							}
 						}
 						if (numBytes > 0) {
@@ -481,7 +481,7 @@ static std::string logErrorString(int err = INT_MAX) {
 				BOOST_LOG_SEV(lg::get(), sev::info) << "announce: No valid responses received" << std::endl;
 			}
 
-		std::vector<IMSSystem> IMSList;
+		std::vector<std::shared_ptr<IMSSystem>> IMSList;
 		for (std::list<InterfaceConnectionDetail>::iterator it = intf_detail->begin(); it != intf_detail->end(); ++it)
 		{
 			// Then open device and send a Magic Number query message
@@ -492,15 +492,15 @@ static std::string logErrorString(int err = INT_MAX) {
 			if (m_parent->Open())
 			{
 				// Found a suitable connection interface, let's query its contents.
-				IMSSystem thisiMS(m_parent, serial);
+				auto thisiMS = IMSSystem::Create (m_parent, serial);
 
-				thisiMS.Initialise();
+				thisiMS->Initialise();
 
-				if (thisiMS.Ctlr().IsValid() || thisiMS.Synth().IsValid()) {
+				if (thisiMS->Ctlr().IsValid() || thisiMS->Synth().IsValid()) {
 					int count = 0;
-					for (std::vector<IMSSystem>::const_iterator it2 = IMSList.cbegin(); it2 != IMSList.cend(); ++it2)
+					for (std::vector<std::shared_ptr<IMSSystem>>::const_iterator it2 = IMSList.cbegin(); it2 != IMSList.cend(); ++it2)
 					{
-						if (it2->ConnPort() == serial) count++;
+						if ((*it2)->ConnPort() == serial) count++;
 					}
 					if (count > 0) {
 						serial += std::string("-") += count;
@@ -528,11 +528,11 @@ static std::string logErrorString(int err = INT_MAX) {
 		mImpl = NULL;
 	}
 
-	std::vector<IMSSystem> CM_ENET::Discover(const ListBase<std::string>& PortMask)		
+	std::vector<std::shared_ptr<IMSSystem>> CM_ENET::Discover(const ListBase<std::string>& PortMask)		
 	{
 //		std::cout << "CM_ENET::Discover()" << std::endl;
 		mImpl->PortMask = PortMask;
-		std::vector<IMSSystem> v = mImpl->ListConnectedDevices();
+		std::vector<std::shared_ptr<IMSSystem>> v = mImpl->ListConnectedDevices();
 		return v;
 	}
 

@@ -92,7 +92,7 @@ namespace iMS {
 		const std::string SerialNumberPrefix = "iMS";
 
 		CCyUSBDevice	*USBDevice = nullptr;
-		std::vector<IMSSystem> ListCyUsbDevices();
+		std::vector<std::shared_ptr<IMSSystem>> ListCyUsbDevices();
 		std::map<std::string, int> cyusb_list;
 		struct endpoints
 		{
@@ -205,19 +205,19 @@ namespace iMS {
 		mImpl = NULL;
 	}
 
-	std::vector<IMSSystem> CM_CYUSB::Impl::ListCyUsbDevices()
+	std::vector<std::shared_ptr<IMSSystem>> CM_CYUSB::Impl::ListCyUsbDevices()
 	{
 		int ftStatus = 0;
 		DWORD numOfDevices = 0;
 
 		// If we have an open connection, we can't allow the driver to be opened again to look for devices
-		if (m_parent->Open()) return (std::vector<IMSSystem>());
+		if (m_parent->Open()) return (std::vector<std::shared_ptr<IMSSystem>>());
 		if (USBDevice != nullptr) {
 			delete USBDevice;
 			USBDevice = nullptr;
 		}
 
-		std::vector<IMSSystem> IMSList;
+		std::vector<std::shared_ptr<IMSSystem>> IMSList;
 		cyusb_list.clear();
 
 		// Open USB driver and get number of CYUSB Devices attached to system
@@ -292,11 +292,11 @@ namespace iMS {
 					{
 						// Found a suitable connection interface, let's query its contents.
 						// An FTDI based board can have a maximum of one controller and one synthesiser.
-						IMSSystem thisiMS(m_parent, serial);
+					    auto thisiMS = IMSSystem::Create (m_parent, serial);
 
-						thisiMS.Initialise();
+						thisiMS->Initialise();
 
-						if (thisiMS.Ctlr().IsValid() || thisiMS.Synth().IsValid()) {
+						if (thisiMS->Ctlr().IsValid() || thisiMS->Synth().IsValid()) {
 							IMSList.push_back(thisiMS);
 						}
 					}
@@ -309,7 +309,7 @@ namespace iMS {
 		return IMSList;
 	}
 
-	std::vector<IMSSystem> CM_CYUSB::Discover(const ListBase<std::string>& PortMask)
+	std::vector<std::shared_ptr<IMSSystem>> CM_CYUSB::Discover(const ListBase<std::string>& PortMask)
 	{
 		return mImpl->ListCyUsbDevices();
 	}

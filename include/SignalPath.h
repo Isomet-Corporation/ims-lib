@@ -339,7 +339,7 @@ namespace iMS
     ///
     /// \param[in] ims A const reference to the iMS System
     /// \since 1.0
-		SignalPath(IMSSystem& ims);
+		SignalPath(std::shared_ptr<IMSSystem> ims);
     ///
     /// \brief Destructor for SignalPath Object
 		~SignalPath();
@@ -834,7 +834,7 @@ namespace iMS
 		/// \param[in] EncoderFreq The encoder tick frequency for which we shall define the gain
 		/// \param[in] DesiredFreqDeviation The amount of change to the RF Frequency that shall be offset when the encoder is operating at the specified velocity
 		/// \param[in] Reverse Causes the RF frequency deviation to effect in the opposite direction
-		void SetVelGain(const IMSSystem& ims, SignalPath::ENCODER_CHANNEL chan, kHz EncoderFreq, MHz DesiredFreqDeviation, bool Reverse = false);
+		void SetVelGain(std::shared_ptr<IMSSystem> ims, SignalPath::ENCODER_CHANNEL chan, kHz EncoderFreq, MHz DesiredFreqDeviation, bool Reverse = false);
 
 		VelocityConfiguration() : VelocityGain({ { 500, 500 } }) {}
 	};

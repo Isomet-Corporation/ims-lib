@@ -42,7 +42,7 @@ namespace iMS
 		const std::string& Ident() const;
 
 		// Implement ConnectionManager Interface
-		std::vector<IMSSystem> Discover(const ListBase<std::string>& PortMask);
+		std::vector<std::shared_ptr<IMSSystem>> Discover(const ListBase<std::string>& PortMask);
 		void Connect(const std::string&);
 		void Disconnect();
 		void SetTimeouts(int send_timeout_ms = 1000, int rx_timeout_ms = 5000, int free_timeout_ms = 30000, int discover_timeout_ms = 2500);

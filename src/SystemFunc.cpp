@@ -48,7 +48,7 @@ namespace iMS
 	class SystemFunc::Impl
 	{
 	public:
-		Impl(IMSSystem&);
+		Impl(std::shared_ptr<IMSSystem>);
 		~Impl();
 
 		ClockGenConfiguration ckgen;
@@ -83,7 +83,7 @@ namespace iMS
 		std::atomic<int> MasterClockFreqMsg;
 		std::atomic<int> MasterClockModeMsg;
 		std::unique_ptr<SystemFuncEventTrigger> m_Event;
-		IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 
         std::thread heartbeatThread;
         std::atomic<bool> heartbeatRunning;
@@ -92,10 +92,10 @@ namespace iMS
         std::condition_variable hbCv;        
 	};
 
-	SystemFunc::Impl::Impl(IMSSystem& iMS) :
+	SystemFunc::Impl::Impl(std::shared_ptr<IMSSystem> ims) :
 		Receiver(new ResponseReceiver(this)),
 		m_Event(new SystemFuncEventTrigger()),
-		myiMS(iMS),
+		m_ims(ims),
         heartbeatRunning(false),
         heartbeatIntervalMs(1000) 
 	{
@@ -105,14 +105,14 @@ namespace iMS
 		BackgroundThread = std::thread(&SystemFunc::Impl::BackgroundWorker, this);
 
 		// Subscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
 
 		ChecksumErrors = INT_MIN;
 		MasterClockFreq = INT_MIN;
@@ -137,19 +137,21 @@ namespace iMS
 		BackgroundThread.join();
 
 		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) {
+            auto conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        });
 
 		delete Receiver;
 	}
 
-	SystemFunc::SystemFunc(IMSSystem& iMS) : p_Impl(new Impl(iMS)) {}
+	SystemFunc::SystemFunc(std::shared_ptr<IMSSystem> iMS) : p_Impl(new Impl(iMS)) {}
 
 	SystemFunc::~SystemFunc() { StopHeartbeat(); delete p_Impl; p_Impl = nullptr; }
 
@@ -159,6 +161,10 @@ namespace iMS
 			while (!m_parent->TemperatureHandle[i].empty() &&
 				((NullMessage == m_parent->TemperatureHandle[i].front()) || (param > (m_parent->TemperatureHandle[i].front())))) m_parent->TemperatureHandle[i].pop();
 		}
+
+        auto ims = m_parent->m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
 
 		if ((m_parent->ChecksumMsg.load() != NullMessage) || 
 			(m_parent->MasterClockFreqMsg.load() != NullMessage) ||
@@ -173,8 +179,7 @@ namespace iMS
 				// Check for response and send to user code
 				if (m_parent->ChecksumMsg.load() == param)
 				{
-					IConnectionManager * const myiMSConn = m_parent->myiMS.Connection();
-					const DeviceReport& Resp = myiMSConn->Response(param);
+					const DeviceReport& Resp = conn->Response(param);
 					std::unique_lock<std::mutex> lck{ m_parent->m_bkmutex };
 					m_parent->ChecksumErrors = static_cast<int>(Resp.Payload<std::uint16_t>());
 					//m_parent->m_Event->Trigger<int>(m_parent, SystemFuncEvents::PIXEL_CHECKSUM_ERROR_COUNT, errors);
@@ -184,8 +189,7 @@ namespace iMS
 				}
 				if (m_parent->MasterClockStatusMsg.load() == param)
 				{
-					IConnectionManager * const myiMSConn = m_parent->myiMS.Connection();
-					const DeviceReport& Resp = myiMSConn->Response(param);
+					const DeviceReport& Resp = conn->Response(param);
 					std::unique_lock<std::mutex> lck{ m_parent->m_bkmutex };
 					int sts = static_cast<int>(Resp.Payload<std::uint8_t>());
 					sts &= ~0x2; // Don't care about SPI active bit
@@ -201,8 +205,7 @@ namespace iMS
 				}
 				if (m_parent->MasterClockFreqMsg.load() == param)
 				{
-					IConnectionManager * const myiMSConn = m_parent->myiMS.Connection();
-					const DeviceReport& Resp = myiMSConn->Response(param);
+					const DeviceReport& Resp = conn->Response(param);
 					std::unique_lock<std::mutex> lck{ m_parent->m_bkmutex };
 					m_parent->MasterClockFreq = static_cast<int>(Resp.Payload<std::uint16_t>());
 					//m_parent->m_Event->Trigger<int>(m_parent, SystemFuncEvents::PIXEL_CHECKSUM_ERROR_COUNT, errors);
@@ -212,8 +215,7 @@ namespace iMS
 				}
 				if (m_parent->MasterClockModeMsg.load() == param)
 				{
-					IConnectionManager * const myiMSConn = m_parent->myiMS.Connection();
-					const DeviceReport& Resp = myiMSConn->Response(param);
+					const DeviceReport& Resp = conn->Response(param);
 					std::unique_lock<std::mutex> lck{ m_parent->m_bkmutex };
 					m_parent->MasterClockMode = static_cast<int>(Resp.Payload<std::uint8_t>());
 					//m_parent->m_Event->Trigger<int>(m_parent, SystemFuncEvents::PIXEL_CHECKSUM_ERROR_COUNT, errors);
@@ -345,41 +347,45 @@ namespace iMS
 
 	bool SystemFunc::ClearNHF()
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            // Write a '1' to the Clear NHF Config Register to clear flag
+            iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Clear_NHF);
+            iorpt->Payload<std::uint16_t>(1);
 
-		// Write a '1' to the Clear NHF Config Register to clear flag
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Clear_NHF);
-		iorpt->Payload<std::uint16_t>(1);
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);  
 	}
 
     bool SystemFunc::SendHeartbeat()
     {
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            // Read the first register (effectively a no-op)
+            HostReport *iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, 0);
 
-		// Read the first register (effectively a no-op)
-		HostReport *iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, 0);
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;        
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;    
+        }).value_or(false);      
     }
 
         // Starts automatic heartbeat with specified interval in milliseconds
@@ -438,181 +444,193 @@ namespace iMS
 
 	bool SystemFunc::ConfigureNHF(bool Enabled, int milliSeconds, NHFLocalReset reset)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        { 
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            // To disable, set milliseonds to zero
+            if (!Enabled) {
+                milliSeconds = 0;
+            }
+            else {
+                // Expressed in FPGA in numbers of 10ms.
+                milliSeconds = milliSeconds / 10;
+            }
+            iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_NHF_Timeout);
+            iorpt->Payload<std::uint16_t>(milliSeconds);
 
-		// To disable, set milliseonds to zero
-		if (!Enabled) {
-			milliSeconds = 0;
-		}
-		else {
-			// Expressed in FPGA in numbers of 10ms.
-			milliSeconds = milliSeconds / 10;
-		}
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_NHF_Timeout);
-		iorpt->Payload<std::uint16_t>(milliSeconds);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
 
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
+            // If iMS System NHF expires, it will trigger a local reset if configured to do so
+            iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_NHF_Action);
+            iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(reset));
 
-		// If iMS System NHF expires, it will trigger a local reset if configured to do so
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_NHF_Action);
-		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(reset));
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
 
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-
-		return true;
+            return true;
+        }).value_or(false);  
 	}
 	
 	bool SystemFunc::EnableAmplifier(bool enable)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            // Asynchronous Control Register bottom bit enables RF Amplifier Gate
+            // Use address field to apply a bitmask to bottom bit
+            iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, ACR_RFGate_bitmask);
+            iorpt->Payload<std::uint16_t>((enable) ? ACR_RFGate_ON : ACR_RFGate_OFF);
 
-		// Asynchronous Control Register bottom bit enables RF Amplifier Gate
-		// Use address field to apply a bitmask to bottom bit
-		iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, ACR_RFGate_bitmask);
-		iorpt->Payload<std::uint16_t>((enable) ? ACR_RFGate_ON : ACR_RFGate_OFF);
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);  
 	}
 
 	bool SystemFunc::EnableExternal(bool enable)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {        
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            // Asynchronous Control Register second bit enables External Equipment Opto
+            // Use address field to apply a bitmask to bottom bit
+            iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, ACR_EXTEn_bitmask);
+            iorpt->Payload<std::uint16_t>((enable) ? ACR_EXTEn_ON : ACR_EXTEn_OFF);
 
-		// Asynchronous Control Register second bit enables External Equipment Opto
-		// Use address field to apply a bitmask to bottom bit
-		iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, ACR_EXTEn_bitmask);
-		iorpt->Payload<std::uint16_t>((enable) ? ACR_EXTEn_ON : ACR_EXTEn_OFF);
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);  
 	}
 
 	bool SystemFunc::EnableRFChannels(bool chan1_2, bool chan3_4)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {             
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            // Asynchronous Control Register bottom bit enables RF Amplifier Gate
+            // Use address field to apply a bitmask to bottom bit
+            iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, ACR_RFBias_bitmask);
+            std::uint16_t enables = ( ( (chan1_2) ? ACR_RFBias12_ON : ACR_RFBias12_OFF ) |
+                ((chan3_4) ? ACR_RFBias34_ON : ACR_RFBias34_OFF) ) ;
+            iorpt->Payload<std::uint16_t>(enables);
 
-		// Asynchronous Control Register bottom bit enables RF Amplifier Gate
-		// Use address field to apply a bitmask to bottom bit
-		iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, ACR_RFBias_bitmask);
-		std::uint16_t enables = ( ( (chan1_2) ? ACR_RFBias12_ON : ACR_RFBias12_OFF ) |
-			((chan3_4) ? ACR_RFBias34_ON : ACR_RFBias34_OFF) ) ;
-		iorpt->Payload<std::uint16_t>(enables);
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);  
 	}
 
 	bool SystemFunc::GetChecksumErrorCount(bool Reset)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_PDI_Checksum);
+            
+            MessageHandle h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            p_Impl->ChecksumMsg.store(h);
+            delete iorpt;
 
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_PDI_Checksum);
-		
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		p_Impl->ChecksumMsg.store(h);
-		delete iorpt;
-
-		if (Reset) {
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_PDI_Checksum);
-			iorpt->Payload<std::uint16_t>(0);
-			if (NullMessage == myiMSConn->SendMsg(*iorpt))
-			{
-				delete iorpt;
-				return false;
-			}
-			delete iorpt;
-		}
-		return true;
+            if (Reset) {
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_PDI_Checksum);
+                iorpt->Payload<std::uint16_t>(0);
+                if (NullMessage == conn->SendMsg(*iorpt))
+                {
+                    delete iorpt;
+                    return false;
+                }
+                delete iorpt;
+            }
+            return true;
+        }).value_or(false);  
 	}
 
 	// This feature doesn't work due to layout bug in rev A Q0910 Controller (FPI pin connected through PS GPIO can't accept clock)
 	bool SystemFunc::SetDDSUpdateClockSource(UpdateClockSource src)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
+            iorpt->Payload<std::uint16_t>(8);
 
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
-		iorpt->Payload<std::uint16_t>(8);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
 
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
+            iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Pix_Control);
+            if (src == UpdateClockSource::EXTERNAL) {
+                iorpt->Payload<std::uint16_t>(8);
+            }
+            else {
+                iorpt->Payload<std::uint16_t>(0);
+            }
 
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Pix_Control);
-		if (src == UpdateClockSource::EXTERNAL) {
-			iorpt->Payload<std::uint16_t>(8);
-		}
-		else {
-			iorpt->Payload<std::uint16_t>(0);
-		}
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);
 	}
 
-	static bool download_pacc_scripts(IMSSystem& ims)
+	static bool download_pacc_scripts(std::shared_ptr<IMSSystem> ims)
 	{
 		FileSystemManager fsm(ims);
 		FileSystemTableViewer fstv(ims);
@@ -651,15 +669,18 @@ namespace iMS
 
 	bool SystemFunc::StoreStartupConfig(const StartupConfiguration& cfg)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return false;
+        auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+		if (!ims->Synth().IsValid()) return false;
+
 		HostReport *iorpt;
 		std::vector<std::uint16_t> cfg_data;
 
 		// Get Magic Number (used as first field in stored configuration)
 		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, 0);
-		DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
+		DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
 		delete iorpt;
 		if (Resp.Done()) {
 			cfg_data.push_back(Resp.Payload<std::uint16_t>());
@@ -715,10 +736,10 @@ namespace iMS
 		}
 		cfg_data.push_back(cfg_word);
 
-		cfg_data.push_back(PhaseRenderer::RenderAsImagePoint(p_Impl->myiMS, cfg.PhaseTuneCh1));
-		cfg_data.push_back(PhaseRenderer::RenderAsImagePoint(p_Impl->myiMS, cfg.PhaseTuneCh2));
-		cfg_data.push_back(PhaseRenderer::RenderAsImagePoint(p_Impl->myiMS, cfg.PhaseTuneCh3));
-		cfg_data.push_back(PhaseRenderer::RenderAsImagePoint(p_Impl->myiMS, cfg.PhaseTuneCh4));
+		cfg_data.push_back(PhaseRenderer::RenderAsImagePoint(ims, cfg.PhaseTuneCh1));
+		cfg_data.push_back(PhaseRenderer::RenderAsImagePoint(ims, cfg.PhaseTuneCh2));
+		cfg_data.push_back(PhaseRenderer::RenderAsImagePoint(ims, cfg.PhaseTuneCh3));
+		cfg_data.push_back(PhaseRenderer::RenderAsImagePoint(ims, cfg.PhaseTuneCh4));
 
 		cfg_word = (cfg.ChannelReversal) ? 0x1 : 0;
 		cfg_word |= (cfg.ImageUseAmplitudeCompensation == SignalPath::Compensation::ACTIVE) ? 0 : 0x2;
@@ -781,7 +802,7 @@ namespace iMS
 		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, 0xC0);
 		iorpt->Payload<std::vector<std::uint16_t>>(cfg_data);
 
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		if (NullMessage == conn->SendMsg(*iorpt))
 		{
 			delete iorpt;
 			return false;
@@ -789,20 +810,20 @@ namespace iMS
 		delete iorpt;
 
 		// Store Phase Accumulator Clear scripts
-		auto model = p_Impl->myiMS.Synth().Model();
+		auto model = ims->Synth().Model();
 		if ((model == "iMS4") || (model == "iMS4b") || (model == "iMS4c")) {
 			// Original iMS4 (rev A) cannot support DDS Scripts and therefore won't work with Enhanced Tone Mode
 			// SDK v1.5.1: rev A v1.3.57 and later supports ETM
 			if (model == "iMS4") {
-				if (p_Impl->myiMS.Synth().GetVersion().revision < 57) return true;
+				if (ims->Synth().GetVersion().revision < 57) return true;
 			}
 			else if ((model == "iMS4b") || (model == "iMS4c")) {
 				// iMS4b/4c use DDS scripts, from version 68 onwards.  Earlier builds had issue with DDS scripts
-				if (p_Impl->myiMS.Synth().GetVersion().revision < 68) return true;
+				if (ims->Synth().GetVersion().revision < 68) return true;
 			}
 
-			if (!download_pacc_scripts(p_Impl->myiMS)) return false;
-			FileSystemManager fsm(p_Impl->myiMS);
+			if (!download_pacc_scripts(ims)) return false;
+			FileSystemManager fsm(ims);
 			if (cfg.PhaseAccClear) {
 				fsm.SetDefault("pacc_clr");
 				fsm.ClearDefault("paccnclr");
@@ -818,130 +839,142 @@ namespace iMS
 
 	bool SystemFunc::ReadSystemTemperature(SystemFunc::TemperatureSensor sensor)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            if (sensor == SystemFunc::TemperatureSensor::TEMP_SENSOR_1) {
+                iorpt = new HostReport(HostReport::Actions::FAN_CONTROL, HostReport::Dir::READ, (int)SystemFunc::TemperatureSensor::TEMP_SENSOR_1);
 
-		if (sensor == SystemFunc::TemperatureSensor::TEMP_SENSOR_1) {
-			iorpt = new HostReport(HostReport::Actions::FAN_CONTROL, HostReport::Dir::READ, (int)SystemFunc::TemperatureSensor::TEMP_SENSOR_1);
+                std::unique_lock<std::mutex> lck{ p_Impl->m_bkmutex };
+                p_Impl->TemperatureHandle[0].push(conn->SendMsg(*iorpt));
+                delete iorpt;
 
-			std::unique_lock<std::mutex> lck{ p_Impl->m_bkmutex };
-			p_Impl->TemperatureHandle[0].push(myiMSConn->SendMsg(*iorpt));
-			delete iorpt;
+                if (NullMessage == p_Impl->TemperatureHandle[0].back())
+                {
+                    lck.unlock();
+                    return false;
+                }
+                lck.unlock();
+                return true;
+            }
+            else if (sensor == SystemFunc::TemperatureSensor::TEMP_SENSOR_2) {
+                iorpt = new HostReport(HostReport::Actions::FAN_CONTROL, HostReport::Dir::READ, (int)SystemFunc::TemperatureSensor::TEMP_SENSOR_2);
 
-			if (NullMessage == p_Impl->TemperatureHandle[0].back())
-			{
-				lck.unlock();
-				return false;
-			}
-			lck.unlock();
-			return true;
-		}
-		else if (sensor == SystemFunc::TemperatureSensor::TEMP_SENSOR_2) {
-			iorpt = new HostReport(HostReport::Actions::FAN_CONTROL, HostReport::Dir::READ, (int)SystemFunc::TemperatureSensor::TEMP_SENSOR_2);
+                std::unique_lock<std::mutex> lck{ p_Impl->m_bkmutex };
+                p_Impl->TemperatureHandle[1].push(conn->SendMsg(*iorpt));
+                delete iorpt;
 
-			std::unique_lock<std::mutex> lck{ p_Impl->m_bkmutex };
-			p_Impl->TemperatureHandle[1].push(myiMSConn->SendMsg(*iorpt));
-			delete iorpt;
-
-			if (NullMessage == p_Impl->TemperatureHandle[1].back())
-			{
-				lck.unlock();
-				return false;
-			}
-			lck.unlock();
-			return true;
-		}
-		else return false;
-
+                if (NullMessage == p_Impl->TemperatureHandle[1].back())
+                {
+                    lck.unlock();
+                    return false;
+                }
+                lck.unlock();
+                return true;
+            }
+            else return false;
+        }).value_or(false); 
 	}
 
 	bool SystemFunc::SetClockReferenceMode(SystemFunc::PLLLockReference mode, kHz ExternalFixedFreq)
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {          
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
 
-		HostReport *iorpt;
+            iorpt = new HostReport(HostReport::Actions::PLL_REF, HostReport::Dir::WRITE, (uint16_t)mode);
+            iorpt->Payload<std::uint16_t>(static_cast<uint16_t>(ExternalFixedFreq.operator double()) / 20);
 
-		iorpt = new HostReport(HostReport::Actions::PLL_REF, HostReport::Dir::WRITE, (uint16_t)mode);
-		iorpt->Payload<std::uint16_t>(static_cast<uint16_t>(ExternalFixedFreq.operator double()) / 20);
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false); 
 	}
 
 	bool SystemFunc::GetClockReferenceStatus()
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
+            iorpt = new HostReport(HostReport::Actions::PLL_REF, HostReport::Dir::READ, 0);
 
-		HostReport *iorpt;
-		iorpt = new HostReport(HostReport::Actions::PLL_REF, HostReport::Dir::READ, 0);
-
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		p_Impl->MasterClockStatusMsg.store(h);
-		delete iorpt;
-		return true;
+            MessageHandle h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            p_Impl->MasterClockStatusMsg.store(h);
+            delete iorpt;
+            return true;
+        }).value_or(false); 
 	}
 
 	bool SystemFunc::GetClockReferenceFrequency()
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
+            iorpt = new HostReport(HostReport::Actions::PLL_REF, HostReport::Dir::READ, 1);
 
-		HostReport *iorpt;
-		iorpt = new HostReport(HostReport::Actions::PLL_REF, HostReport::Dir::READ, 1);
-
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		p_Impl->MasterClockFreqMsg.store(h);
-		delete iorpt;
-		return true;
+            MessageHandle h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            p_Impl->MasterClockFreqMsg.store(h);
+            delete iorpt;
+            return true;
+        }).value_or(false); 
 	}
 
 	bool SystemFunc::GetClockReferenceMode()
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {        
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            HostReport *iorpt;
+            iorpt = new HostReport(HostReport::Actions::PLL_REF, HostReport::Dir::READ, 2);
 
-		HostReport *iorpt;
-		iorpt = new HostReport(HostReport::Actions::PLL_REF, HostReport::Dir::READ, 2);
-
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		p_Impl->MasterClockModeMsg.store(h);
-		delete iorpt;
-		return true;
+            MessageHandle h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            p_Impl->MasterClockModeMsg.store(h);
+            delete iorpt;
+            return true;
+        }).value_or(false); 
 	}
 
 	bool SystemFunc::ConfigureClockGenerator(const ClockGenConfiguration& cfg)
 	{
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+        auto ims = p_Impl->m_ims.lock();
+        if (!ims) return false;
+        auto conn = ims->Connection();         
 
+        if (!ims->Synth().IsValid()) return false;
 		p_Impl->ckgen = cfg;
 
 		int clk_op, trg_op;
@@ -952,7 +985,7 @@ namespace iMS
 
 		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ClockOutput);
 		iorpt->Payload<uint16_t>(clk_op | trg_op);
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
+		MessageHandle h = conn->SendMsg(*iorpt);
 		if (NullMessage == h)
 		{
 			delete iorpt;
@@ -962,10 +995,10 @@ namespace iMS
 
 		// Configure Clock Frequency
 		bool PrescalerDisable = true;
-		if ((int_clk < 5.0) || !p_Impl->myiMS.Ctlr().GetCap().FastImageTransfer) {
+		if ((int_clk < 5.0) || !ims->Ctlr().GetCap().FastImageTransfer) {
 			PrescalerDisable = false;
 		}
-		if (p_Impl->myiMS.Ctlr().GetCap().FastImageTransfer) {
+		if (ims->Ctlr().GetCap().FastImageTransfer) {
 			iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_Img_Ctrl);
 			if (PrescalerDisable) {
 				iorpt->Payload<std::uint16_t>(8);
@@ -973,7 +1006,7 @@ namespace iMS
 			else {
 				iorpt->Payload<std::uint16_t>(0);
 			}
-			h = myiMSConn->SendMsg(*iorpt);
+			h = conn->SendMsg(*iorpt);
 			if (NullMessage == h)
 			{
 				delete iorpt;
@@ -983,9 +1016,9 @@ namespace iMS
 		}
 
 		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscFreq);
-		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(p_Impl->myiMS, cfg.ClockFreq, PrescalerDisable));
+		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(ims, cfg.ClockFreq, PrescalerDisable));
 
-		h = myiMSConn->SendMsg(*iorpt);
+		h = conn->SendMsg(*iorpt);
 		if (NullMessage == h)
 		{
 			delete iorpt;
@@ -995,9 +1028,9 @@ namespace iMS
 
 		// Configure Duty Cycle
 		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_DutyCycle);
-		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(p_Impl->myiMS, cfg.ClockFreq, PrescalerDisable) * (double)(cfg.DutyCycle) / 100.0);
+		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(ims, cfg.ClockFreq, PrescalerDisable) * (double)(cfg.DutyCycle) / 100.0);
 
-		h = myiMSConn->SendMsg(*iorpt);
+		h = conn->SendMsg(*iorpt);
 		if (NullMessage == h)
 		{
 			delete iorpt;
@@ -1007,9 +1040,9 @@ namespace iMS
 
 		// Configure Phase
 		iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_OscPhase);
-		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(p_Impl->myiMS, cfg.ClockFreq, PrescalerDisable) * (double)(cfg.OscPhase) / 360.0);
+		iorpt->Payload<std::uint16_t>(FrequencyRenderer::RenderAsPointRate(ims, cfg.ClockFreq, PrescalerDisable) * (double)(cfg.OscPhase) / 360.0);
 
-		h = myiMSConn->SendMsg(*iorpt);
+		h = conn->SendMsg(*iorpt);
 		if (NullMessage == h)
 		{
 			delete iorpt;
@@ -1026,7 +1059,7 @@ namespace iMS
 		d |= (cfg.ClockPolarity == Polarity::INVERSE) ? 1 : 0;
 		d |= (cfg.TrigPolarity == Polarity::INVERSE) ? 2 : 0;
 		iorpt->Payload<std::uint16_t>(d);
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
+		if (NullMessage == conn->SendMsg(*iorpt))
 		{
 			delete iorpt;
 			return false;
@@ -1043,18 +1076,21 @@ namespace iMS
 
 	bool SystemFunc::DisableClockGenerator()
 	{
-		IConnectionManager* const myiMSConn = p_Impl->myiMS.Connection();
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            auto conn = ims->Connection();
 
-		HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ClockOutput);
-		iorpt->Payload<uint16_t>(0);
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            HostReport* iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_ClockOutput);
+            iorpt->Payload<uint16_t>(0);
+            MessageHandle h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);  
 	}
 
 

@@ -249,7 +249,7 @@ namespace iMS
 	class CompensationTable::Impl
 	{
 	public:
-		Impl(CompensationTable* const parent, const IMSSystem&);
+		Impl(CompensationTable* const parent, std::shared_ptr<IMSSystem>);
 		Impl(CompensationTable* const parent, int LUTDepth, const MHz& lower_freq, const MHz& upper_freq);
 		~Impl();
 
@@ -262,11 +262,11 @@ namespace iMS
 		double m_UpperFrequency;
 	};
 
-	CompensationTable::Impl::Impl(CompensationTable* const parent, const IMSSystem& iMS) : m_parent(parent)
+	CompensationTable::Impl::Impl(CompensationTable* const parent, std::shared_ptr<IMSSystem> ims) : m_parent(parent)
 	{
-		m_LUTDepth = iMS.Synth().GetCap().LUTDepth;
-		m_LowerFrequency = iMS.Synth().GetCap().lowerFrequency ;
-		m_UpperFrequency = iMS.Synth().GetCap().upperFrequency ;
+		m_LUTDepth = ims->Synth().GetCap().LUTDepth;
+		m_LowerFrequency = ims->Synth().GetCap().lowerFrequency ;
+		m_UpperFrequency = ims->Synth().GetCap().upperFrequency ;
 	};
 
 	CompensationTable::Impl::Impl(CompensationTable* const parent, int LUTDepth, const MHz& lower_freq, const MHz& upper_freq)
@@ -287,11 +287,11 @@ namespace iMS
 	CompensationTable::Impl::~Impl() {	};
 
 	// Default Constructor required for ImageProject's CompensationTableList
-	CompensationTable::CompensationTable() : CompensationTable(IMSSystem(), CompensationPoint())
+	CompensationTable::CompensationTable() : CompensationTable(std::shared_ptr<IMSSystem>(), CompensationPoint())
 	{	}
 
 	// Empty Constructor
-	CompensationTable::CompensationTable(const IMSSystem& iMS) : CompensationTable(iMS, CompensationPoint())
+	CompensationTable::CompensationTable(std::shared_ptr<IMSSystem> iMS) : CompensationTable(iMS, CompensationPoint())
 	{	}
 
 	CompensationTable::CompensationTable(int LUTDepth, const MHz& lower_freq, const MHz& upper_freq) 
@@ -299,7 +299,7 @@ namespace iMS
 	{	}
 
 	// Fill Constructor
-	CompensationTable::CompensationTable(const IMSSystem& iMS, const CompensationPoint& pt) : DequeBase<CompensationPoint>(), p_Impl(new Impl(this, iMS))
+	CompensationTable::CompensationTable(std::shared_ptr<IMSSystem> iMS, const CompensationPoint& pt) : DequeBase<CompensationPoint>(), p_Impl(new Impl(this, iMS))
 	{
 		int LUTSize = (1 << p_Impl->m_LUTDepth);
 		DequeBase<CompensationPoint>::insert(DequeBase<CompensationPoint>::begin(), LUTSize, pt);
@@ -327,7 +327,7 @@ namespace iMS
 	};
 
 	// File Read Constructor
-	CompensationTable::CompensationTable(const IMSSystem& iMS, const std::string& fileName, const RFChannel& chan) : CompensationTable(iMS)
+	CompensationTable::CompensationTable(std::shared_ptr<IMSSystem> iMS, const std::string& fileName, const RFChannel& chan) : CompensationTable(iMS)
 	{
 		p_Impl->Load(fileName, chan);
 	}
@@ -537,10 +537,10 @@ namespace iMS
 	}
 
 	// Non-Volatile Memory Recall Constructor
-	CompensationTable::CompensationTable(const IMSSystem& iMS, const int entry) : CompensationTable(iMS)
+	CompensationTable::CompensationTable(std::shared_ptr<IMSSystem> iMS, const int entry) : CompensationTable(iMS)
 	{	}
 
-	CompensationTable::CompensationTable(const IMSSystem& iMS, const CompensationTable& tbl) : CompensationTable(iMS)
+	CompensationTable::CompensationTable(std::shared_ptr<IMSSystem> iMS, const CompensationTable& tbl) : CompensationTable(iMS)
 	{
 		if ((p_Impl->m_LUTDepth != tbl.p_Impl->m_LUTDepth) ||
 			(p_Impl->m_LowerFrequency != tbl.p_Impl->m_LowerFrequency) ||
@@ -805,7 +805,7 @@ namespace iMS
 			m_gtbl = nullptr;
 			m_ctbl = std::vector<std::shared_ptr<CompensationTable>>(RFChannel::max, nullptr);
 		}
-		Impl(const IMSSystem& ims) : Impl(ims.Synth().GetCap().channels) {}
+		Impl(std::shared_ptr<IMSSystem> ims) : Impl(ims->Synth().GetCap().channels) {}
 		~Impl() {}
 
 		bool ExportLUTFile(bool global_lut = true);
@@ -911,7 +911,7 @@ namespace iMS
 		return true;
 	}
 
-	CompensationTableExporter::CompensationTableExporter(const IMSSystem& ims) : p_Impl(new Impl(ims))
+	CompensationTableExporter::CompensationTableExporter(std::shared_ptr<IMSSystem> ims) : p_Impl(new Impl(ims))
 	{}
 
 	CompensationTableExporter::CompensationTableExporter(const int channels) : p_Impl(new Impl(channels))
@@ -1043,21 +1043,21 @@ namespace iMS
 	class CompensationTableDownload::Impl
 	{
 	public:
-		Impl(IMSSystem&, const CompensationTable& table, const RFChannel& chan = RFChannel::all);
+		Impl(std::shared_ptr<IMSSystem>, const CompensationTable& table, const RFChannel& chan = RFChannel::all);
 		~Impl();
 
         LazyWorker downloadWorker;
         LazyWorker verifyWorker;
         LazyWorker rxWorker;
         
-		IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		RFChannel m_channel;
 		const CompensationTable& m_TableRef;
 		std::shared_ptr<CompensationTable> m_Table;
 
 		CompensationEventTrigger m_Event;
 
-		void AddPointToVector(std::vector<std::uint8_t>&, const CompensationPoint&);
+		void AddPointToVector(std::shared_ptr<IMSSystem>, std::vector<std::uint8_t>&, const CompensationPoint&);
 
 		class ResponseReceiver : public IEventHandler
 		{
@@ -1101,8 +1101,8 @@ namespace iMS
 		FileSystemWriter *fsw;
 	};
 
-	CompensationTableDownload::Impl::Impl(IMSSystem& iMS, const CompensationTable& table, const RFChannel& chan) :
-		myiMS(iMS), m_TableRef(table), m_channel(chan), Receiver(new ResponseReceiver(this)), vfyResult(new VerifyResult(this)), verifier(iMS),
+	CompensationTableDownload::Impl::Impl(std::shared_ptr<IMSSystem> ims, const CompensationTable& table, const RFChannel& chan) :
+		m_ims(ims), m_TableRef(table), m_channel(chan), Receiver(new ResponseReceiver(this)), vfyResult(new VerifyResult(this)), verifier(ims),
         downloadWorker([this](std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx) {
             DownloadWorkerLoop(running, cond, mtx);
         }),
@@ -1114,14 +1114,14 @@ namespace iMS
         })
 	{
 		// Subscribe listeners
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
 
 		verifier.BulkVerifierEventSubscribe(BulkVerifierEvents::VERIFY_SUCCESS, vfyResult);
 		verifier.BulkVerifierEventSubscribe(BulkVerifierEvents::VERIFY_FAIL, vfyResult);
@@ -1131,14 +1131,16 @@ namespace iMS
 
 	CompensationTableDownload::Impl::~Impl() {
 		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) { 
+            auto conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        });
 
 		verifier.BulkVerifierEventUnsubscribe(BulkVerifierEvents::VERIFY_SUCCESS, vfyResult);
 		verifier.BulkVerifierEventUnsubscribe(BulkVerifierEvents::VERIFY_FAIL, vfyResult);
@@ -1158,9 +1160,8 @@ namespace iMS
 			{
 				std::unique_lock<std::mutex> lck{ m_parent->rxWorker.mutex() };
 				m_parent->rxok_list.push_back(param);
-				m_parent->rxWorker.notify();
-				lck.unlock();
 			}
+            m_parent->rxWorker.notify();
 			break;
 		}
 		case (MessageEvents::TIMED_OUT_ON_SEND) :
@@ -1173,16 +1174,15 @@ namespace iMS
 			{
 				std::unique_lock<std::mutex> lck{ m_parent->rxWorker.mutex() };
 				m_parent->rxerr_list.push_back(param);
-				m_parent->rxWorker.notify();
-				lck.unlock();
 			}
+            m_parent->rxWorker.notify();
 			break;
 		}
 		}
 	}
 
-	CompensationTableDownload::CompensationTableDownload(IMSSystem& iMS, const CompensationTable& tbl, const RFChannel& chan)
-		: p_Impl(new Impl(iMS, tbl, chan))	
+	CompensationTableDownload::CompensationTableDownload(std::shared_ptr<IMSSystem> ims, const CompensationTable& tbl, const RFChannel& chan)
+		: p_Impl(new Impl(ims, tbl, chan))	
 	{}
 
 	CompensationTableDownload::~CompensationTableDownload() 
@@ -1200,87 +1200,90 @@ namespace iMS
 
 	bool CompensationTableDownload::StartDownload()
 	{
-		// Make sure Synthesiser is present
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
-
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport *iorpt;
-		std::uint16_t data;
-
-		if (!p_Impl->m_channel.IsAll()) {
-			// Channel Scoped Compensation requested.  Confirm support in iMS firmware
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_Chan_Scope);
-			DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-			delete iorpt;
-			if (Resp.Done()) {
-				data = Resp.Payload<std::uint16_t>();
-			}
-			else return false;
-
-			if (!(data & 0x100))
-				// no support for channel scoped compensation
-				return false;
-		}
-
-		if (p_Impl->m_Table == nullptr) {
-			// Create Local copy of table that is reinterpreted to match connected device
-			if (p_Impl->m_channel.IsAll())
-				p_Impl->m_Table = std::make_shared<CompensationTable>(p_Impl->myiMS, p_Impl->m_TableRef);
-			else
-				p_Impl->m_Table = std::make_shared<CompensationTable>(p_Impl->myiMS.Synth().GetCap().LUTDepth - 2, 
-					p_Impl->myiMS.Synth().GetCap().lowerFrequency, p_Impl->myiMS.Synth().GetCap().upperFrequency,
-					p_Impl->m_TableRef);
-		}
-
-
-        p_Impl->downloadWorker.start();
-        p_Impl->rxWorker.start();
-
-        int retries=10;
-        while (retries)
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
         {
-			std::unique_lock<std::mutex> lck{ p_Impl->downloadWorker.mutex(), std::try_to_lock };
+            // Make sure Synthesiser is present
+            if (!ims->Synth().IsValid()) return false;
 
-			if (!lck.owns_lock()) {
-                if (!--retries) return false;
-				// Mutex lock failed, Downloader must be busy, try again later
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-				continue;
-			}
+            auto conn = ims->Connection();
+            HostReport *iorpt;
+            std::uint16_t data;
 
-    		p_Impl->dl_list.clear();
-            p_Impl->downloadRequested = true;
+            if (!p_Impl->m_channel.IsAll()) {
+                // Channel Scoped Compensation requested.  Confirm support in iMS firmware
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_Chan_Scope);
+                DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+                delete iorpt;
+                if (Resp.Done()) {
+                    data = Resp.Payload<std::uint16_t>();
+                }
+                else return false;
 
-            if (p_Impl->m_channel.IsAll()) {
-                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Chan_Scope);
-                iorpt->Payload<std::uint16_t>(0);
+                if (!(data & 0x100))
+                    // no support for channel scoped compensation
+                    return false;
             }
-            else {
-                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
-                iorpt->Payload<std::uint16_t>(1 << (p_Impl->m_channel-1));
-                if (NullMessage == myiMSConn->SendMsg(*iorpt))
+
+            if (p_Impl->m_Table == nullptr) {
+                // Create Local copy of table that is reinterpreted to match connected device
+                if (p_Impl->m_channel.IsAll())
+                    p_Impl->m_Table = std::make_shared<CompensationTable>(ims, p_Impl->m_TableRef);
+                else
+                    p_Impl->m_Table = std::make_shared<CompensationTable>(ims->Synth().GetCap().LUTDepth - 2, 
+                        ims->Synth().GetCap().lowerFrequency, ims->Synth().GetCap().upperFrequency,
+                        p_Impl->m_TableRef);
+            }
+
+
+            p_Impl->downloadWorker.start();
+            p_Impl->rxWorker.start();
+
+            int retries=10;
+            while (retries)
+            {
+                std::unique_lock<std::mutex> lck{ p_Impl->downloadWorker.mutex(), std::try_to_lock };
+
+                if (!lck.owns_lock()) {
+                    if (!--retries) return false;
+                    // Mutex lock failed, Downloader must be busy, try again later
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+
+                p_Impl->dl_list.clear();
+                p_Impl->downloadRequested = true;
+
+                if (p_Impl->m_channel.IsAll()) {
+                    iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Chan_Scope);
+                    iorpt->Payload<std::uint16_t>(0);
+                }
+                else {
+                    iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
+                    iorpt->Payload<std::uint16_t>(1 << (p_Impl->m_channel-1));
+                    if (NullMessage == conn->SendMsg(*iorpt))
+                    {
+                        delete iorpt;
+                        return false;
+                    }
+                    delete iorpt;
+
+                    iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Chan_Scope);
+                    iorpt->Payload<std::uint16_t>(0xF);
+                }
+
+                if (NullMessage == conn->SendMsg(*iorpt))
                 {
                     delete iorpt;
                     return false;
                 }
                 delete iorpt;
 
-                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Chan_Scope);
-                iorpt->Payload<std::uint16_t>(0xF);
+                break;
             }
 
-            if (NullMessage == myiMSConn->SendMsg(*iorpt))
-            {
-                delete iorpt;
-                return false;
-            }
-            delete iorpt;
-
-            break;
-        }
-
-        p_Impl->downloadWorker.notify();
-		return true;
+            p_Impl->downloadWorker.notify();
+            return true;
+        }).value_or(false);
 	}
 
 	//bool CompensationTableDownload::StartDownload(CompensationTableBank bank, int start_addr) : m_bank(bank), m_startaddr(start_addr)
@@ -1289,71 +1292,74 @@ namespace iMS
 
 	bool CompensationTableDownload::StartVerify()
 	{
-		// Make sure Synthesiser is present
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {
+            // Make sure Synthesiser is present
+            if (!ims->Synth().IsValid()) return false;
 
-		if (!p_Impl->m_channel.IsAll()) {
-			// Channel Scoped Compensation requested.  Confirm support in iMS firmware
-			IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            if (!p_Impl->m_channel.IsAll()) {
+                // Channel Scoped Compensation requested.  Confirm support in iMS firmware
+                auto conn = ims->Connection();
 
-			HostReport *iorpt;
+                HostReport *iorpt;
 
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_Chan_Scope);
-			DeviceReport Resp = myiMSConn->SendMsgBlocking(*iorpt);
-			delete iorpt;
-			std::uint16_t data;
-			if (Resp.Done()) {
-				data = Resp.Payload<std::uint16_t>();
-			}
-			else return false;
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_Chan_Scope);
+                DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+                delete iorpt;
+                std::uint16_t data;
+                if (Resp.Done()) {
+                    data = Resp.Payload<std::uint16_t>();
+                }
+                else return false;
 
-			if (!(data & 0x100))
-				// no support for channel scoped compensation
-				return false;
-		}
-
-		if (p_Impl->m_Table == nullptr) {
-			// Create Local copy of table that is reinterpreted to match connected device
-			if (p_Impl->m_channel.IsAll())
-				p_Impl->m_Table = std::make_shared<CompensationTable>(p_Impl->myiMS, p_Impl->m_TableRef);
-			else
-				p_Impl->m_Table = std::make_shared<CompensationTable>(p_Impl->myiMS.Synth().GetCap().LUTDepth - 2,
-					p_Impl->myiMS.Synth().GetCap().lowerFrequency, p_Impl->myiMS.Synth().GetCap().upperFrequency,
-					p_Impl->m_TableRef);
-		}
-
-        p_Impl->verifyWorker.start();
-        p_Impl->rxWorker.start();
-        
-        int retries=10;
-        while (retries)
-		{
-            std::unique_lock<std::mutex> lck{ p_Impl->verifyWorker.mutex(), std::try_to_lock };
-
-            if (!lck.owns_lock()) {
-                if (!--retries) return false;
-                // Mutex lock failed, Verifier must be busy, try again later
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-				continue;
+                if (!(data & 0x100))
+                    // no support for channel scoped compensation
+                    return false;
             }
 
-            std::unique_lock<std::mutex> rxlck{ p_Impl->rxWorker.mutex(), std::try_to_lock };
-
-            if (!rxlck.owns_lock()) {
-                if (!--retries) return false;
-                // Mutex lock failed, Rx must be busy, try again later
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-				continue;
+            if (p_Impl->m_Table == nullptr) {
+                // Create Local copy of table that is reinterpreted to match connected device
+                if (p_Impl->m_channel.IsAll())
+                    p_Impl->m_Table = std::make_shared<CompensationTable>(ims, p_Impl->m_TableRef);
+                else
+                    p_Impl->m_Table = std::make_shared<CompensationTable>(ims->Synth().GetCap().LUTDepth - 2,
+                        ims->Synth().GetCap().lowerFrequency, ims->Synth().GetCap().upperFrequency,
+                        p_Impl->m_TableRef);
             }
 
-            p_Impl->verifyRequested = true;
-            break;
-        }
+            p_Impl->verifyWorker.start();
+            p_Impl->rxWorker.start();
+            
+            int retries=10;
+            while (retries)
+            {
+                std::unique_lock<std::mutex> lck{ p_Impl->verifyWorker.mutex(), std::try_to_lock };
 
-		p_Impl->VerifyStarted = true;
-		p_Impl->verifier.VerifyReset();
-		p_Impl->verifyWorker.notify();
-		return true;
+                if (!lck.owns_lock()) {
+                    if (!--retries) return false;
+                    // Mutex lock failed, Verifier must be busy, try again later
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+
+                std::unique_lock<std::mutex> rxlck{ p_Impl->rxWorker.mutex(), std::try_to_lock };
+
+                if (!rxlck.owns_lock()) {
+                    if (!--retries) return false;
+                    // Mutex lock failed, Rx must be busy, try again later
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+
+                p_Impl->verifyRequested = true;
+                break;
+            }
+
+            p_Impl->VerifyStarted = true;
+            p_Impl->verifier.VerifyReset();
+            p_Impl->verifyWorker.notify();
+            return true;
+        }).value_or(false);
 	}
 
 	int CompensationTableDownload::GetVerifyError()
@@ -1379,20 +1385,20 @@ namespace iMS
 		p_Impl->m_Event.Unsubscribe(message, handler);
 	}
 
-	void CompensationTableDownload::Impl::AddPointToVector(std::vector<std::uint8_t>& lut_data, const CompensationPoint& pt)
+	void CompensationTableDownload::Impl::AddPointToVector(std::shared_ptr<IMSSystem> ims, std::vector<std::uint8_t>& lut_data, const CompensationPoint& pt)
 	{
-		std::uint16_t phase = PhaseRenderer::RenderAsCompensationPoint(myiMS, pt.Phase());
+		std::uint16_t phase = PhaseRenderer::RenderAsCompensationPoint(ims, pt.Phase());
 		lut_data.push_back(static_cast<std::uint8_t>(phase & 0xFF));
 		lut_data.push_back(static_cast<std::uint8_t>((phase >> 8) & 0xFF));
-		std::uint16_t ampl = AmplitudeRenderer::RenderAsCompensationPoint(myiMS, pt.Amplitude());
+		std::uint16_t ampl = AmplitudeRenderer::RenderAsCompensationPoint(ims, pt.Amplitude());
 		lut_data.push_back(static_cast<std::uint8_t>(ampl & 0xFF));
 		lut_data.push_back(static_cast<std::uint8_t>((ampl >> 8) & 0xFF));
 		std::uint16_t sync_dgtl = pt.SyncDig();
-		sync_dgtl &= ((1 << myiMS.Synth().GetCap().LUTSyncDBits) - 1);
+		sync_dgtl &= ((1 << ims->Synth().GetCap().LUTSyncDBits) - 1);
 		lut_data.push_back(static_cast<std::uint8_t>(sync_dgtl & 0xFF));
 		lut_data.push_back(static_cast<std::uint8_t>((sync_dgtl >> 8) & 0xFF));
 		double anlg = std::max<double>(0.0, std::min<double>(1.0, pt.SyncAnlg()));
-		std::uint16_t sync_anlg = static_cast<std::uint16_t>(std::floor(anlg * (pow(2.0, (myiMS.Synth().GetCap().LUTSyncABits))-1.0) + 0.5));
+		std::uint16_t sync_anlg = static_cast<std::uint16_t>(std::floor(anlg * (pow(2.0, (ims->Synth().GetCap().LUTSyncABits))-1.0) + 0.5));
 		lut_data.push_back(static_cast<std::uint8_t>(sync_anlg & 0xFF));
 		lut_data.push_back(static_cast<std::uint8_t>((sync_anlg >> 8) & 0xFF));
 	}
@@ -1400,7 +1406,6 @@ namespace iMS
 	// CompensationTable Downloading Thread
 	void CompensationTableDownload::Impl::DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
-   
 		while (true) {
 			std::unique_lock<std::mutex> lck{ mtx };
 			cond.wait(lck, [this, &running]() {
@@ -1411,8 +1416,11 @@ namespace iMS
 			if (!running) break;
             downloadRequested = false;
 
+            auto ims = m_ims.lock();
+            if (!ims) break;
+            auto conn = ims->Connection();
+
 			// Download loop
-			IConnectionManager * const myiMSConn = myiMS.Connection();
 			HostReport *iorpt;
 			int lut_index = 0;
 			int length = static_cast<int>(m_Table->Size());
@@ -1448,7 +1456,7 @@ namespace iMS
 					for (int i = 0; i < 64; i += 8)
 					{
 						CompensationPoint pt = (*it);
-						AddPointToVector(lut_data, pt);
+						AddPointToVector(ims, lut_data, pt);
 
 						if ((++it == m_Table->cend()) || (++lut_index == length))
 						{
@@ -1461,13 +1469,13 @@ namespace iMS
 					buf_bytes -= 8;
 					lut_addr = 8 * ((lut_index << 2) + m_channel - 1);
 					CompensationPoint pt = (*it);
-					AddPointToVector(lut_data, pt);
+					AddPointToVector(ims, lut_data, pt);
 					++it; ++lut_index;
 				}
 
 				iorpt = new HostReport(HostReport::Actions::LUT_ENTRY, HostReport::Dir::WRITE, lut_addr);
 				iorpt->Payload<std::vector<std::uint8_t>>(lut_data);
-				MessageHandle h = myiMSConn->SendMsg(*iorpt);
+				MessageHandle h = conn->SendMsg(*iorpt);
 				delete iorpt;
 
 				// Add message handle to download list so we can check the responses
@@ -1500,7 +1508,9 @@ namespace iMS
 			if (!running) break;
             verifyRequested = false;
 
-			IConnectionManager * const myiMSConn = myiMS.Connection();
+            auto ims = m_ims.lock();
+            if (!ims) break;
+            auto conn = ims->Connection();
 
 			// Verify loop
 			HostReport* iorpt;
@@ -1531,7 +1541,7 @@ namespace iMS
 					for (int i = 0; i < 64; i += 8)
 					{
 						CompensationPoint pt = (*it);
-						AddPointToVector(lut_data, pt);
+						AddPointToVector(ims, lut_data, pt);
 
 						if ((++it == m_Table->cend()) || (++lut_index == length))
 						{
@@ -1544,14 +1554,14 @@ namespace iMS
 					buf_bytes -= 8;
 					lut_addr = 8 * ((lut_index << 2) + m_channel - 1);
 					CompensationPoint pt = (*it);
-					AddPointToVector(lut_data, pt);
+					AddPointToVector(ims, lut_data, pt);
 					++it; ++lut_index;
 				}
 				iorpt = new HostReport(HostReport::Actions::LUT_ENTRY, HostReport::Dir::READ, lut_addr);
 				ReportFields f = iorpt->Fields();
 				f.len = static_cast<std::uint16_t>(lut_data.size());
 				iorpt->Fields(f);
-				MessageHandle h = myiMSConn->SendMsg(*iorpt);
+				MessageHandle h = conn->SendMsg(*iorpt);
 				delete iorpt;
 
 				// Add CompensationTable data to verify memory
@@ -1638,22 +1648,25 @@ namespace iMS
 
 	const FileSystemIndex CompensationTableDownload::Store(FileDefault def, const std::string& FileName) const
 	{
-		FileSystemManager fsm(p_Impl->myiMS);
-		std::uint32_t addr;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> FileSystemIndex
+        { 
+            FileSystemManager fsm(ims);
+            std::uint32_t addr;
 
-		std::vector<std::uint8_t> data;
-		for (CompensationTable::const_iterator it = p_Impl->m_Table->cbegin(); it != p_Impl->m_Table->cend(); ++it)
-		{
-			p_Impl->AddPointToVector(data, (*it));
-		}
+            std::vector<std::uint8_t> data;
+            for (CompensationTable::const_iterator it = p_Impl->m_Table->cbegin(); it != p_Impl->m_Table->cend(); ++it)
+            {
+                p_Impl->AddPointToVector(ims, data, (*it));
+            }
 
-		if (!fsm.FindSpace(addr, data)) return -1;
-		FileSystemTableEntry fste(FileSystemTypes::COMPENSATION_TABLE, addr, data.size(), def, FileName);
-		p_Impl->fsw = new FileSystemWriter(p_Impl->myiMS, fste, data);
+            if (!fsm.FindSpace(addr, data)) return -1;
+            FileSystemTableEntry fste(FileSystemTypes::COMPENSATION_TABLE, addr, data.size(), def, FileName);
+            p_Impl->fsw = new FileSystemWriter(ims, fste, data);
 
-		FileSystemIndex result = p_Impl->fsw->Program();
-		delete p_Impl->fsw;
-		return result;
+            FileSystemIndex result = p_Impl->fsw->Program();
+            delete p_Impl->fsw;
+            return result;            
+        }).value_or(-1);
 	}
 
 }

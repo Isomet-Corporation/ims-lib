@@ -142,7 +142,7 @@ namespace iMS
 		///
 		/// \param[in] ims A const reference to the iMS System
 		/// \since 1.1
-		Auxiliary(const IMSSystem& ims);
+		Auxiliary(std::shared_ptr< IMSSystem > ims);
 		///
 		/// \brief Destructor for Auxiliary Object
 		~Auxiliary();
@@ -484,7 +484,7 @@ namespace iMS
 		/// to download
 		/// \param[in] ims the iMS target System
 		/// \param[in] script the DDSScript to download
-		DDSScriptDownload(IMSSystem& ims, const DDSScript& script);
+		DDSScriptDownload(std::shared_ptr<IMSSystem> ims, const DDSScript& script);
 		/// \brief DDSScriptDownload destructur
 		~DDSScriptDownload();
 

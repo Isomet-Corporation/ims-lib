@@ -71,7 +71,7 @@ namespace iMS {
 	class FileSystemTableReader
 	{
 	public:
-		FileSystemTableReader(const IMSSystem& ims);
+		FileSystemTableReader(std::shared_ptr<IMSSystem> ims);
 		~FileSystemTableReader();
 		FileSystemTable Readback();
 	private:
@@ -87,7 +87,7 @@ namespace iMS {
 	class FileSystemTableWriter
 	{
 	public:
-		FileSystemTableWriter(IMSSystem& ims, const FileSystemTable&);
+		FileSystemTableWriter(std::shared_ptr<IMSSystem> ims, const FileSystemTable&);
 		~FileSystemTableWriter();
 		bool Program();
 	private:
@@ -103,8 +103,8 @@ namespace iMS {
 	class FileSystemReader
 	{
 	public:
-		FileSystemReader(const IMSSystem& ims, const FileSystemIndex index);
-		FileSystemReader(const IMSSystem& ims, const std::string FileName);
+		FileSystemReader(std::shared_ptr<IMSSystem> ims, const FileSystemIndex index);
+		FileSystemReader(std::shared_ptr<IMSSystem> ims, const std::string FileName);
 		~FileSystemReader();
 		bool Readback(std::vector<std::uint8_t>&);
 	private:
@@ -120,7 +120,7 @@ namespace iMS {
 	class FileSystemWriter
 	{
 	public:
-		FileSystemWriter(IMSSystem& ims, const FileSystemTableEntry& fste, const std::vector<std::uint8_t>& file_data);
+		FileSystemWriter(std::shared_ptr<IMSSystem> ims, const FileSystemTableEntry& fste, const std::vector<std::uint8_t>& file_data);
 		~FileSystemWriter();
 		FileSystemIndex Program();
 	private:

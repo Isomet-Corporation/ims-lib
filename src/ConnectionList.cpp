@@ -470,9 +470,9 @@ namespace iMS
 		return pImpl->ModuleNames;
 	}
 
-	std::vector<IMSSystem> ConnectionList::scan()
+	std::vector<std::shared_ptr<IMSSystem>> ConnectionList::scan()
 	{
-		std::vector<IMSSystem> fulliMSList;
+		std::vector<std::shared_ptr<IMSSystem>> fulliMSList;
 		for (ConnectionList::Impl::const_iterator iter = pImpl->begin();
 			iter != pImpl->end();
 			iter++)
@@ -481,7 +481,7 @@ namespace iMS
 
 			if ((*pImpl->config_map)[object->Ident()].IncludeInScan) {
 				BOOST_LOG_SEV(lg::get(), sev::info) << "scan(" << object->Ident() << ") start" << std::endl;
-				std::vector<IMSSystem> newiMSList = object->Discover((*pImpl->config_map)[object->Ident()].PortMask);
+				std::vector<std::shared_ptr<IMSSystem>> newiMSList = object->Discover((*pImpl->config_map)[object->Ident()].PortMask);
 
 				// Add newly found iMS's to the full list of iMS's
 				fulliMSList.insert(fulliMSList.end(), newiMSList.begin(), newiMSList.end());

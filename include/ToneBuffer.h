@@ -326,7 +326,7 @@ namespace iMS {
 		/// \param[in] ims A const reference to the iMS System which is the target for downloading the Image
 		/// \param[in] tb A const reference to the ToneBuffer which shall be downloaded to the target
 		/// \since 1.1
-		ToneBufferDownload(IMSSystem& ims, const ToneBuffer& tb);
+		ToneBufferDownload(std::shared_ptr<IMSSystem> ims, const ToneBuffer& tb);
 		///
 		/// \brief Destructor for ToneBufferDownload Object
 		~ToneBufferDownload();

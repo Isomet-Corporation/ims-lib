@@ -164,15 +164,15 @@ namespace iMS
 	///		if (std::find(modules.begin(), modules.end(), "CM_ETH") != modules.end()) connList->config("CM_ETH").PortMask.push_back("192.168.2.128");
     ///
 	///     // Scan all enabled connection types for iMS systems and return an array of results
-	///     std::vector<IMSSystem> iMSList = connList->scan();
+	///     std::vector<std::shared_ptr<IMSSystem>> iMSList = connList->scan();
 	///
 	///     // Our iMS object
-	///     IMSSystem myiMS;
-	///     for (std::vector<IMSSystem>::const_iterator iter = iMSList.begin();	iter != iMSList.end(); ++iter)
+	///     std::shared_ptr<IMSSystem> myiMS;
+	///     for (std::vector<std::shared_ptr<IMSSystem>>::const_iterator iter = iMSList.begin();	iter != iMSList.end(); ++iter)
 	///     {
     ///         myiMS = (*iter);
     ///         // Look for the first iMS system that contains an iMSL type Controller
-    ///		    if (myiMS.Ctlr().IsValid() && (myiMS.Ctlr().Model == "iMSL"))
+    ///		    if (myiMS->Ctlr().IsValid() && (myiMS->Ctlr().Model == "iMSL"))
     ///         {
     ///             break;
     ///         }
@@ -187,13 +187,13 @@ namespace iMS
     ///	    }
     ///
     ///     // Open the connection
-    ///     myiMS.Connect();
-    ///		std::cout << "Connecting to IMS System on port: " << myiMS.ConnPort() << std::endl;
+    ///     myiMS->Connect();
+    ///		std::cout << "Connecting to IMS System on port: " << myiMS->ConnPort() << std::endl;
     ///
     ///     // .... Do something with the iMS
     ///
     ///     // All done.  Disconnect.
-    ///     myiMS.Disconnect();
+    ///     myiMS->Disconnect();
     ///
     ///     // Always free the ConnectionList memory after all iMS functions are complete and connections closed
     ///     delete connList;
@@ -298,7 +298,7 @@ namespace iMS
         ///
         /// \return Returns an array of discovered iMS Systems
         /// \since 1.0
-		std::vector<IMSSystem> scan();
+		std::vector<std::shared_ptr<IMSSystem>> scan();
 		//@}
 	private:
 		class Impl;

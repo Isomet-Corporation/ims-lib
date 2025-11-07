@@ -154,7 +154,7 @@ namespace iMS
 		///
 		/// \param[in] ims A const reference to the iMS System
 		/// \since 1.1
-		Diagnostics(const IMSSystem& ims);
+		Diagnostics(std::shared_ptr<IMSSystem> ims);
 		///
 		/// \brief Destructor for Diagnostics Object
 		~Diagnostics();

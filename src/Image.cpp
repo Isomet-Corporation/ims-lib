@@ -41,7 +41,7 @@ namespace iMS {
 	class ImageFormat::Impl {
 	public:
 		Impl();
-		Impl(const IMSSystem& myiMS);
+		Impl(std::shared_ptr<IMSSystem>);
 
 		int num_chan{ 4 };
 		unsigned int n_ampl_bytes{ 1 };
@@ -58,20 +58,20 @@ namespace iMS {
 
 	ImageFormat::Impl::Impl() : num_chan(4) {}
 
-	ImageFormat::Impl::Impl(const IMSSystem& ims) {
+	ImageFormat::Impl::Impl(std::shared_ptr<IMSSystem> ims) {
 		/* In earlier iMSP Controller firmwares, only 4 channel images are supported */
-		if (ims.Ctlr().Model() == "iMSP" && ims.Ctlr().GetVersion().revision <= 63) {
+		if (ims->Ctlr().Model() == "iMSP" && ims->Ctlr().GetVersion().revision <= 63) {
 			num_chan = 4;
 		}
 		else
 		{
-			num_chan = ims.Synth().GetCap().channels;
+			num_chan = ims->Synth().GetCap().channels;
 			if (num_chan < RFChannel::min) num_chan = RFChannel::min;
 			if (num_chan > RFChannel::max) num_chan = RFChannel::max;
 
-			n_ampl_bytes = 1 + (ims.Synth().GetCap().amplBits-1) / 8;
+			n_ampl_bytes = 1 + (ims->Synth().GetCap().amplBits-1) / 8;
 			ampl_en = true;
-			n_phs_bytes = 1 + (ims.Synth().GetCap().phaseBits-1) / 8;
+			n_phs_bytes = 1 + (ims->Synth().GetCap().phaseBits-1) / 8;
 			phase_en = true;
 			n_freq_bytes = 2; // For backwards compatibility.  Must be manually set for higher resolution  // ims.Synth().GetCap().freqBits / 8;
 			n_synca = 2;
@@ -84,7 +84,7 @@ namespace iMS {
 
 	ImageFormat::ImageFormat() : p_Impl(new Impl()) {}
 
-	ImageFormat::ImageFormat(const IMSSystem& ims) : p_Impl(new Impl(ims)) {}
+	ImageFormat::ImageFormat(std::shared_ptr<IMSSystem> ims) : p_Impl(new Impl(ims)) {}
 
 	/// \brief Copy Constructor
 	ImageFormat::ImageFormat(const ImageFormat& rhs) : p_Impl(new Impl())

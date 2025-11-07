@@ -84,10 +84,10 @@ namespace iMS
 	///
 	/// \code
 	///		CS_RS422 cs_rs422;
-	///		if (std::find(myiMS.Ctlr().Interfaces().begin(), myiMS.Ctlr().Interfaces().end(), cs_rs422.Ident())
-	///			!= myiMS.Ctlr().Interfaces().end()) {
+	///		if (std::find(myiMS->Ctlr().Interfaces().begin(), myiMS->Ctlr().Interfaces().end(), cs_rs422.Ident())
+	///			!= myiMS->Ctlr().Interfaces().end()) {
 	///
-	///			myiMS.RetrieveSettings(cs_rs422);
+	///			myiMS->RetrieveSettings(cs_rs422);
 	///
 	///			if (cs_rs422.BaudRate() == 115200) {
 	///				cs_rs422.BaudRate(57600);
@@ -96,7 +96,7 @@ namespace iMS
 	///				cs_rs422.BaudRate(115200);
 	///			}
 	///
-	///			myiMS.ApplySettings(cs_rs422);
+	///			myiMS->ApplySettings(cs_rs422);
 	///			std::cout << "New settings: Baud Rate = " << cs_rs422.BaudRate() << std::endl;
 	///		}
 	/// \endcode

@@ -452,7 +452,7 @@ namespace iMS
 					} 
 					else {
 						// Add FPGA Build
-						ImageTableReader imgtr(*this);
+						ImageTableReader imgtr(shared_from_this());
 						ImageTable ctlr_imgt = imgtr.Readback();
 						const IMSController& c = this->Ctlr();
 						IMSController Ctlr(c.Model(), c.Description(), c.GetCap(), c.GetVersion(), ctlr_imgt);
@@ -500,7 +500,7 @@ namespace iMS
 					}
 					else {
 						BOOST_LOG_SEV(lg::get(), sev::info) << "IMSSystem: reading back FST" << std::endl;
-						FileSystemTableReader fstr(*this);
+						FileSystemTableReader fstr(shared_from_this());
 						FileSystemTable synth_fst = fstr.Readback();
 						const IMSSynthesiser& s = this->Synth();
 						IMSOption addon;
@@ -525,7 +525,7 @@ namespace iMS
 						IMSSynthesiser Synth(s.Model(), s.Description(), cap, FWVersion(fpga_build), synth_fst, std::make_shared<IMSOption>(addon));
 						this->Synth(Synth);
 
-						FileSystemManager fsm(*this);
+						FileSystemManager fsm(shared_from_this());
 						for (int i = 0; i < MAX_FST_ENTRIES; i++) {
 							FileSystemTypes type = synth_fst[i].Type();
 							std::string name = synth_fst[i].Name();

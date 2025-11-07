@@ -165,7 +165,7 @@ namespace iMS
     /// \param[in] ims A reference to the iMS System which is the target for downloading the Image
     /// \param[in] img A const reference to the Image which shall be downloaded to the target
     /// \since 1.0
-    ImageDownload(IMSSystem& ims, const Image& img);
+    ImageDownload(std::shared_ptr<IMSSystem> ims, const Image& img);
     ///
     /// \brief Destructor for ImageDownload Object
 		~ImageDownload();
@@ -429,7 +429,7 @@ namespace iMS
     /// \param[in] ims A const reference to the iMS System which is the target on which to playback the Image
     /// \param[in] img A const reference to the Image that has been downloaded to the target
     /// \since 1.0
-		ImagePlayer(const IMSSystem& ims, const Image& img);
+		ImagePlayer(std::shared_ptr<IMSSystem> ims, const Image& img);
     /// \brief Constructor for ImagePlayer Object with User Configuration
     ///
     /// As per the default constructor, but also receives a const reference to a PlayConfiguration
@@ -443,7 +443,7 @@ namespace iMS
     /// \param[in] img A const reference to the Image that has been downloaded to the target
     /// \param[in] cfg A const reference to a PlayConfiguration playback configuration structure
     /// \since 1.0
-		ImagePlayer(const IMSSystem& ims, const Image& img, const PlayConfiguration& cfg);
+		ImagePlayer(std::shared_ptr<IMSSystem> ims, const Image& img, const PlayConfiguration& cfg);
     /// \brief Constructor for ImagePlayer Object to play Image direct from Image Table using Internal Clock
     ///
     /// Sometimes it is necessary to play an Image on an iMS System which has already been downloaded
@@ -470,7 +470,7 @@ namespace iMS
     /// \param[in] ims A const reference to the iMS System which is the target on which to playback the Image
     /// \param[in] ite A const reference to the image residing on the iMS System which has been obtained from the ImageTableViewer
     /// \param[in] InternalClock the internal clock rate to use when playing the image
-		ImagePlayer(const IMSSystem& ims, const ImageTableEntry& ite, const kHz InternalClock);
+		ImagePlayer(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const kHz InternalClock);
     /// \brief Constructor for ImagePlayer Object to play Image direct from Image Table using External Clock
     ///
     /// Sometimes it is necessary to play an Image on an iMS System which has already been downloaded
@@ -497,7 +497,7 @@ namespace iMS
     /// \param[in] ims A const reference to the iMS System which is the target on which to playback the Image
     /// \param[in] ite A const reference to the image residing on the iMS System which has been obtained from the ImageTableViewer
     /// \param[in] ExtClockDivide Configures to skip external clock edges. Divides down clock rate by this divisor.
-		ImagePlayer(const IMSSystem& ims, const ImageTableEntry& ite, const int ExtClockDivide = 1);
+		ImagePlayer(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const int ExtClockDivide = 1);
     /// \brief Constructor for ImagePlayer Object to play Image direct from Image Table using Internal Clock and User Configuration
     ///
     /// Sometimes it is necessary to play an Image on an iMS System which has already been downloaded
@@ -526,7 +526,7 @@ namespace iMS
     /// \param[in] ite A const reference to the image residing on the iMS System which has been obtained from the ImageTableViewer
     /// \param[in] cfg A const reference to a PlayConfiguration playback configuration structure
     /// \param[in] InternalClock the internal clock rate to use when playing the image
-		ImagePlayer(const IMSSystem& ims, const ImageTableEntry& ite, const PlayConfiguration& cfg, const kHz InternalClock);
+		ImagePlayer(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const PlayConfiguration& cfg, const kHz InternalClock);
     /// \brief Constructor for ImagePlayer Object to play Image direct from Image Table using External Clock and User Configuration
     ///
     /// Sometimes it is necessary to play an Image on an iMS System which has already been downloaded
@@ -555,7 +555,7 @@ namespace iMS
     /// \param[in] ite A const reference to the image residing on the iMS System which has been obtained from the ImageTableViewer
     /// \param[in] cfg A const reference to a PlayConfiguration playback configuration structure
     /// \param[in] ExtClockDivide Configures to skip external clock edges. Divides down clock rate by this divisor.
-		ImagePlayer(const IMSSystem& ims, const ImageTableEntry& ite, const PlayConfiguration& cfg, const int ExtClockDivide = 1);
+		ImagePlayer(std::shared_ptr<IMSSystem> ims, const ImageTableEntry& ite, const PlayConfiguration& cfg, const int ExtClockDivide = 1);
     ///
     /// \brief Destructor for ImagePlayer Object
 		~ImagePlayer();
@@ -689,7 +689,7 @@ namespace iMS
 		///
 		/// \param[in] ims A reference to the iMS System whose ImageTable is to be viewed.
 		/// \since 1.2
-		ImageTableViewer(IMSSystem& ims);
+		ImageTableViewer(std::shared_ptr<IMSSystem> ims);
 		~ImageTableViewer();
 		//@}
 
@@ -842,7 +842,7 @@ namespace iMS
     /// \param[in] ims A reference to the iMS System which is the target for downloading the ImageSequence
     /// \param[in] seq A const reference to the ImageSequence which shall be downloaded to the target
     /// \since 1.2.4
-		SequenceDownload(IMSSystem& ims, const ImageSequence& seq);
+		SequenceDownload(std::shared_ptr<IMSSystem> ims, const ImageSequence& seq);
     /// \brief Destructor
 		~SequenceDownload();
     //@}
@@ -964,7 +964,7 @@ namespace iMS
     /// \brief Default Constructor
     ///
     /// Requires a reference to an iMS System in order to carry out communications with the Sequence Queue in the Controller
-		SequenceManager(const IMSSystem&);
+		SequenceManager(std::shared_ptr<IMSSystem>);
     /// \brief Destructor
 		~SequenceManager();
     //@}

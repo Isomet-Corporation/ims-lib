@@ -25,6 +25,7 @@
 #include "Message.h"
 #include "IConnectionManager.h"
 #include "IEventHandler.h"
+#include "PrivateUtil.h"
 
 #include <deque>
 #include <thread>
@@ -43,10 +44,10 @@ namespace iMS {
 	class BulkVerifier::Impl
 	{
 	public:
-		Impl(const IMSSystem&);
+		Impl(std::shared_ptr<IMSSystem>);
 		~Impl();
 
-		const IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		bool verifierRunning{ false };
 		BulkVerifierEventTrigger m_Event;
 
@@ -73,21 +74,21 @@ namespace iMS {
 		void RxWorker();
 	};
 
-	BulkVerifier::Impl::Impl(const IMSSystem& iMS) : myiMS(iMS), Receiver(new ResponseReceiver(this))	
+	BulkVerifier::Impl::Impl(std::shared_ptr<IMSSystem> ims) : m_ims(ims), Receiver(new ResponseReceiver(this))	
 	{
 		// Start a thread to receive the verify readback data and process it
 		verifierRunning = true;
 		rxVfyThread = std::thread(&BulkVerifier::Impl::RxWorker, this);
 
 		// Subscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        auto conn = ims->Connection();
+        conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+        conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+        conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+        conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+        conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+        conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+        conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
 	}
 
 	BulkVerifier::Impl::~Impl() { 
@@ -97,19 +98,21 @@ namespace iMS {
 		rxVfyThread.join();
 
 		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) {         
+            IConnectionManager * const conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        });
 
 		delete Receiver;
 	}
 
-	BulkVerifier::BulkVerifier(const IMSSystem& iMS) : myiMS(iMS), p_Impl(new Impl(iMS)) {}
+	BulkVerifier::BulkVerifier(std::shared_ptr<IMSSystem> ims) : p_Impl(new Impl(ims)) {}
 
 
 	BulkVerifier::~BulkVerifier() { delete p_Impl; }
@@ -230,96 +233,98 @@ namespace iMS {
 	// Image Readback Verify Data Processing Thread
 	void BulkVerifier::Impl::RxWorker()
 	{
-		std::unique_lock<std::mutex> lck{ m_rxmutex };
-		while (verifierRunning) {
-			// Release lock implicitly, wait for next download trigger
-			m_rxcond.wait(lck);
+        with_locked(m_ims, [&](std::shared_ptr<IMSSystem> ims) {      
+            auto conn = ims->Connection();
 
-			// Allow thread to terminate 
-			if (!verifierRunning) break;
+            std::unique_lock<std::mutex> lck{ m_rxmutex };
+            while (verifierRunning) {
+                // Release lock implicitly, wait for next download trigger
+                m_rxcond.wait(lck);
 
-			while (!rxok_list.empty())
-			{
-				int param = rxok_list.front();
-				rxok_list.pop_front();
+                // Allow thread to terminate 
+                if (!verifierRunning) break;
 
-				for (std::list<std::shared_ptr<VerifyChunk>>::iterator iter = vfy_list.begin();
-					iter != vfy_list.end();)
-				{
-					std::shared_ptr<VerifyChunk> chunk = static_cast<std::shared_ptr<VerifyChunk>>(*iter);
-					if (chunk->handle() != (param))
-					{
-						++iter;
-						continue;
-					}
+                while (!rxok_list.empty())
+                {
+                    int param = rxok_list.front();
+                    rxok_list.pop_front();
 
-					IConnectionManager* myiMSConn = myiMS.Connection();
+                    for (std::list<std::shared_ptr<VerifyChunk>>::iterator iter = vfy_list.begin();
+                        iter != vfy_list.end();)
+                    {
+                        std::shared_ptr<VerifyChunk> chunk = static_cast<std::shared_ptr<VerifyChunk>>(*iter);
+                        if (chunk->handle() != (param))
+                        {
+                            ++iter;
+                            continue;
+                        }
 
-					IOReport resp = myiMSConn->Response(param);
-					if (!chunk->match(resp.Payload<std::vector<std::uint8_t>>()))
-					{
-						// Verify Error
-						error_list.push_back(chunk->addr());
-					}
-					else {
-						// Verify Match
-					}
-					// Remove from list
-					std::unique_lock<std::mutex> vfylck{ m_vfymutex };
-					iter = vfy_list.erase(iter);
+                        IOReport resp = conn->Response(param);
+                        if (!chunk->match(resp.Payload<std::vector<std::uint8_t>>()))
+                        {
+                            // Verify Error
+                            error_list.push_back(chunk->addr());
+                        }
+                        else {
+                            // Verify Match
+                        }
+                        // Remove from list
+                        std::unique_lock<std::mutex> vfylck{ m_vfymutex };
+                        iter = vfy_list.erase(iter);
 
-					// Verify Finished?
-					//if (vfy_list.empty())
-					if (vfy_final == param)
-					{
-						if (error_list.empty())
-						{
-							// Verify Success
-							m_Event.Trigger<int>((void *)this, BulkVerifierEvents::VERIFY_SUCCESS, 0);
-						}
-						else
-						{
-							// Verify Fail
-							m_Event.Trigger<int>((void *)this, BulkVerifierEvents::VERIFY_FAIL, static_cast<const int>(error_list.size()));
-						}
-					}
-					vfylck.unlock();
-				}
-			}
+                        // Verify Finished?
+                        //if (vfy_list.empty())
+                        if (vfy_final == param)
+                        {
+                            if (error_list.empty())
+                            {
+                                // Verify Success
+                                m_Event.Trigger<int>((void *)this, BulkVerifierEvents::VERIFY_SUCCESS, 0);
+                            }
+                            else
+                            {
+                                // Verify Fail
+                                m_Event.Trigger<int>((void *)this, BulkVerifierEvents::VERIFY_FAIL, static_cast<const int>(error_list.size()));
+                            }
+                        }
+                        vfylck.unlock();
+                    }
+                }
 
-			while (!rxerr_list.empty())
-			{
-				int param = rxerr_list.front();
-				rxerr_list.pop_front();
+                while (!rxerr_list.empty())
+                {
+                    int param = rxerr_list.front();
+                    rxerr_list.pop_front();
 
-				for (std::list<std::shared_ptr<VerifyChunk>>::iterator iter = vfy_list.begin();
-					iter != vfy_list.end();)
-				{
-					std::shared_ptr<VerifyChunk> chunk = static_cast<std::shared_ptr<VerifyChunk>>(*iter);
-					if (chunk->handle() != (param))
-					{
-						++iter;
-						continue;
-					}
+                    for (std::list<std::shared_ptr<VerifyChunk>>::iterator iter = vfy_list.begin();
+                        iter != vfy_list.end();)
+                    {
+                        std::shared_ptr<VerifyChunk> chunk = static_cast<std::shared_ptr<VerifyChunk>>(*iter);
+                        if (chunk->handle() != (param))
+                        {
+                            ++iter;
+                            continue;
+                        }
 
-					// Implicit Verify Error (caused by timeout or similar)
-					error_list.push_back(chunk->addr());
+                        // Implicit Verify Error (caused by timeout or similar)
+                        error_list.push_back(chunk->addr());
 
-					// Remove from list
-					std::unique_lock<std::mutex> vfylck{ m_vfymutex };
-					iter = vfy_list.erase(iter);
+                        // Remove from list
+                        std::unique_lock<std::mutex> vfylck{ m_vfymutex };
+                        iter = vfy_list.erase(iter);
 
-					// Verify Finished?
-					if (vfy_list.empty())
-					{
-						// Verify Fail
-						m_Event.Trigger<int>((void *)this, BulkVerifierEvents::VERIFY_FAIL, static_cast<const int>(error_list.size()));
-					}
-					vfylck.unlock();
-				}
-			}
+                        // Verify Finished?
+                        if (vfy_list.empty())
+                        {
+                            // Verify Fail
+                            m_Event.Trigger<int>((void *)this, BulkVerifierEvents::VERIFY_FAIL, static_cast<const int>(error_list.size()));
+                        }
+                        vfylck.unlock();
+                    }
+                }
 
-		}
+            }
+        });
 	}
 
 }

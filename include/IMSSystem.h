@@ -183,7 +183,7 @@ namespace iMS
     ///
     /// For example:
     /// \code
-    /// std::cout << " FW Version: " << myiMS.Ctlr().GetVersion() << std::endl;
+    /// std::cout << " FW Version: " << myiMS->Ctlr().GetVersion() << std::endl;
     /// \endcode
     /// might print:
     /// \code
@@ -388,12 +388,14 @@ namespace iMS
     /// \date 2015-11-03
     /// \since 1.0
     ///
-	class LIBSPEC IMSSystem
+	class LIBSPEC IMSSystem : public std::enable_shared_from_this<IMSSystem>
 	{
 	public:
     /// \cond IMS_SYSTEM_CONSTRUCTORS
-		IMSSystem();
-		IMSSystem(IConnectionManager* const, const std::string&);
+        template<typename ... T>
+        static std::shared_ptr<IMSSystem> Create(T&& ... t) {
+            return std::shared_ptr<IMSSystem>(new IMSSystem(std::forward<T>(t)...));
+        }    
 		~IMSSystem();
 
 		// Copy & Assignment Constructors
@@ -501,6 +503,9 @@ namespace iMS
 		/// \return true if settings were retrieved successfully, false on failure.
 		bool RetrieveSettings(IConnectionSettings& settings);
 	private:
+		IMSSystem();
+		IMSSystem(IConnectionManager* const, const std::string&);
+
 		class Impl;
 		Impl * p_Impl;
 	};

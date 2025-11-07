@@ -128,7 +128,7 @@ namespace iMS
 		/// \param[in] ims A const reference to the iMS System
 		/// \param[in] chan to indicate which of the synthesised RF Channels should have wave shaping applied (or all)
 		/// \since 1.8.2
-		WaveShaping(IMSSystem& ims, RFChannel chan);
+		WaveShaping(std::shared_ptr<IMSSystem> ims, RFChannel chan);
 		///
 		/// \brief Destructor for WaveShaping Object
 		~WaveShaping();

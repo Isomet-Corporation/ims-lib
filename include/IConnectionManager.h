@@ -31,6 +31,7 @@
 #include "Containers.h"
 
 #include <list>
+#include <memory>
 #include <array>
 
 namespace iMS
@@ -49,7 +50,7 @@ namespace iMS
 		// Iterate through each of the available ports on the interface looking for 
 		//	   possible connections, probe each candidate to see if it responds with a  
 		//	   recognisable identity and return a list of the discovered devices to the user
-		virtual std::vector<IMSSystem> Discover(const ListBase<std::string>& PortMask) = 0;
+		virtual std::vector<std::shared_ptr<IMSSystem>> Discover(const ListBase<std::string>& PortMask) = 0;
 
 		// Connect to a device
 		virtual void Connect(const std::string&) = 0;

@@ -65,10 +65,10 @@ namespace iMS
 	class FirmwareUpgrade::Impl
 	{
 	public:
-		Impl(const IMSSystem&, const FirmwareUpgrade* aux, std::istream& strm);
+		Impl(std::shared_ptr<IMSSystem>, const FirmwareUpgrade* aux, std::istream& strm);
 		~Impl();
 
-		const IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		std::istream& m_strm;
 		std::unique_ptr<FirmwareUpgradeEventTrigger> m_Event;
 		UpgradeTarget m_target;
@@ -102,8 +102,8 @@ namespace iMS
 		const FirmwareUpgrade * const m_parent;
 	};
 
-	FirmwareUpgrade::Impl::Impl(const IMSSystem& iMS, const FirmwareUpgrade* fw, std::istream& strm) :
-		myiMS(iMS), m_parent(fw), m_strm(strm), m_Event(new FirmwareUpgradeEventTrigger())
+	FirmwareUpgrade::Impl::Impl(std::shared_ptr<IMSSystem> ims, const FirmwareUpgrade* fw, std::istream& strm) :
+		m_ims(ims), m_parent(fw), m_strm(strm), m_Event(new FirmwareUpgradeEventTrigger())
 	{
 		IsDone.store(false);
 		IsError.store(false);
@@ -123,7 +123,7 @@ namespace iMS
 		downloadThread.join();
 	}
 
-	FirmwareUpgrade::FirmwareUpgrade(const IMSSystem& iMS, std::istream& strm) : p_Impl(new Impl(iMS, this, strm))
+	FirmwareUpgrade::FirmwareUpgrade(std::shared_ptr<IMSSystem> ims, std::istream& strm) : p_Impl(new Impl(ims, this, strm))
 	{
 	}
 
@@ -135,94 +135,100 @@ namespace iMS
 
     bool FirmwareUpgrade::StartUpgrade(const UpgradeTarget target)
     {
-		// Make sure Controller and Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {         
+            // Make sure Controller and Synthesiser are present
+            if (!ims->Ctlr().IsValid()) return false;
 
-		if (target == UpgradeTarget::SYNTHESISER) {
-			if (!p_Impl->myiMS.Synth().IsValid()) return false;
-			if (!p_Impl->myiMS.Synth().GetCap().RemoteUpgrade) return false;
-		}
-		else {
-			if (!p_Impl->myiMS.Ctlr().GetCap().RemoteUpgrade) return false;
+            if (target == UpgradeTarget::SYNTHESISER) {
+                if (!ims->Synth().IsValid()) return false;
+                if (!ims->Synth().GetCap().RemoteUpgrade) return false;
+            }
+            else {
+                if (!ims->Ctlr().GetCap().RemoteUpgrade) return false;
 
-			if (p_Impl->myiMS.Ctlr().Model() == "iMSP") {
-				if (p_Impl->myiMS.Ctlr().GetVersion().revision == 98) {
-					// This is the limit for rev A Controllers
-					BOOST_LOG_SEV(lg::get(), sev::warning) << "Cannot upgrade iMSP rev A beyond 2.4.98" << std::endl;
-					return false;
-				}
-			}
-		}
-		p_Impl->m_target = target;
+                if (ims->Ctlr().Model() == "iMSP") {
+                    if (ims->Ctlr().GetVersion().revision == 98) {
+                        // This is the limit for rev A Controllers
+                        BOOST_LOG_SEV(lg::get(), sev::warning) << "Cannot upgrade iMSP rev A beyond 2.4.98" << std::endl;
+                        return false;
+                    }
+                }
+            }
+            p_Impl->m_target = target;
 
-		std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
+            std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
 
-		if (!lck.owns_lock()) {
-			// Mutex lock failed, Downloader must be busy, try again later
-			return false;
-		}
+            if (!lck.owns_lock()) {
+                // Mutex lock failed, Downloader must be busy, try again later
+                return false;
+            }
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-		HostReport::Actions target_action;
-		if (p_Impl->m_target == UpgradeTarget::SYNTHESISER) {
-			target_action = HostReport::Actions::FW_UPGRADE;
-		}
-		else {
-			target_action = HostReport::Actions::CTRLR_FW_UPGRADE;
-		}
-		HostReport * iorpt = new HostReport(target_action, HostReport::Dir::READ, 2);
-		DeviceReport ioresp = myiMSConn->SendMsgBlocking(*iorpt);
-		delete iorpt;
+            auto conn = ims->Connection();
+            HostReport::Actions target_action;
+            if (p_Impl->m_target == UpgradeTarget::SYNTHESISER) {
+                target_action = HostReport::Actions::FW_UPGRADE;
+            }
+            else {
+                target_action = HostReport::Actions::CTRLR_FW_UPGRADE;
+            }
+            HostReport * iorpt = new HostReport(target_action, HostReport::Dir::READ, 2);
+            DeviceReport ioresp = conn->SendMsgBlocking(*iorpt);
+            delete iorpt;
 
-		if (ioresp.Done() && !ioresp.GeneralError()) {
-			p_Impl->TotalLength = ioresp.Payload<uint32_t>();
-		}
-		else p_Impl->TotalLength = 0;
-		p_Impl->TransferredLength.store(0);
+            if (ioresp.Done() && !ioresp.GeneralError()) {
+                p_Impl->TotalLength = ioresp.Payload<uint32_t>();
+            }
+            else p_Impl->TotalLength = 0;
+            p_Impl->TransferredLength.store(0);
 
-		p_Impl->IsDone.store(false);
-		p_Impl->IsError.store(false);
-		p_Impl->FreeSpace.store(0);
-		p_Impl->ProgressCode.store(0);
-		p_Impl->ErrorCode.store(0);
+            p_Impl->IsDone.store(false);
+            p_Impl->IsError.store(false);
+            p_Impl->FreeSpace.store(0);
+            p_Impl->ProgressCode.store(0);
+            p_Impl->ErrorCode.store(0);
 
-		p_Impl->VerifyOnly = false;
+            p_Impl->VerifyOnly = false;
 
-		p_Impl->m_dlcond.notify_one();
-		return true;
+            p_Impl->m_dlcond.notify_one();
+            return true;
+        }).value_or(false);
 	}
      
     bool FirmwareUpgrade::VerifyIntegrity(const UpgradeTarget target)
     {
-		// Make sure Controller and Synthesiser are present
-		if (!p_Impl->myiMS.Ctlr().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {          
+            // Make sure Controller and Synthesiser are present
+            if (!ims->Ctlr().IsValid()) return false;
 
-		if (target == UpgradeTarget::SYNTHESISER) {
-			if (!p_Impl->myiMS.Synth().IsValid()) return false;
-			if (!p_Impl->myiMS.Synth().GetCap().RemoteUpgrade) return false;
-		}
-		else {
-			if (!p_Impl->myiMS.Ctlr().GetCap().RemoteUpgrade) return false;
-		}
-		p_Impl->m_target = target;
+            if (target == UpgradeTarget::SYNTHESISER) {
+                if (!ims->Synth().IsValid()) return false;
+                if (!ims->Synth().GetCap().RemoteUpgrade) return false;
+            }
+            else {
+                if (!ims->Ctlr().GetCap().RemoteUpgrade) return false;
+            }
+            p_Impl->m_target = target;
 
-		std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
+            std::unique_lock<std::mutex> lck{ p_Impl->m_dlmutex, std::try_to_lock };
 
-		if (!lck.owns_lock()) {
-			// Mutex lock failed, Downloader must be busy, try again later
-			return false;
-		}
+            if (!lck.owns_lock()) {
+                // Mutex lock failed, Downloader must be busy, try again later
+                return false;
+            }
 
-		p_Impl->IsDone.store(false);
-		p_Impl->IsError.store(false);
-		p_Impl->FreeSpace.store(0);
-		p_Impl->ProgressCode.store(0);
-		p_Impl->ErrorCode.store(0);
+            p_Impl->IsDone.store(false);
+            p_Impl->IsError.store(false);
+            p_Impl->FreeSpace.store(0);
+            p_Impl->ProgressCode.store(0);
+            p_Impl->ErrorCode.store(0);
 
-		p_Impl->VerifyOnly = true;
+            p_Impl->VerifyOnly = true;
 
-		p_Impl->m_dlcond.notify_one();
-		return true;
+            p_Impl->m_dlcond.notify_one();
+            return true;
+        }).value_or(false);        
 	}
     
 	bool FirmwareUpgrade::UpgradeDone() const { return p_Impl->IsDone.load(); }
@@ -257,7 +263,10 @@ namespace iMS
 
 	void FirmwareUpgrade::Impl::UpdateStatus()
 	{
-		IConnectionManager * const myiMSConn = myiMS.Connection();
+        auto ims = m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+                
 		HostReport::Actions target_action;
 		if (m_target == UpgradeTarget::SYNTHESISER) {
 			target_action = HostReport::Actions::FW_UPGRADE;
@@ -266,7 +275,7 @@ namespace iMS
 			target_action = HostReport::Actions::CTRLR_FW_UPGRADE;
 		}
 		HostReport * iorpt = new HostReport(target_action, HostReport::Dir::READ, 0);
-		DeviceReport ioresp = myiMSConn->SendMsgBlocking(*iorpt);
+		DeviceReport ioresp = conn->SendMsgBlocking(*iorpt);
 		delete iorpt;
 
 		if (ioresp.Done() && !ioresp.GeneralError() && (ioresp.Payload<std::vector<std::uint8_t>>().size() >= 4)) {
@@ -307,8 +316,11 @@ namespace iMS
 
 	void FirmwareUpgrade::Impl::UpdateFreeSpace()
 	{
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		HostReport::Actions target_action;
+        auto ims = m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
+        HostReport::Actions target_action;
 		if (m_target == UpgradeTarget::SYNTHESISER) {
 			target_action = HostReport::Actions::FW_UPGRADE;
 		}
@@ -316,7 +328,7 @@ namespace iMS
 			target_action = HostReport::Actions::CTRLR_FW_UPGRADE;
 		}
 		HostReport * iorpt = new HostReport(target_action, HostReport::Dir::READ, 1);
-		DeviceReport ioresp = myiMSConn->SendMsgBlocking(*iorpt);
+		DeviceReport ioresp = conn->SendMsgBlocking(*iorpt);
 		delete iorpt;
 
 		if (ioresp.Done() && !ioresp.GeneralError()) {
@@ -326,8 +338,11 @@ namespace iMS
 
 	void FirmwareUpgrade::Impl::UpgradeBegin()
 	{
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		HostReport::Actions target_action;
+        auto ims = m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
+        HostReport::Actions target_action;
 		if (m_target == UpgradeTarget::SYNTHESISER) {
 			target_action = HostReport::Actions::FW_UPGRADE;
 		}
@@ -336,14 +351,17 @@ namespace iMS
 		}
 		HostReport * iorpt = new HostReport(target_action, HostReport::Dir::WRITE, 0);
 		iorpt->Payload<uint8_t>(0);
-		myiMSConn->SendMsg(*iorpt);
+		conn->SendMsg(*iorpt);
 		delete iorpt;
 	}
 
 	void FirmwareUpgrade::Impl::VerifyBegin() 
 	{
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		HostReport::Actions target_action;
+        auto ims = m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
+        HostReport::Actions target_action;
 		if (m_target == UpgradeTarget::SYNTHESISER) {
 			target_action = HostReport::Actions::FW_UPGRADE;
 		}
@@ -352,14 +370,17 @@ namespace iMS
 		}
 		HostReport * iorpt = new HostReport(target_action, HostReport::Dir::WRITE, 0);
 		iorpt->Payload<uint8_t>(2);
-		myiMSConn->SendMsg(*iorpt);
+		conn->SendMsg(*iorpt);
 		delete iorpt;
 	}
 
 	void FirmwareUpgrade::Impl::UpgradeEnd()
 	{
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		HostReport::Actions target_action;
+        auto ims = m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
+        HostReport::Actions target_action;
 		if (m_target == UpgradeTarget::SYNTHESISER) {
 			target_action = HostReport::Actions::FW_UPGRADE;
 		}
@@ -368,14 +389,17 @@ namespace iMS
 		}
 		HostReport * iorpt = new HostReport(target_action, HostReport::Dir::WRITE, 0);
 		iorpt->Payload<uint8_t>(3);
-		myiMSConn->SendMsg(*iorpt);
+		conn->SendMsg(*iorpt);
 		delete iorpt;
 	}
 
 	void FirmwareUpgrade::Impl::SendBuffer(std::vector<uint8_t>& buf)
 	{
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		HostReport::Actions target_action;
+        auto ims = m_ims.lock();
+        if (!ims) return;
+        auto conn = ims->Connection();
+
+        HostReport::Actions target_action;
 		if (m_target == UpgradeTarget::SYNTHESISER) {
 			target_action = HostReport::Actions::FW_UPGRADE;
 		}
@@ -387,7 +411,7 @@ namespace iMS
 		ReportFields f = iorpt->Fields();
 		f.len = static_cast<std::uint16_t>(buf.size());
 		iorpt->Fields(f);
-		/*MessageHandle h =*/ myiMSConn->SendMsgBlocking(*iorpt);  // Use Blocking function to ensure monotonic transfer
+		/*MessageHandle h =*/ conn->SendMsgBlocking(*iorpt);  // Use Blocking function to ensure monotonic transfer
 
 		if (!m_strm.eof()) {
 			auto tfr = TransferredLength.load();

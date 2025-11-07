@@ -57,7 +57,7 @@ namespace iMS {
 		const std::string Ident = "CM_USBLITE";
 
 		FT_HANDLE ftdiDevice;
-		std::vector<IMSSystem> ListFtUsbDevices();
+		std::vector<std::shared_ptr<IMSSystem>> ListFtUsbDevices();
 
 		// Event used to receive notification from FTDI Device
 #if defined(_WIN32)
@@ -103,12 +103,12 @@ namespace iMS {
 		return pImpl->Ident;
 	}
 
-	std::vector<IMSSystem> CM_FTDI::Impl::ListFtUsbDevices()
+	std::vector<std::shared_ptr<IMSSystem>> CM_FTDI::Impl::ListFtUsbDevices()
 	{
 		FT_STATUS ftStatus = 0;
 		DWORD numOfDevices = 0;
 
-		std::vector<IMSSystem> IMSList;
+		std::vector<std::shared_ptr<IMSSystem>> IMSList;
 
 		// Get number of FTDI Devices attached to system
 		ftStatus = FT_CreateDeviceInfoList(&numOfDevices);
@@ -145,11 +145,11 @@ namespace iMS {
 					{
 						// Found a suitable connection interface, let's query its contents.
 						// An FTDI based board can have a maximum of one controller and one synthesiser.
-						IMSSystem thisiMS(m_parent, devInfo.SerialNumber);
+						auto thisiMS = IMSSystem::Create (m_parent, devInfo.SerialNumber);
 
-						thisiMS.Initialise();
+						thisiMS->Initialise();
 
-						if (thisiMS.Ctlr().IsValid() || thisiMS.Synth().IsValid()) {
+						if (thisiMS->Ctlr().IsValid() || thisiMS->Synth().IsValid()) {
 							IMSList.push_back(thisiMS);
 						}
 					}
@@ -162,7 +162,7 @@ namespace iMS {
 		return IMSList;
 	}
 
-	std::vector<IMSSystem> CM_FTDI::Discover(const ListBase<std::string>& PortMask)
+	std::vector<std::shared_ptr<IMSSystem>> CM_FTDI::Discover(const ListBase<std::string>& PortMask)
 	{
 //		std::cout << "CM_FTDI::Discover()" << std::endl;
 		return pImpl->ListFtUsbDevices();

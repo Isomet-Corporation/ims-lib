@@ -26,6 +26,7 @@
 #include "FileSystem_p.h"
 #include "HostReport.h"
 #include "IConnectionManager.h"
+#include "PrivateUtil.h"
 
 #include <mutex>
 #include <thread>
@@ -56,10 +57,10 @@ namespace iMS
 	class Auxiliary::Impl
 	{
 	public:
-		Impl(const IMSSystem&, const Auxiliary* aux);
+		Impl(std::shared_ptr<IMSSystem>, const Auxiliary* aux);
 		~Impl();
 
-		const IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		AuxiliaryEventTrigger m_Event;
 
 		bool ADCActive;
@@ -73,15 +74,15 @@ namespace iMS
 		const Auxiliary * const m_parent;
 	};
 
-	Auxiliary::Impl::Impl(const IMSSystem& iMS, const Auxiliary* aux) : myiMS(iMS), m_parent(aux)
+	Auxiliary::Impl::Impl(std::shared_ptr<IMSSystem> ims, const Auxiliary* aux) : m_ims(ims), m_parent(aux)
 	{
-		IConnectionManager * const myiMSConn = myiMS.Connection();
+		auto conn = ims->Connection();
 
 		// Configure ADC
 		HostReport *iorpt;
 		iorpt = new HostReport(HostReport::Actions::EXT_ADC, HostReport::Dir::WRITE, 0);
 		iorpt->Payload<std::uint16_t>(0x5A);
-		myiMSConn->SendMsg(*iorpt);
+		conn->SendMsg(*iorpt);
 		delete iorpt;
 	}
 
@@ -99,7 +100,13 @@ namespace iMS
 				break;
 			}
 
-			IConnectionManager * const myiMSConn = myiMS.Connection();
+            auto ims = m_ims.lock();
+            if (!ims) {
+                lck.unlock();
+				break;
+            }
+            auto conn = ims->Connection();
+
 			HostReport *iorpt;
 			DeviceReport Resp;
 
@@ -107,7 +114,7 @@ namespace iMS
 			do {
 				std::this_thread::sleep_for(std::chrono::milliseconds(5));
 				iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::READ, 0xFFFF);
-				Resp = myiMSConn->SendMsgBlocking(*iorpt);
+				Resp = conn->SendMsgBlocking(*iorpt);
 				if (!Resp.Done())
 				{
 					delete iorpt;
@@ -123,7 +130,7 @@ namespace iMS
 			ReportFields f = iorpt->Fields();
 			f.len = 16;
 			iorpt->Fields(f);
-			Resp = myiMSConn->SendMsgBlocking(*iorpt);
+			Resp = conn->SendMsgBlocking(*iorpt);
 			if (!Resp.Done())
 			{
 				delete iorpt;
@@ -153,7 +160,7 @@ namespace iMS
 		}
 	}
 
-	Auxiliary::Auxiliary(const IMSSystem& iMS) : p_Impl(new Impl(iMS, this)) 
+	Auxiliary::Auxiliary(std::shared_ptr<IMSSystem> iMS) : p_Impl(new Impl(iMS, this)) 
 	{
 		// Start ADC listening thread
 		p_Impl->ADCActive = true;
@@ -173,27 +180,25 @@ namespace iMS
 
 	bool Auxiliary::UpdateAnalogIn()
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
-
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-
-		HostReport *iorpt;
-
-		std::uint16_t data = (1 << ACR_extadc_convbusy_bit);
-
-		iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, data);
-		iorpt->Payload<std::uint16_t>(data);
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		else {
-			p_Impl->m_adccond.notify_one();
-		}
-		delete iorpt;
-		return true;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+            std::uint16_t data = (1 << ACR_extadc_convbusy_bit);
+            auto iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, data);
+            iorpt->Payload<std::uint16_t>(data);
+            MessageHandle h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            else {
+                p_Impl->m_adccond.notify_one();
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);
 	}
 
 	const std::map<Auxiliary::EXT_ANLG_INPUT, Percent>& Auxiliary::GetAnalogData() const
@@ -204,22 +209,21 @@ namespace iMS
 	// Set External Analog Output
 	bool Auxiliary::UpdateAnalogOut(Percent& pct) const
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
-
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
-
-		HostReport *iorpt;
-
-		iorpt = new HostReport(HostReport::Actions::ASYNC_DAC, HostReport::Dir::WRITE, 0);
-		std::uint16_t data = static_cast<std::uint16_t>(((double)pct * 4095.0) / 100.0);
-		iorpt->Payload<std::uint16_t>(data);
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+            auto iorpt = new HostReport(HostReport::Actions::ASYNC_DAC, HostReport::Dir::WRITE, 0);
+            std::uint16_t data = static_cast<std::uint16_t>(((double)pct * 4095.0) / 100.0);
+            iorpt->Payload<std::uint16_t>(data);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);
 	}
 
 	void Auxiliary::AuxiliaryEventSubscribe(const int message, IEventHandler* handler)
@@ -234,44 +238,43 @@ namespace iMS
 
 	bool Auxiliary::AssignLED(const LED_SINK& sink, const LED_SOURCE& src) const
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {        
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+            auto iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
+            switch (sink)
+            {
+                case LED_SINK::GREEN:	iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(0xF)); break;
+                case LED_SINK::YELLOW:	iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(0xF0)); break;
+                case LED_SINK::RED:		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(0xF00)); break;
+            }
+            
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_LED_Control);
+            std::uint16_t data = static_cast<std::uint16_t>(src);
+            switch (sink)
+            {
+                case LED_SINK::GREEN: 		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data)); break;
+                case LED_SINK::YELLOW: 		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data << 4)); break;
+                case LED_SINK::RED: 		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data << 8)); break;
+            }
 
-		HostReport *iorpt;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
 
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
-		switch (sink)
-		{
-			case LED_SINK::GREEN:	iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(0xF)); break;
-			case LED_SINK::YELLOW:	iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(0xF0)); break;
-			case LED_SINK::RED:		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(0xF00)); break;
-		}
-		
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_LED_Control);
-		std::uint16_t data = static_cast<std::uint16_t>(src);
-		switch (sink)
-		{
-			case LED_SINK::GREEN: 		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data)); break;
-			case LED_SINK::YELLOW: 		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data << 4)); break;
-			case LED_SINK::RED: 		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data << 8)); break;
-		}
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-
-		return true;
+            return true;
+        }).value_or(false);
 	}
 
 	bool Auxiliary::SetDDSProfile(const DDS_PROFILE& prfl) const
@@ -281,36 +284,35 @@ namespace iMS
 
 	bool Auxiliary::SetDDSProfile(const DDS_PROFILE& prfl, const std::uint16_t& select) const
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {   
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+            auto iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_DDS_Profile);
+            //std::uint16_t data = select % 16;
+            std::uint16_t data = static_cast<std::uint16_t>(prfl);
+            iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data));
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
 
-		HostReport *iorpt;
+            iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, 0xF00);  // address is data mask
+            data = (select % 16) << 8;
 
-		iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_DDS_Profile);
-		//std::uint16_t data = select % 16;
-		std::uint16_t data = static_cast<std::uint16_t>(prfl);
-		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data));
+            iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data));
 
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-
-		iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, 0xF00);  // address is data mask
-		data = (select % 16) << 8;
-
-		iorpt->Payload<std::uint16_t>(static_cast<std::uint16_t>(data));
-
-		if (NullMessage == myiMSConn->SendMsg(*iorpt))
-		{
-			delete iorpt;
-			return false;
-		}
-		delete iorpt;
-		return true;
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);
 	}
 
 	class DDSScriptRegister::Impl
@@ -407,36 +409,39 @@ namespace iMS
 	class DDSScriptDownload::Impl
 	{
 	public:
-		Impl(IMSSystem& ims, const DDSScript& dds);
-		IMSSystem& myiMS;
+		Impl(std::shared_ptr<IMSSystem> ims, const DDSScript& dds);
+		std::weak_ptr<IMSSystem> m_ims;
 		const DDSScript& m_dds;
 		FileSystemWriter* fsw;
 	};
 
-	DDSScriptDownload::Impl::Impl(IMSSystem& ims, const DDSScript& dds) : myiMS(ims), m_dds(dds) {};
+	DDSScriptDownload::Impl::Impl(std::shared_ptr<IMSSystem> ims, const DDSScript& dds) : m_ims(ims), m_dds(dds) {};
 
-	DDSScriptDownload::DDSScriptDownload(IMSSystem& ims, const DDSScript& dds) : p_Impl(new Impl(ims, dds)) {};
+	DDSScriptDownload::DDSScriptDownload(std::shared_ptr<IMSSystem> ims, const DDSScript& dds) : p_Impl(new Impl(ims, dds)) {};
 
 	DDSScriptDownload::~DDSScriptDownload() { delete p_Impl; p_Impl = nullptr; };
 
 	const FileSystemIndex DDSScriptDownload::Program(const std::string& FileName, FileDefault def) const
 	{
-		FileSystemManager fsm(p_Impl->myiMS);
-		std::uint32_t addr;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> FileSystemIndex
+        {        
+            FileSystemManager fsm(ims);
+            std::uint32_t addr;
 
-		std::vector<std::uint8_t> data;
-		for (DDSScript::const_iterator it = p_Impl->m_dds.cbegin(); it != p_Impl->m_dds.cend(); ++it)
-		{
-			std::vector<std::uint8_t> dds_bytes = it->bytes();
-			data.insert(data.end(), dds_bytes.cbegin(), dds_bytes.cend());
-		}
+            std::vector<std::uint8_t> data;
+            for (DDSScript::const_iterator it = p_Impl->m_dds.cbegin(); it != p_Impl->m_dds.cend(); ++it)
+            {
+                std::vector<std::uint8_t> dds_bytes = it->bytes();
+                data.insert(data.end(), dds_bytes.cbegin(), dds_bytes.cend());
+            }
 
-		if (!fsm.FindSpace(addr, data)) return -1;
-		FileSystemTableEntry fste(FileSystemTypes::DDS_SCRIPT, addr, data.size(), def, FileName);
-		p_Impl->fsw = new FileSystemWriter(p_Impl->myiMS, fste, data);
+            if (!fsm.FindSpace(addr, data)) return -1;
+            FileSystemTableEntry fste(FileSystemTypes::DDS_SCRIPT, addr, data.size(), def, FileName);
+            p_Impl->fsw = new FileSystemWriter(ims, fste, data);
 
-		FileSystemIndex result = p_Impl->fsw->Program();
-		delete p_Impl->fsw;
-		return result;
+            FileSystemIndex result = p_Impl->fsw->Program();
+            delete p_Impl->fsw;
+            return result;
+        }).value_or(-1);
 	}
 }

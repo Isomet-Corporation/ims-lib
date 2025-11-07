@@ -24,6 +24,8 @@
 #include "Diagnostics.h"
 #include "IEventTrigger.h"
 #include "IConnectionManager.h"
+#include "PrivateUtil.h"
+
 #include <mutex>
 #include <thread>
 #include <condition_variable>
@@ -62,13 +64,13 @@ namespace iMS
 	class Diagnostics::Impl
 	{
 	public:
-		Impl(const IMSSystem&, const Diagnostics* const);
+		Impl(std::shared_ptr<IMSSystem>, const Diagnostics* const);
 		~Impl();
 
 		std::list<MessageHandle> m_DiagReadList;
 		mutable std::mutex m_DiagList_mutex;
 
-		const IMSSystem& myiMS;
+		std::weak_ptr<IMSSystem> m_ims;
 		class ResponseReceiver : public IEventHandler
 		{
 		public:
@@ -93,43 +95,45 @@ namespace iMS
 		const Diagnostics * const m_parent;
 	};
 
-	Diagnostics::Impl::Impl(const IMSSystem& iMS, const Diagnostics* diag) : myiMS(iMS),
+	Diagnostics::Impl::Impl(std::shared_ptr<IMSSystem> ims, const Diagnostics* diag) : m_ims(ims),
 			Receiver(new ResponseReceiver(this)), m_parent(diag)
 	{
 		// Subscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
 
 		// Configure ADCs
 		HostReport *iorpt;
 		iorpt = new HostReport(HostReport::Actions::RFA_ADC12, HostReport::Dir::WRITE, 0);
 		iorpt->Payload<std::uint16_t>(0xBDA);
-		myiMSConn->SendMsg(*iorpt);
+		conn->SendMsg(*iorpt);
 		delete iorpt;
 
 		iorpt = new HostReport(HostReport::Actions::RFA_ADC34, HostReport::Dir::WRITE, 0);
 		iorpt->Payload<std::uint16_t>(0xBDA);
-		myiMSConn->SendMsg(*iorpt);
+		conn->SendMsg(*iorpt);
 		delete iorpt;
 	}
 
 	Diagnostics::Impl::~Impl()
 	{
 		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) { 
+            auto conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        });
 
 		delete Receiver;
 	}
@@ -145,7 +149,13 @@ namespace iMS
 				break;
 			}
 
-			IConnectionManager * const myiMSConn = myiMS.Connection();
+            auto ims = m_ims.lock();
+            if (!ims) {
+                lck.unlock();
+				break;
+            }
+            auto conn = ims->Connection();
+
 			HostReport *iorpt;
 			DeviceReport Resp;
 
@@ -153,7 +163,7 @@ namespace iMS
 			do {
 				std::this_thread::sleep_for(std::chrono::milliseconds(5));
 				iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::READ, 0xFFFF);
-				Resp = myiMSConn->SendMsgBlocking(*iorpt);
+				Resp = conn->SendMsgBlocking(*iorpt);
 				if (!Resp.Done())
 				{
 					delete iorpt;
@@ -169,7 +179,7 @@ namespace iMS
 			ReportFields f = iorpt->Fields();
 			f.len = 16;
 			iorpt->Fields(f);
-			Resp = myiMSConn->SendMsgBlocking(*iorpt);
+			Resp = conn->SendMsgBlocking(*iorpt);
 			if (!Resp.Done())
 			{
 				delete iorpt;
@@ -183,7 +193,7 @@ namespace iMS
 			f = iorpt->Fields();
 			f.len = 16;
 			iorpt->Fields(f);
-			Resp = myiMSConn->SendMsgBlocking(*iorpt);
+			Resp = conn->SendMsgBlocking(*iorpt);
 			if (!Resp.Done())
 			{
 				delete iorpt;
@@ -254,7 +264,7 @@ namespace iMS
 		}
 	}
 
-	Diagnostics::Diagnostics(const IMSSystem& iMS) : p_Impl(new Impl(iMS, this)) {
+	Diagnostics::Diagnostics(std::shared_ptr<IMSSystem> iMS) : p_Impl(new Impl(iMS, this)) {
 		// Start ADC listening thread
 		p_Impl->ADCActive = true;
 		p_Impl->ADCThread = std::thread(&Impl::ADCWorker, p_Impl);
@@ -280,55 +290,57 @@ namespace iMS
 			// Check for response and send to user code
 			{
 				if (!m_parent->m_DiagReadList.empty()) {
-					std::unique_lock<std::mutex> lck{ m_parent->m_DiagList_mutex };
-					for (std::list<MessageHandle>::iterator it = m_parent->m_DiagReadList.begin(); it != m_parent->m_DiagReadList.end();)
-					{
-						if (param != (*it)) {
-							++it;
-							continue;
-						}
-						IConnectionManager * const myiMSConn = m_parent->myiMS.Connection();
-						const DeviceReport& Resp = myiMSConn->Response(param);
-						switch (Resp.Fields().hdr & 0xF)
-						{
-							case (static_cast<int>(HostReport::Actions::AOD_TEMP)) : {
-								std::uint16_t Temperature = Resp.Payload<std::uint16_t>();
-								double d = static_cast<double>(Temperature);
-								// Convert from 2's comp representation
-								if (d > 32767.0) {
-									d -= 65536.0;
-								}
-								d /= 256.0;
-								m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::AOD_TEMP_UPDATE, d);
-								break;
-							}
-							case (static_cast<int>(HostReport::Actions::RFA_TEMP)) : {
-								std::uint16_t Temperature = Resp.Payload<std::uint16_t>();
-								double d = static_cast<double>(Temperature);
-								// Convert from 2's comp representation
-								if (d > 32767.0) {
-									d -= 65536.0;
-								}
-								d /= 256.0;
-								m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::RFA_TEMP_UPDATE, d);
-								break;
-							}
-							case (static_cast<int>(HostReport::Actions::SYNTH_REG)) : {
-								std::vector<std::uint16_t> data = Resp.Payload< std::vector<std::uint16_t> >();
-								double hours = (double)(((std::uint32_t)data[1] << 16) + data[0]) / 10.0;
-								switch (Resp.Fields().addr)
-								{
-									case SYNTH_REG_syn_sram_base: m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::SYN_LOGGED_HOURS, hours); break;
-									case SYNTH_REG_aod_sram_base: m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::AOD_LOGGED_HOURS, hours); break;
-									case SYNTH_REG_rfa_sram_base: m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::RFA_LOGGED_HOURS, hours); break;
-									default: break;
-								}
-								break;
-							}
-						}
-						it = m_parent->m_DiagReadList.erase(it);
-					}
-					lck.unlock();
+                    with_locked(m_parent->m_ims, [&](std::shared_ptr<IMSSystem> ims) {   
+                        auto conn = ims->Connection();
+                        std::unique_lock<std::mutex> lck{ m_parent->m_DiagList_mutex };
+                        for (std::list<MessageHandle>::iterator it = m_parent->m_DiagReadList.begin(); it != m_parent->m_DiagReadList.end();)
+                        {
+                            if (param != (*it)) {
+                                ++it;
+                                continue;
+                            }
+                            
+                            const DeviceReport& Resp = conn->Response(param);
+                            switch (Resp.Fields().hdr & 0xF)
+                            {
+                                case (static_cast<int>(HostReport::Actions::AOD_TEMP)) : {
+                                    std::uint16_t Temperature = Resp.Payload<std::uint16_t>();
+                                    double d = static_cast<double>(Temperature);
+                                    // Convert from 2's comp representation
+                                    if (d > 32767.0) {
+                                        d -= 65536.0;
+                                    }
+                                    d /= 256.0;
+                                    m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::AOD_TEMP_UPDATE, d);
+                                    break;
+                                }
+                                case (static_cast<int>(HostReport::Actions::RFA_TEMP)) : {
+                                    std::uint16_t Temperature = Resp.Payload<std::uint16_t>();
+                                    double d = static_cast<double>(Temperature);
+                                    // Convert from 2's comp representation
+                                    if (d > 32767.0) {
+                                        d -= 65536.0;
+                                    }
+                                    d /= 256.0;
+                                    m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::RFA_TEMP_UPDATE, d);
+                                    break;
+                                }
+                                case (static_cast<int>(HostReport::Actions::SYNTH_REG)) : {
+                                    std::vector<std::uint16_t> data = Resp.Payload< std::vector<std::uint16_t> >();
+                                    double hours = (double)(((std::uint32_t)data[1] << 16) + data[0]) / 10.0;
+                                    switch (Resp.Fields().addr)
+                                    {
+                                        case SYNTH_REG_syn_sram_base: m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::SYN_LOGGED_HOURS, hours); break;
+                                        case SYNTH_REG_aod_sram_base: m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::AOD_LOGGED_HOURS, hours); break;
+                                        case SYNTH_REG_rfa_sram_base: m_parent->m_Event.Trigger<double>(this, DiagnosticsEvents::RFA_LOGGED_HOURS, hours); break;
+                                        default: break;
+                                    }
+                                    break;
+                                }
+                            }
+                            it = m_parent->m_DiagReadList.erase(it);
+                        }
+                    });
 				}
 			}
 			break;
@@ -349,7 +361,6 @@ namespace iMS
 							++it;
 							continue;
 						}
-//						IConnectionManager * const myiMSConn = m_parent->myiMS.Connection();
 						m_parent->m_Event.Trigger<int>(this, DiagnosticsEvents::DIAG_READ_FAILED, param);
 						it = m_parent->m_DiagReadList.erase(it);
 					}
@@ -363,111 +374,114 @@ namespace iMS
 
 	bool Diagnostics::GetTemperature(const TARGET& tgt) const
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+            HostReport *iorpt;
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            if (tgt == TARGET::AO_DEVICE) {
+                iorpt = new HostReport(HostReport::Actions::AOD_TEMP, HostReport::Dir::READ, 0);
+            }
+            else if (tgt == TARGET::RF_AMPLIFIER) {
+                iorpt = new HostReport(HostReport::Actions::RFA_TEMP, HostReport::Dir::READ, 0);
+            }
+            else return false;
 
-		HostReport *iorpt;
-
-		if (tgt == TARGET::AO_DEVICE) {
-			iorpt = new HostReport(HostReport::Actions::AOD_TEMP, HostReport::Dir::READ, 0);
-		}
-		else if (tgt == TARGET::RF_AMPLIFIER) {
-			iorpt = new HostReport(HostReport::Actions::RFA_TEMP, HostReport::Dir::READ, 0);
-		}
-		else return false;
-
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		else {
-			std::unique_lock<std::mutex> lck{ p_Impl->m_DiagList_mutex };
-			p_Impl->m_DiagReadList.push_back(h);
-			lck.unlock();
-		}
-		delete iorpt;
-		return true;
+            MessageHandle h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            else {
+                std::unique_lock<std::mutex> lck{ p_Impl->m_DiagList_mutex };
+                p_Impl->m_DiagReadList.push_back(h);
+                lck.unlock();
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);
 	}
 
 	bool Diagnostics::GetLoggedHours(const TARGET& tgt) const
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+            HostReport *iorpt;
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            if (tgt == TARGET::AO_DEVICE) {
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_aod_sram_base);
+            }
+            else if (tgt == TARGET::RF_AMPLIFIER) {
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_rfa_sram_base);
+            }
+            else if (tgt == TARGET::SYNTH) {
+                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_syn_sram_base);
+            }
+            else return false;
+            ReportFields f = iorpt->Fields();
+            f.len = 4;
+            iorpt->Fields(f);
 
-		HostReport *iorpt;
-
-		if (tgt == TARGET::AO_DEVICE) {
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_aod_sram_base);
-		}
-		else if (tgt == TARGET::RF_AMPLIFIER) {
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_rfa_sram_base);
-		}
-		else if (tgt == TARGET::SYNTH) {
-			iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_syn_sram_base);
-		}
-		else return false;
-		ReportFields f = iorpt->Fields();
-		f.len = 4;
-		iorpt->Fields(f);
-
-		MessageHandle h = myiMSConn->SendMsg(*iorpt);
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		else {
-			std::unique_lock<std::mutex> lck{ p_Impl->m_DiagList_mutex };
-			p_Impl->m_DiagReadList.push_back(h);
-			lck.unlock();
-		}
-		delete iorpt;
-		return true;
+            MessageHandle h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            else {
+                std::unique_lock<std::mutex> lck{ p_Impl->m_DiagList_mutex };
+                p_Impl->m_DiagReadList.push_back(h);
+                lck.unlock();
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);
 	}
 
 	bool Diagnostics::UpdateDiagnostics()
 	{
-		if (!p_Impl->myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+            HostReport *iorpt;
 
-		IConnectionManager * const myiMSConn = p_Impl->myiMS.Connection();
+            std::uint16_t data = (1 << ACR_rfaadc_convbusy_bit);
 
-		HostReport *iorpt;
+            MessageHandle h;
+            std::unique_lock<std::mutex> lck{ p_Impl->m_adcmutex, std::try_to_lock };
+            if (lck.owns_lock())
+            {
+                // Take a copy of the measurements to return before the update is available
+                p_Impl->m_measurements_copy.clear();
+                p_Impl->m_measurements_copy = p_Impl->m_measurements;
 
-		std::uint16_t data = (1 << ACR_rfaadc_convbusy_bit);
+                iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, data);
+                iorpt->Payload<std::uint16_t>(data);
+                h = conn->SendMsg(*iorpt);
 
-		MessageHandle h;
-		std::unique_lock<std::mutex> lck{ p_Impl->m_adcmutex, std::try_to_lock };
-		if (lck.owns_lock())
-		{
-			// Take a copy of the measurements to return before the update is available
-			p_Impl->m_measurements_copy.clear();
-			p_Impl->m_measurements_copy = p_Impl->m_measurements;
+                lck.unlock();
+            }
+            else {
+                // Update already in progress
+                return true;
+            }
 
-			iorpt = new HostReport(HostReport::Actions::ASYNC_CONTROL, HostReport::Dir::WRITE, data);
-			iorpt->Payload<std::uint16_t>(data);
-			h = myiMSConn->SendMsg(*iorpt);
-
-			lck.unlock();
-		}
-		else {
-			// Update already in progress
-			return true;
-		}
-
-		if (NullMessage == h)
-		{
-			delete iorpt;
-			return false;
-		}
-		else {
-			p_Impl->m_adccond.notify_one();
-		}
-		delete iorpt;
-		return true;
+            if (NullMessage == h)
+            {
+                delete iorpt;
+                return false;
+            }
+            else {
+                p_Impl->m_adccond.notify_one();
+            }
+            delete iorpt;
+            return true;
+        }).value_or(false);
 	}
 
 	const std::map<Diagnostics::MEASURE, Percent>& Diagnostics::GetDiagnosticsData() const

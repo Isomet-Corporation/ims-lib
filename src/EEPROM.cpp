@@ -44,7 +44,7 @@ namespace iMS {
 	public:
 		const std::uint16_t EEPROM_CACHE_SIZE = 1024;
 
-		Impl(const IMSSystem&);
+		Impl(std::shared_ptr<IMSSystem>);
 		~Impl();
 
 		EEPROMEventTrigger m_Event;
@@ -77,40 +77,41 @@ namespace iMS {
 			EEPROM::Impl* m_parent;
 		};
 		ResponseReceiver* Receiver;
-	private:
-		const IMSSystem& myiMS;
+	
+		std::weak_ptr<IMSSystem> m_ims;
 	};
 
-	EEPROM::Impl::Impl(const IMSSystem& iMS) : m_EEFinalRead(NullMessage), m_EEFinalWrite(NullMessage), m_AccessFailure(false),
-			Receiver(new ResponseReceiver(this)), myiMS(iMS)
+	EEPROM::Impl::Impl(std::shared_ptr<IMSSystem> ims) : m_EEFinalRead(NullMessage), m_EEFinalWrite(NullMessage), m_AccessFailure(false),
+			Receiver(new ResponseReceiver(this)), m_ims(ims)
 	{
 		// Subscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
 	}
 
 	EEPROM::Impl::~Impl()
 	{
 		// Unsubscribe listener
-		IConnectionManager * const myiMSConn = myiMS.Connection();
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
-		myiMSConn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
-
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) {      
+            auto conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        });
 		delete Receiver;
 	}
 
-	EEPROM::EEPROM(const IMSSystem& iMS) : p_Impl(new Impl(iMS)), myiMS(iMS) {}
+	EEPROM::EEPROM(std::shared_ptr<IMSSystem> ims) : p_Impl(new Impl(ims)) {}
 
 	EEPROM::~EEPROM() { delete p_Impl; p_Impl = nullptr; }
 
@@ -217,23 +218,24 @@ namespace iMS {
 			// Add response to verify list for checking by rx processing thread
 			{
 				if (!m_parent->m_EEReadList.empty()) {
-					std::unique_lock<std::mutex> lck{ m_parent->m_EEList_mutex };
-					if (!m_parent->m_EEReadList.empty() && (param == m_parent->m_EEReadList.front()))
-					{
-						m_parent->m_EEReadList.pop_front();
-						IConnectionManager * const myiMSConn = m_parent->myiMS.Connection();
-						std::vector<std::uint8_t> packet_data = myiMSConn->Response(param).Payload < std::vector<std::uint8_t> >();
-						m_parent->m_EEData.insert(m_parent->m_EEData.cend(), packet_data.cbegin(), packet_data.cend());
-						if (param == m_parent->m_EEFinalRead) {
-							if (m_parent->m_AccessFailure) {
-								m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
-							}
-							else {
-								m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_READ_DONE, param);
-							}
-						}
-					}
-					lck.unlock();
+                    with_locked(m_parent->m_ims, [&](std::shared_ptr<IMSSystem> ims) {   
+                        auto conn = ims->Connection();
+                        std::unique_lock<std::mutex> lck{ m_parent->m_EEList_mutex };
+                        if (!m_parent->m_EEReadList.empty() && (param == m_parent->m_EEReadList.front()))
+                        {
+                            m_parent->m_EEReadList.pop_front();
+                            std::vector<std::uint8_t> packet_data = conn->Response(param).Payload < std::vector<std::uint8_t> >();
+                            m_parent->m_EEData.insert(m_parent->m_EEData.cend(), packet_data.cbegin(), packet_data.cend());
+                            if (param == m_parent->m_EEFinalRead) {
+                                if (m_parent->m_AccessFailure) {
+                                    m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
+                                }
+                                else {
+                                    m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_READ_DONE, param);
+                                }
+                            }
+                        }
+                    });
 				}
 				if (!m_parent->m_EEWriteList.empty()) {
 					std::unique_lock<std::mutex> lck{ m_parent->m_EEList_mutex };
@@ -293,127 +295,127 @@ namespace iMS {
 
 	int EEPROM::ReadEEPROM(TARGET ee, unsigned int addr, std::size_t size)
 	{
-		MessageHandle h;
-		if (!myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> int
+        { 
+            if (!ims->Synth().IsValid()) return -1;
+            auto conn = ims->Connection();
+            HostReport *iorpt;
 
-		IConnectionManager * const myiMSConn = myiMS.Connection();
+            // Reset buffer
+            p_Impl->m_EEData.clear();
+            p_Impl->m_EEReadList.clear();
+            p_Impl->m_EEFinalRead = NullMessage;
+            p_Impl->m_AccessFailure = false;
 
-		HostReport *iorpt;
+            HostReport::Actions actions;
+            switch (ee)
+            {
+            case TARGET::SYNTH: actions = HostReport::Actions::SYNTH_EEPROM;  break;
+            case TARGET::AO_DEVICE: actions = HostReport::Actions::AOD_EEPROM; break;
+            case TARGET::RF_AMPLIFIER: actions = HostReport::Actions::RFA_EEPROM; break;
+            default: return -1;
+            }
+            iorpt = new HostReport(actions, HostReport::Dir::READ, static_cast<std::uint16_t>(addr & 0xFFFF));
+            int transfer_size = 0;
+            for (unsigned int i = 0; i < size; i += transfer_size)
+            {
+                ReportFields f = iorpt->Fields();
+                if ((size - i) > iorpt->PAYLOAD_MAX_LENGTH)
+                {
+                    f.len = iorpt->PAYLOAD_MAX_LENGTH;
+                }
+                else
+                {
+                    f.len = (static_cast<std::uint16_t>(size)-i);
+                }
+                if (((addr + i) / p_Impl->EEPROM_CACHE_SIZE) != ((addr + i + f.len) / p_Impl->EEPROM_CACHE_SIZE)) {
+                    // beginning and end in different eeprom cache regions.  Shorten transfer to this region only
+                    f.len = (p_Impl->EEPROM_CACHE_SIZE - ((addr + i) % p_Impl->EEPROM_CACHE_SIZE));
+                }
+                f.addr = static_cast<std::uint16_t>((addr + i) & 0xFFFF);
+                f.context = static_cast<std::uint8_t>(((addr + i) >> 16) & 0xFF);
+                iorpt->Fields(f);
+                auto h = conn->SendMsg(*iorpt);
+                {
+                    std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
+                    p_Impl->m_EEReadList.push_back(h);
+                    lck.unlock();
+                }
+                if (!(transfer_size = f.len)) break;
+            }
+            delete iorpt;
 
-		// Reset buffer
-		p_Impl->m_EEData.clear();
-		p_Impl->m_EEReadList.clear();
-		p_Impl->m_EEFinalRead = NullMessage;
-		p_Impl->m_AccessFailure = false;
-
-		HostReport::Actions actions;
-		switch (ee)
-		{
-		case TARGET::SYNTH: actions = HostReport::Actions::SYNTH_EEPROM;  break;
-		case TARGET::AO_DEVICE: actions = HostReport::Actions::AOD_EEPROM; break;
-		case TARGET::RF_AMPLIFIER: actions = HostReport::Actions::RFA_EEPROM; break;
-		default: return -1;
-		}
-		iorpt = new HostReport(actions, HostReport::Dir::READ, static_cast<std::uint16_t>(addr & 0xFFFF));
-		int transfer_size = 0;
-		for (unsigned int i = 0; i < size; i += transfer_size)
-		{
-			ReportFields f = iorpt->Fields();
-			if ((size - i) > iorpt->PAYLOAD_MAX_LENGTH)
-			{
-				f.len = iorpt->PAYLOAD_MAX_LENGTH;
-			}
-			else
-			{
-				f.len = (static_cast<std::uint16_t>(size)-i);
-			}
-			if (((addr + i) / p_Impl->EEPROM_CACHE_SIZE) != ((addr + i + f.len) / p_Impl->EEPROM_CACHE_SIZE)) {
-				// beginning and end in different eeprom cache regions.  Shorten transfer to this region only
-				f.len = (p_Impl->EEPROM_CACHE_SIZE - ((addr + i) % p_Impl->EEPROM_CACHE_SIZE));
-			}
-			f.addr = static_cast<std::uint16_t>((addr + i) & 0xFFFF);
-			f.context = static_cast<std::uint8_t>(((addr + i) >> 16) & 0xFF);
-			iorpt->Fields(f);
-			h = myiMSConn->SendMsg(*iorpt);
-			{
-				std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
-				p_Impl->m_EEReadList.push_back(h);
-				lck.unlock();
-			}
-			if (!(transfer_size = f.len)) break;
-		}
-		delete iorpt;
-
-		{
-			std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
-			p_Impl->m_EEFinalRead = p_Impl->m_EEReadList.back();
-			lck.unlock();
-		}
-		return p_Impl->m_EEFinalRead;
+            {
+                std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
+                p_Impl->m_EEFinalRead = p_Impl->m_EEReadList.back();
+                lck.unlock();
+            }
+            return p_Impl->m_EEFinalRead;
+        }).value_or(-1);
 	}
 
 	bool EEPROM::WriteEEPROM(TARGET ee, unsigned int addr)
 	{
-		MessageHandle h;
-		if (!myiMS.Synth().IsValid()) return false;
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        { 
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+            HostReport *iorpt;
 
-		IConnectionManager * const myiMSConn = myiMS.Connection();
+            HostReport::Actions actions;
+            switch (ee)
+            {
+                case TARGET::SYNTH: actions = HostReport::Actions::SYNTH_EEPROM;  break;
+                case TARGET::AO_DEVICE: actions = HostReport::Actions::AOD_EEPROM; break;
+                case TARGET::RF_AMPLIFIER: actions = HostReport::Actions::RFA_EEPROM; break;
+                default: return false;
+            }
 
-		HostReport *iorpt;
+            p_Impl->m_EEWriteList.clear();
+            p_Impl->m_EEFinalWrite = NullMessage;
+            p_Impl->m_AccessFailure = false;
 
-		HostReport::Actions actions;
-		switch (ee)
-		{
-			case TARGET::SYNTH: actions = HostReport::Actions::SYNTH_EEPROM;  break;
-			case TARGET::AO_DEVICE: actions = HostReport::Actions::AOD_EEPROM; break;
-			case TARGET::RF_AMPLIFIER: actions = HostReport::Actions::RFA_EEPROM; break;
-			default: return false;
-		}
+            iorpt = new HostReport(actions, HostReport::Dir::WRITE, static_cast<std::uint16_t>(addr & 0xFFFF));
+            int transfer_size = 0;
+            for (unsigned int i = 0; i < p_Impl->m_EEData.size(); i += transfer_size)
+            {
+                iorpt->ClearPayload();
+                ReportFields f = iorpt->Fields();
+                f.addr = static_cast<std::uint16_t>((addr + i) & 0xFFFF);
+                f.context = static_cast<std::uint8_t>(((addr + i) >> 16) & 0xFF);
+                iorpt->Fields(f);
+                std::vector<std::uint8_t>::const_iterator first = p_Impl->m_EEData.cbegin() + i;
+                std::vector<std::uint8_t>::const_iterator last;
+                if (std::distance(first, p_Impl->m_EEData.cend()) > (int)iorpt->PAYLOAD_MAX_LENGTH)
+                {
+                    last = first + iorpt->PAYLOAD_MAX_LENGTH;
+                }
+                else
+                {
+                    last = p_Impl->m_EEData.cend();
+                }
+                if (((addr + i) / p_Impl->EEPROM_CACHE_SIZE) != ((addr + i + std::distance(first, last)) / p_Impl->EEPROM_CACHE_SIZE)) {
+                    // beginning and end in different eeprom cache regions.  Shorten transfer to this region only
+                    last = first + (p_Impl->EEPROM_CACHE_SIZE - ((addr + i) % p_Impl->EEPROM_CACHE_SIZE));
 
-		p_Impl->m_EEWriteList.clear();
-		p_Impl->m_EEFinalWrite = NullMessage;
-		p_Impl->m_AccessFailure = false;
+                    // And add a delay to allow for region change
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-		iorpt = new HostReport(actions, HostReport::Dir::WRITE, static_cast<std::uint16_t>(addr & 0xFFFF));
-		int transfer_size = 0;
-		for (unsigned int i = 0; i < p_Impl->m_EEData.size(); i += transfer_size)
-		{
-			iorpt->ClearPayload();
-			ReportFields f = iorpt->Fields();
-			f.addr = static_cast<std::uint16_t>((addr + i) & 0xFFFF);
-			f.context = static_cast<std::uint8_t>(((addr + i) >> 16) & 0xFF);
-			iorpt->Fields(f);
-			std::vector<std::uint8_t>::const_iterator first = p_Impl->m_EEData.cbegin() + i;
-			std::vector<std::uint8_t>::const_iterator last;
-			if (std::distance(first, p_Impl->m_EEData.cend()) > (int)iorpt->PAYLOAD_MAX_LENGTH)
-			{
-				last = first + iorpt->PAYLOAD_MAX_LENGTH;
-			}
-			else
-			{
-				last = p_Impl->m_EEData.cend();
-			}
-			if (((addr + i) / p_Impl->EEPROM_CACHE_SIZE) != ((addr + i + std::distance(first, last)) / p_Impl->EEPROM_CACHE_SIZE)) {
-				// beginning and end in different eeprom cache regions.  Shorten transfer to this region only
-				last = first + (p_Impl->EEPROM_CACHE_SIZE - ((addr + i) % p_Impl->EEPROM_CACHE_SIZE));
+                }
+                iorpt->Payload<std::vector<std::uint8_t>>(std::vector<std::uint8_t>(first, last));
+                auto h = conn->SendMsg(*iorpt);
+                {
+                    std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
+                    p_Impl->m_EEWriteList.push_back(h);
+                    lck.unlock();
+                }
+                if (!(transfer_size = std::distance(first, last))) break;
+            }
+            delete iorpt;
 
-				// And add a delay to allow for region change
-				std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-			}
-			iorpt->Payload<std::vector<std::uint8_t>>(std::vector<std::uint8_t>(first, last));
-			h = myiMSConn->SendMsg(*iorpt);
-			{
-				std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
-				p_Impl->m_EEWriteList.push_back(h);
-				lck.unlock();
-			}
-			if (!(transfer_size = std::distance(first, last))) break;
-		}
-		delete iorpt;
-
-		p_Impl->m_EEFinalWrite = p_Impl->m_EEWriteList.back();
-		return true;
+            p_Impl->m_EEFinalWrite = p_Impl->m_EEWriteList.back();
+            return true;
+        }).value_or(-1);
 	}
 
 	void EEPROM::EEPROMEventSubscribe(const int message, IEventHandler* handler)

@@ -83,11 +83,11 @@ namespace iMS
 	///
 	/// \code
 	///		CS_ETH cs_eth;
-	/// 	if (std::find(myiMS.Ctlr().Interfaces().begin(), myiMS.Ctlr().Interfaces().end(), cs_eth.Ident())
-	/// 		!= myiMS.Ctlr().Interfaces().end()) {
+	/// 	if (std::find(myiMS->Ctlr().Interfaces().begin(), myiMS->Ctlr().Interfaces().end(), cs_eth.Ident())
+	/// 		!= myiMS->Ctlr().Interfaces().end()) {
 	/// 
 	/// 		// Get existing settings from iMS Controller
-	/// 		myiMS.RetrieveSettings(cs_eth);
+	/// 		myiMS->RetrieveSettings(cs_eth);
 	/// 
 	/// 		// Toggle DHCP on/off
 	/// 		if (cs_eth.UseDHCP()) {
@@ -101,7 +101,7 @@ namespace iMS
 	/// 		}
 	/// 
 	/// 		// Reapply to Controller. Power cycle to take effect
-	/// 		myiMS.ApplySettings(cs_eth);
+	/// 		myiMS->ApplySettings(cs_eth);
 	/// 		std::cout << "New settings: DHCP=" << cs_eth.UseDHCP() << std::endl;
 	/// 		if (!cs_eth.UseDHCP()) {
 	///				std::cout << "IPv4 = " << cs_eth.Address() << std::endl;

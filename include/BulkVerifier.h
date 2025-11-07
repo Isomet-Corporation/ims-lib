@@ -57,7 +57,7 @@ namespace iMS {
 	class BulkVerifier
 	{
 	public:
-		BulkVerifier(const IMSSystem& iMS);
+		BulkVerifier(std::shared_ptr<IMSSystem> iMS);
 		~BulkVerifier();
 
 		void AddChunk(const std::shared_ptr<VerifyChunk>);
@@ -74,8 +74,6 @@ namespace iMS {
 		// Make this object non-copyable
 		BulkVerifier(const BulkVerifier &);
 		const BulkVerifier &operator =(const BulkVerifier &);
-
-		const IMSSystem& myiMS;
 
 		class Impl;
 		Impl * p_Impl;
