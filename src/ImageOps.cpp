@@ -1461,7 +1461,7 @@ namespace iMS
 
 		// Unsubscribe listener
         with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) {  
-            IConnectionManager * const conn = ims->Connection();
+            auto conn = ims->Connection();
             conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
             conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
             conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
