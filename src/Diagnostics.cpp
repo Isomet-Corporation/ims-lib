@@ -496,6 +496,30 @@ namespace iMS
 		}
 	}
 
+    std::map<std::string, Percent> Diagnostics::GetDiagnosticsDataStr() const
+    {
+        std::map<std::string, Percent> out;
+        for (auto& [k, v] : GetDiagnosticsData())
+        {
+            switch(k)
+            {
+                case MEASURE::FORWARD_POWER_CH1: out["Forward Power Ch 1"] = v; break;
+                case MEASURE::FORWARD_POWER_CH2: out["Forward Power Ch 2"] = v; break;
+                case MEASURE::FORWARD_POWER_CH3: out["Forward Power Ch 3"] = v; break;
+                case MEASURE::FORWARD_POWER_CH4: out["Forward Power Ch 4"] = v; break;
+                case MEASURE::REFLECTED_POWER_CH1: out["Reflected Power Ch 1"] = v; break;
+                case MEASURE::REFLECTED_POWER_CH2: out["Reflected Power Ch 2"] = v; break;
+                case MEASURE::REFLECTED_POWER_CH3: out["Reflected Power Ch 3"] = v; break;
+                case MEASURE::REFLECTED_POWER_CH4: out["Reflected Power Ch 4"] = v; break;
+                case MEASURE::DC_CURRENT_CH1: out["DC Current Ch 1"] = v; break;
+                case MEASURE::DC_CURRENT_CH2: out["DC Current Ch 2"] = v; break;
+                case MEASURE::DC_CURRENT_CH3: out["DC Current Ch 3"] = v; break;
+                case MEASURE::DC_CURRENT_CH4: out["DC Current Ch 4"] = v; break;
+            }
+        }
+        return out;
+    }    
+
 	void Diagnostics::DiagnosticsEventSubscribe(const int message, IEventHandler* handler)
 	{
 		p_Impl->m_Event.Subscribe(message, handler);

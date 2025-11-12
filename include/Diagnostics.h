@@ -292,6 +292,20 @@ namespace iMS
 		/// \return a reference to the diagnostics measurement map
 		/// \since 1.1
 		const std::map<MEASURE, Percent>& GetDiagnosticsData() const;
+
+		/// \brief A helper method that returns human readable strings mapped to the available diagnostics data
+		///
+		/// The map contains a set of key-value pairs representing the diagnostics data, one value per entry alongside a human readable string.
+		/// Each value is represented as a percentage where 100% represents the full scale analog measured value.
+		///
+		/// Call UpdateDiagnostics() first to retrieve the latest measurements from the system.
+		///
+		/// The map of values will be updated after the UpdateDiagnostics() function call and before the 
+		/// DIAGNOSTICS_UPDATE_AVAILABLE event is fired so design the application to avoid accessing the map between
+		/// these two timings to prevent a potential race condition.
+		/// \return a copy of the internal diagnostics map, indexed by human readable strings
+		/// \since 2.0.1
+        std::map<std::string, Percent> GetDiagnosticsDataStr() const;
 		//@}
 
 	private:
