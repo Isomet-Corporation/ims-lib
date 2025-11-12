@@ -85,9 +85,9 @@ namespace iMS {
 	// Default Constructor
 	CM_FTDI::CM_FTDI() : pImpl(new CM_FTDI::Impl())
 	{
-		sendTimeout = std::chrono::milliseconds(50);
-		rxTimeout = std::chrono::milliseconds(5000);
-		autoFreeTimeout = std::chrono::milliseconds(30000);
+		sendTimeout = std::chrono::milliseconds(100);
+		rxTimeout = std::chrono::milliseconds(500);
+		autoFreeTimeout = std::chrono::milliseconds(10000);
 	}
 	 
 	CM_FTDI::~CM_FTDI()

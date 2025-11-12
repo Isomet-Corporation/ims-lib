@@ -519,9 +519,9 @@ static std::string logErrorString(int err = INT_MAX) {
 	// Default Constructor
 	CM_ENET::CM_ENET() : pImpl(new CM_ENET::Impl())
 	{
-		sendTimeout = std::chrono::milliseconds(500);
-		rxTimeout = std::chrono::milliseconds(10000);
-		autoFreeTimeout = std::chrono::milliseconds(30000);
+		sendTimeout = std::chrono::milliseconds(100);
+		rxTimeout = std::chrono::milliseconds(500);
+		autoFreeTimeout = std::chrono::milliseconds(10000);
 	}
 
 	CM_ENET::~CM_ENET()

@@ -48,6 +48,12 @@ namespace iMS {
 		UPLOADING
 	};
 
+    enum class _ConnectionStatus {
+        UNKNOWN,
+        ALIVE,
+        LOST
+    };
+        
     // This is another ABC that inherits its interface and adds some data and member functions
 	//	that are common to all CM types
 	class CM_Common : public IConnectionManager
@@ -149,6 +155,8 @@ namespace iMS {
 		std::thread memoryTransferThread;
 		mutable std::mutex m_tfrmutex;
 		std::condition_variable m_tfrcond;
+
+        std::atomic<_ConnectionStatus> m_status {_ConnectionStatus::UNKNOWN};
 
     private:
     	template <typename T, typename T2 = int>

@@ -144,9 +144,9 @@ namespace iMS {
 	CM_CYUSB::CM_CYUSB() 
 		 : pImpl(new CM_CYUSB::Impl())
 	{
-		sendTimeout = std::chrono::milliseconds(500);
-		rxTimeout = std::chrono::milliseconds(10000);
-		autoFreeTimeout = std::chrono::milliseconds(30000);
+		sendTimeout = std::chrono::milliseconds(100);
+		rxTimeout = std::chrono::milliseconds(500);
+		autoFreeTimeout = std::chrono::milliseconds(10000);
 	}
 
 	const std::string& CM_CYUSB::Ident() const

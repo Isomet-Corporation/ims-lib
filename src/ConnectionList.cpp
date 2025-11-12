@@ -232,10 +232,10 @@ static void stop_logging()
 struct ConnectionListSettings
 {
 	ConnectionListSettings() :
-		SendTimeout(500),
-		RxTimeout(5000),
-		FreeTimeout(30000),
-		DiscoveryTimeout(2500),
+		SendTimeout(200),
+		RxTimeout(500),
+		FreeTimeout(10000),
+		DiscoveryTimeout(500),
 		IncludeInScan(true) {}
 
 	int SendTimeout;
@@ -276,10 +276,10 @@ void ConnectionListSettingsMap::Load(const std::string& filename)
 			}
 			if (module_name != "") {
 				ConnectionListSettings settings;
-				settings.SendTimeout = v.second.get("send_timeout", 500);
-				settings.RxTimeout = v.second.get("recv_timeout", 5000);
-				settings.FreeTimeout = v.second.get("free_timeout", 30000);
-				settings.DiscoveryTimeout = v.second.get("discover_timeout", 2500);
+				settings.SendTimeout = v.second.get("send_timeout", 200);
+				settings.RxTimeout = v.second.get("recv_timeout", 500);
+				settings.FreeTimeout = v.second.get("free_timeout", 10000);
+				settings.DiscoveryTimeout = v.second.get("discover_timeout", 500);
 				settings.IncludeInScan = v.second.get("scan", true);
 
 				mSettingsMap.emplace(module_name, settings);
@@ -359,9 +359,9 @@ namespace iMS
 		boost::filesystem::path settings_path = get_settings_path();
 
 #if defined(_WIN32)
-		settings_path += L"\\connection.xml";
+		settings_path += L"\\connectionv2.xml";
 #else
-		settings_path += "/connection.xml";
+		settings_path += "/connectionv2.xml";
 #endif
 		settings_map->Load(settings_path.string());
 
@@ -390,7 +390,7 @@ namespace iMS
 		: IncludeInScan(true), PortMask(mask)
 	{}
 
-	ConnectionList::ConnectionList() : pImpl(new Impl())
+	ConnectionList::ConnectionList(unsigned int max_discover_timeout_ms) : pImpl(new Impl())
 	{
 		// connList is a read-only list containing one element for each host connection type.
 		// Each element must fully implement the IConnectionManager interface to define methods
@@ -444,7 +444,9 @@ namespace iMS
 			// Apply Connection Settings (Creates default entry if it doesn't exist)
 			const auto& settings = pImpl->settings_map->mSettingsMap[(*iter)->Ident()];
 
-			(*iter)->SetTimeouts(settings.SendTimeout, settings.RxTimeout, settings.FreeTimeout, settings.DiscoveryTimeout);
+            int discovery_timeout = settings.DiscoveryTimeout;
+            if (discovery_timeout > max_discover_timeout_ms) discovery_timeout = (int)max_discover_timeout_ms;
+			(*iter)->SetTimeouts(settings.SendTimeout, settings.RxTimeout, settings.FreeTimeout, discovery_timeout);
 			pImpl->config_map->emplace((*iter)->Ident(), ConnectionConfig(settings.IncludeInScan));
 			pImpl->ModuleNames.push_back((*iter)->Ident());
 		}
@@ -457,17 +459,17 @@ namespace iMS
 		delete pImpl;
 	}
 
-	ConnectionList::ConnectionConfig& ConnectionList::config(const std::string& module)
+	ConnectionList::ConnectionConfig& ConnectionList::Config(const std::string& module)
 	{
 		return (*pImpl->config_map)[module];
 	}
 
-	const ListBase<std::string>& ConnectionList::modules() const
+	const ListBase<std::string>& ConnectionList::Modules() const
 	{
 		return pImpl->ModuleNames;
 	}
 
-	std::vector<std::shared_ptr<IMSSystem>> ConnectionList::scan()
+	std::vector<std::shared_ptr<IMSSystem>> ConnectionList::Scan()
 	{
 		std::vector<std::shared_ptr<IMSSystem>> fulliMSList;
 		for (ConnectionList::Impl::const_iterator iter = pImpl->begin();
@@ -477,17 +479,79 @@ namespace iMS
 			auto object = *iter;
 
 			if ((*pImpl->config_map)[object->Ident()].IncludeInScan) {
-				BOOST_LOG_SEV(lg::get(), sev::info) << "scan(" << object->Ident() << ") start" << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Scan(" << object->Ident() << ") start" << std::endl;
 				std::vector<std::shared_ptr<IMSSystem>> newiMSList = object->Discover((*pImpl->config_map)[object->Ident()].PortMask);
 
 				// Add newly found iMS's to the full list of iMS's
 				fulliMSList.insert(fulliMSList.end(), newiMSList.begin(), newiMSList.end());
-				BOOST_LOG_SEV(lg::get(), sev::info) << "scan(" << object->Ident() << ") finish: found " << newiMSList.size() << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Scan(" << object->Ident() << ") finish: found " << newiMSList.size() << std::endl;
 			} else {
-				BOOST_LOG_SEV(lg::get(), sev::info) << "scan(" << object->Ident() << ") disabled" << std::endl;
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Scan(" << object->Ident() << ") disabled" << std::endl;
 			}
 		}
 		return fulliMSList;
 	}
+
+    std::shared_ptr<IMSSystem> ConnectionList::Scan(
+        const std::string& interfaceName,
+        const std::vector<std::string>& addressHints
+    ) {
+        std::vector<std::shared_ptr<IMSSystem>> candidates;
+
+        ListBase<std::string> PortMask;
+        for (auto const& s : addressHints) { PortMask.push_back(s);}
+
+        BOOST_LOG_SEV(lg::get(), sev::info) << "Scan(" << interfaceName << ") start" << std::endl;
+        for (ConnectionList::Impl::const_iterator iter = pImpl->begin();
+			iter != pImpl->end();
+			iter++)
+		{
+			auto object = *iter;
+
+            if (object->Ident() == interfaceName) {
+                candidates = object->Discover(PortMask);
+                break;
+            }
+        }
+
+        BOOST_LOG_SEV(lg::get(), sev::info) << "Scan(" << interfaceName << ") finish: found " << candidates.size() << std::endl;
+        if (candidates.empty()) return nullptr;
+        return candidates.front();
+    }
+
+    std::shared_ptr<IMSSystem> ConnectionList::Find(
+        const std::string& interfaceName,
+        const std::string& systemId,
+        const std::vector<std::string>& addressHints
+    ) {
+        std::vector<std::shared_ptr<IMSSystem>> candidates;
+
+        ListBase<std::string> PortMask;
+        for (auto const& s : addressHints) { PortMask.push_back(s);}
+
+        BOOST_LOG_SEV(lg::get(), sev::info) << "Find(" << interfaceName << ") start: looking for " << systemId << std::endl;
+        for (ConnectionList::Impl::const_iterator iter = pImpl->begin();
+			iter != pImpl->end();
+			iter++)
+		{
+			auto object = *iter;
+
+            if (object->Ident() == interfaceName) {
+                candidates = object->Discover(PortMask);
+                break;
+            }
+        }
+
+        BOOST_LOG_SEV(lg::get(), sev::info) << "Find(" << interfaceName << ") finish: found " << candidates.size() << std::endl;
+        for (auto&& ims: candidates) {
+            if (ims && ims->ConnPort().find(systemId) != std::string::npos) {
+                BOOST_LOG_SEV(lg::get(), sev::info) << "System " << systemId << " found OK!" << std::endl;
+                return ims;
+            }
+        }
+
+        BOOST_LOG_SEV(lg::get(), sev::info) << "System " << systemId << " NOT found!" << std::endl;
+        return nullptr;
+    }
 
 }

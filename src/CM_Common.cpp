@@ -245,6 +245,7 @@ namespace iMS {
         {
             m->setStatus(Message::Status::RX_OK);
             LogNotifyEvent(sev::info, m, "Msg", MessageEvents::RESPONSE_RECEIVED, m->getMessageHandle());
+            m_status.store(_ConnectionStatus::ALIVE);
         }
 
         m_msgRegistry.notifyAll();

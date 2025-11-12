@@ -202,9 +202,9 @@ namespace iMS {
 	// Default Constructor
 	CM_RS422::CM_RS422() : pImpl(new CM_RS422::Impl())
 	{
-		sendTimeout = std::chrono::milliseconds(1000);  // needs to be a bit longer than some of the other CMs otherwise connection attempt can fail
-		rxTimeout = std::chrono::milliseconds(5000);
-		autoFreeTimeout = std::chrono::milliseconds(30000);
+		sendTimeout = std::chrono::milliseconds(100);
+		rxTimeout = std::chrono::milliseconds(500);
+		autoFreeTimeout = std::chrono::milliseconds(10000);
 	}
 
 	CM_RS422::~CM_RS422()
@@ -369,15 +369,18 @@ namespace iMS {
 				return;
 			}
 
-			// Disable Interrupts
-			HostReport *iorpt;
-			iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
-			iorpt->Payload<int>(0);
-			ReportFields f = iorpt->Fields();
-			f.len = sizeof(int);
-			iorpt->Fields(f);
-			this->SendMsg(*iorpt);
-			delete iorpt;
+            // True if we ever received a valid response from the device
+            if (m_status == _ConnectionStatus::ALIVE) {
+                // Disable Interrupts
+                HostReport *iorpt;
+                iorpt = new HostReport(HostReport::Actions::CTRLR_INTREN, HostReport::Dir::WRITE, 0);
+                iorpt->Payload<int>(0);
+                ReportFields f = iorpt->Fields();
+                f.len = sizeof(int);
+                iorpt->Fields(f);
+                this->SendMsg(*iorpt);
+                delete iorpt;
+            }
 
 			bool msg_pending{ true };
 			while (msg_pending)

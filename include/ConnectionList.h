@@ -210,7 +210,9 @@ namespace iMS
 	{
 	public:
 		/// Constructor initialises the list with the connection types
-		ConnectionList();
+        ///
+        /// \param[in] max_discover_timeout_ms Limit the time spend waiting for responses to broadcast discovery messages per interface, in milliseconds
+		ConnectionList(unsigned int max_discover_timeout_ms = 100);
 		/// Destructor
 		~ConnectionList();
 		
@@ -269,7 +271,11 @@ namespace iMS
 		///
 		/// \return Returns a reference to the internal Connection Configuration Map
 		/// \since 1.4.2
-		ConnectionConfig& config(const std::string& module);
+		ConnectionConfig& Config(const std::string& module);
+
+        [[deprecated("Use ConnectionList::Config(const std::string& module) instead")]]
+        inline ConnectionConfig& config(const std::string& module) { return Config(module);}
+
 		///
 		/// \brief Returns a list of string identifiers for each of the Connection Modules
 		///
@@ -279,11 +285,15 @@ namespace iMS
 		///
 		/// \return Returns a const reference to a list of all supported Connection Modules
 		/// \since 1.4.2
-		const ListBase<std::string>& modules() const;
+		const ListBase<std::string>& Modules() const;
+
+        [[deprecated("Use ConnectionList::Modules() instead")]]
+		inline const ListBase<std::string>& modules() const {return Modules();}
+
 		///
 		/// \brief Probe each of the known connection types for attached iMS Systems
         ///
-        /// The \c scan() function iterates through the list of connection types, opening
+        /// The \c Scan() function iterates through the list of connection types, opening
         /// a port on each in an implementation defined manner.  On a successful open, it
         /// will send a sequence of query messages to identify if an iMS Controller 
         /// and/or an iMS Synthesiser(s) is present.  If any of the query messages
@@ -298,7 +308,51 @@ namespace iMS
         ///
         /// \return Returns an array of discovered iMS Systems
         /// \since 1.0
-		std::vector<std::shared_ptr<IMSSystem>> scan();
+		std::vector<std::shared_ptr<IMSSystem>> Scan();
+
+        ///
+        /// \brief Scan a specific interface for IMS systems.
+        ///
+        /// Probes a single hardware interface and optionally restricts
+        /// the search to the provided address range(s).
+        ///
+        /// \param interfaceName Name of the interface to scan (e.g. "CM_USBSS").
+        /// \param addressHints Optional list of address or range strings to
+        ///                    narrow the search (defaults to an empty list).
+        ///
+        /// \return A shared pointer to the first IMSSystem found on the
+        ///        given interface, or nullptr if none found.
+        /// \since 2.0.1
+        ///
+        std::shared_ptr<IMSSystem> Scan(
+            const std::string& interfaceName,
+            const std::vector<std::string>& addressHints = {}
+        );
+                
+        [[deprecated("Use ConnectionList::Scan() instead")]]
+        inline std::vector<std::shared_ptr<IMSSystem>> scan() { return Scan();}
+
+        ///
+        /// \brief Find a specific IMS system by its ID.
+        ///
+        /// Searches the given interface for a system whose ID matches the
+        /// specified value. The system ID corresponds to the string returned
+        /// by IMSSystem::ConnPort().
+        ///
+        /// \param interfaceName Name of the interface to search (e.g. "CM_USBSS").
+        /// \param systemId The ID of the target system to locate.
+        /// \param addressHints Optional list of address or range strings to
+        ///                    narrow the search.
+        ///
+        /// \return A shared pointer to the matching IMSSystem if found,
+        ///        or nullptr if not found.
+        /// \since 2.0.1
+        ///        
+        std::shared_ptr<IMSSystem> Find(
+            const std::string& interfaceName,
+            const std::string& systemId,
+            const std::vector<std::string>& addressHints = {}
+        );        
 		//@}
 	private:
 		class Impl;
