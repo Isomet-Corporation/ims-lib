@@ -180,7 +180,11 @@ namespace iMS
 			/// \brief Illuminates when iMS system is overtemperature or a fan has failed
 			OVERTEMP = 12,
 			/// \brief Illuminates when master clock circuit PLL is locked (either to internal TCXO or externally supplied reference)
-			PLL_LOCK = 13
+			PLL_LOCK = 13,
+            /// \brief Illuminates when image playback is active
+            ACTV = 14,
+            /// \brief Illuminates when image playback is not active
+            IDLE = 15
 		};
 
 		/// \enum LED_SINK
