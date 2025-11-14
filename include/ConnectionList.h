@@ -290,6 +290,15 @@ namespace iMS
         [[deprecated("Use ConnectionList::Modules() instead")]]
 		inline const ListBase<std::string>& modules() const {return Modules();}
 
+        ///
+        /// \brief Apply connection settings to a given interface
+        ///
+        /// Used to configure the host connection for settings specific to the connection
+        /// type.  E.g. sets the baud rate for serial style interfaces.
+        ///
+        /// \since 2.0.2
+        void Settings(const std::string& module, const IConnectionSettings* settings);
+
 		///
 		/// \brief Probe each of the known connection types for attached iMS Systems
         ///

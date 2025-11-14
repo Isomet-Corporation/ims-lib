@@ -33,7 +33,9 @@
 #include <atomic>
 
 #include "CM_RS422.h"
+#include "CS_RS422.h"
 #include "IMSSystem.h"
+#include "PrivateUtil.h"
 
 #ifdef WIN32
 #define CENUMERATESERIAL_USE_STL
@@ -205,6 +207,7 @@ namespace iMS {
 		sendTimeout = std::chrono::milliseconds(100);
 		rxTimeout = std::chrono::milliseconds(500);
 		autoFreeTimeout = std::chrono::milliseconds(10000);
+        connSettings = nullptr;
 	}
 
 	CM_RS422::~CM_RS422()
@@ -220,9 +223,10 @@ namespace iMS {
 		return pImpl->Ident;
 	}
 
-	std::vector<std::shared_ptr<IMSSystem>> CM_RS422::Discover(const ListBase<std::string>& PortMask)
+	std::vector<std::shared_ptr<IMSSystem>> CM_RS422::Discover(const ListBase<std::string>& PortMask, std::shared_ptr<IConnectionSettings> settings)
 	{
 //		std::cout << "CM_RS422::Discover()" << std::endl;
+        connSettings = settings;
 		pImpl->PortMask = PortMask;
 		pImpl->rs422_list = new std::map<std::string, std::string>();
 		std::vector<std::shared_ptr<IMSSystem>> v = pImpl->ListConnectedDevices();
@@ -233,6 +237,10 @@ namespace iMS {
 	{
 		if (!DeviceIsOpen)
 		{
+            CS_RS422* cs_rs422 = nullptr;
+            if (connSettings && connSettings->Ident() == "CS_RS422")
+                cs_rs422 = (CS_RS422*)connSettings.get();
+
 			// If connecting without first performing a scan, carry it out here
 			if (pImpl->rs422_list == nullptr) {
 				pImpl->rs422_list = new std::map<std::string, std::string>();
@@ -312,10 +320,38 @@ namespace iMS {
 
 			if (GetCommState(pImpl->fp, &stDeviceControl))
 			{
-				stDeviceControl.BaudRate = CBR_115200;
-				stDeviceControl.Parity = NOPARITY;
-				stDeviceControl.ByteSize = 8;
-				stDeviceControl.StopBits = ONESTOPBIT;
+                if (cs_rs422) {
+                    BYTE ByteSize, Parity, StopBits;
+                    unsigned char d, p, s;
+                    switch(cs_rs422->Parity()) {
+                        case CS_RS422::ParitySetting::NONE: Parity = NOPARITY; p = 'N'; break;
+                        case CS_RS422::ParitySetting::ODD: Parity = ODDPARITY; p = 'O'; break;
+                        case CS_RS422::ParitySetting::EVEN: Parity = EVENPARITY; p = 'E'; break;
+                        default: Parity = NOPARITY; break;
+                    }
+                    switch(cs_rs422->DataBits()) {
+                        case CS_RS422::DataBitsSetting::BITS_7: ByteSize = 7; d = '7'; break;
+                        case CS_RS422::DataBitsSetting::BITS_8: ByteSize = 8; d = '8'; break;
+                        default: ByteSize = 8; break;
+                    }
+                    switch(cs_rs422->StopBits()) {
+                        case CS_RS422::StopBitsSetting::BITS_1: StopBits = ONESTOPBIT; s = '1'; break;
+                        case CS_RS422::StopBitsSetting::BITS_2: StopBits = TWOSTOPBITS; s = '2'; break;
+                        default: Parity = ONESTOPBIT; break;
+                    }
+
+                    BOOST_LOG_SEV(lg::get(), sev::debug) << "Attempting to connect to " << serial << " on port " << portname << " using custom connection settings (" << cs_rs422->BaudRate() << " " << d << p << s << ")" << std::endl;
+                    stDeviceControl.BaudRate = cs_rs422->BaudRate();
+                    stDeviceControl.Parity = Parity;
+                    stDeviceControl.ByteSize = ByteSize;
+                    stDeviceControl.StopBits = StopBits;
+                } else {
+                    BOOST_LOG_SEV(lg::get(), sev::debug) << "Attempting to connect to " << serial << " on port " << portname << " using default connection settings (115200 8N1)" << std::endl;
+                    stDeviceControl.BaudRate = CBR_115200;
+                    stDeviceControl.Parity = NOPARITY;
+                    stDeviceControl.ByteSize = 8;
+                    stDeviceControl.StopBits = ONESTOPBIT;
+                }
 			}
 			else {
 				CloseHandle(pImpl->fp);

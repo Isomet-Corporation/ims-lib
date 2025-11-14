@@ -27,6 +27,7 @@
 #include "boost/asio/ip/address.hpp"
 
 #include <algorithm>
+#include <memory>
 
 namespace iMS {
 
@@ -152,6 +153,32 @@ namespace iMS {
 	}
 
 	const std::string CS_ETH::Impl::CS_IDENT = "CS_ETH";
+
+    std::shared_ptr<IConnectionSettings> CS_ETH::Clone() const
+    {
+        return std::make_shared<CS_ETH>(*this);
+    }
+
+    CS_ETH::CS_ETH(const CS_ETH &rhs) : pImpl(new Impl())
+    {
+		pImpl->settings_data = rhs.pImpl->settings_data;
+		pImpl->use_dhcp = rhs.pImpl->use_dhcp;
+		pImpl->addr = rhs.pImpl->addr;
+		pImpl->netmask = rhs.pImpl->netmask;
+		pImpl->gw = rhs.pImpl->gw;
+    }
+
+    CS_ETH &CS_ETH::operator =(const CS_ETH &rhs)
+    {
+		if (this == &rhs) return *this;
+		pImpl->settings_data = rhs.pImpl->settings_data;
+		pImpl->use_dhcp = rhs.pImpl->use_dhcp;
+		pImpl->addr = rhs.pImpl->addr;
+		pImpl->netmask = rhs.pImpl->netmask;
+		pImpl->gw = rhs.pImpl->gw;
+        return *this;
+    }
+
 }
 
 #endif

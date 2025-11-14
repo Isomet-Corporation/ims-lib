@@ -107,25 +107,67 @@ namespace iMS
 	class LIBSPEC CS_RS422 : public IConnectionSettings
 	{
 	public:
-		/// \brief default constructor
-        CS_RS422();
+        ///  
+        /// \brief RS422 Parity settings
+        enum class ParitySetting {
+            NONE,
+            ODD,
+            EVEN
+        };
+
+        enum class DataBitsSetting {
+            BITS_7,
+            BITS_8
+        };
+
+        enum class StopBitsSetting {
+            BITS_1,
+            BITS_2
+        };
+
 		/// \brief full specification constructor
-        CS_RS422(unsigned int baud_rate);
+        CS_RS422(unsigned int baud_rate = 115200,
+            DataBitsSetting data_bits = DataBitsSetting::BITS_8,
+            ParitySetting parity = ParitySetting::NONE,
+            StopBitsSetting stop_bits = StopBitsSetting::BITS_1);
 		/// \brief constructor from data buffer
         CS_RS422(std::vector<std::uint8_t> process_data);
 		~CS_RS422();
+
+		CS_RS422(const CS_RS422 &);
+		CS_RS422 &operator =(const CS_RS422 &);
 
         ///
         /// \name RS422 Settings Accessors
         //@{
         ///
-        /// \name Configure iMS Device to use a specific baud rate for its serial port communications.  Note that other
-		/// serial port parameters are currently fixed to 8 data bits, no parity, 1 stop bit
+        /// \brief Configure host or iMS device to use a specific baud rate for its serial port communications. 
         ///        
-		/// \param[in] baud_data the new data rate to use in bps (bits per second)
-        void BaudRate(const unsigned int& baud_rate);
+		/// \param[in] baud_data the data rate to use in bps (bits per second)
+        void BaudRate(unsigned int baud_rate);
 		/// \return the current serial port baud rate
         unsigned int BaudRate() const;
+        ///
+        /// \name Configure host or iMS Device to use a specific number of data bits for its serial port communications.
+        ///        
+		/// \param[in] data_bits the number of data bits to use
+        void DataBits(DataBitsSetting data_bits);
+		/// \return the current serial port number of data bits
+        DataBitsSetting DataBits() const;        
+        ///
+        /// \name Configure host or iMS Device to use a specific parity type for its serial port communications.
+        ///        
+		/// \param[in] parity the type of parity to use
+        void Parity(ParitySetting parity);
+		/// \return the current serial port parity type
+        ParitySetting Parity() const;   
+        ///
+        /// \name Configure host or iMS Device to use a specific number of stop bits for its serial port communications.
+        ///        
+		/// \param[in] stop_bits the number of stop bits to use
+        void StopBits(StopBitsSetting stop_bits);
+		/// \return the current serial port baud rate
+        StopBitsSetting StopBits() const;           
         //@}
             
         ///
@@ -144,6 +186,10 @@ namespace iMS
 		/// \brief Returns the raw buffer of byte data that represents the settings configuration on the device
 		/// \return a byte buffer of configuration settings
 		const std::vector<std::uint8_t>& ProcessData() const;
+
+        /// \brief Implement this in each derived class to allow heap allocation to work in the IConnectionManager
+        /// \return a heap allocated pointer to a copy of the object
+        std::shared_ptr<IConnectionSettings> Clone() const;
 		//@}
 	private:
         class Impl;

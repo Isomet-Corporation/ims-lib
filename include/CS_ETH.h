@@ -130,7 +130,10 @@ namespace iMS
         CS_ETH(std::vector<std::uint8_t> process_data);
         /// default destructor
 		~CS_ETH();
-  
+
+        CS_ETH(const CS_ETH &);
+		CS_ETH &operator =(const CS_ETH &);
+
         ///
         /// \name Ethernet Settings Accessors
         //@{
@@ -185,6 +188,10 @@ namespace iMS
 		/// \brief Returns the raw buffer of byte data that represents the settings configuration on the device
 		/// \return a byte buffer of configuration settings
 		const std::vector<std::uint8_t>& ProcessData() const;
+
+        /// \brief Implement this in each derived class to allow heap allocation to work in the IConnectionManager
+        /// \return a heap allocated pointer to a copy of the object
+        std::shared_ptr<IConnectionSettings> Clone() const;
 		//@}
 	private:
         class Impl;

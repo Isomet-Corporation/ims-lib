@@ -522,6 +522,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		sendTimeout = std::chrono::milliseconds(100);
 		rxTimeout = std::chrono::milliseconds(500);
 		autoFreeTimeout = std::chrono::milliseconds(10000);
+        connSettings = nullptr;
 	}
 
 	CM_ENET::~CM_ENET()
@@ -536,9 +537,10 @@ static std::string logErrorString(int err = INT_MAX) {
         return instance;
     }
 
-	std::vector<std::shared_ptr<IMSSystem>> CM_ENET::Discover(const ListBase<std::string>& PortMask)		
+	std::vector<std::shared_ptr<IMSSystem>> CM_ENET::Discover(const ListBase<std::string>& PortMask, std::shared_ptr<IConnectionSettings> settings)		
 	{
 //		std::cout << "CM_ENET::Discover()" << std::endl;
+        connSettings = settings;
 		pImpl->PortMask = PortMask;
 		std::vector<std::shared_ptr<IMSSystem>> v = pImpl->ListConnectedDevices();
 		return v;

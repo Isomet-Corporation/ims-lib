@@ -24,6 +24,7 @@
 #ifndef IMS_CONNECTION_MANAGER_H__
 #define IMS_CONNECTION_MANAGER_H__
 
+#include "IConnectionSettings.h"
 #include "IMSSystem.h"
 #include "MessageEvent.h"
 #include "Message.h"
@@ -50,7 +51,7 @@ namespace iMS
 		// Iterate through each of the available ports on the interface looking for 
 		//	   possible connections, probe each candidate to see if it responds with a  
 		//	   recognisable identity and return a list of the discovered devices to the user
-		virtual std::vector<std::shared_ptr<IMSSystem>> Discover(const ListBase<std::string>& PortMask) = 0;
+		virtual std::vector<std::shared_ptr<IMSSystem>> Discover(const ListBase<std::string>& PortMask, std::shared_ptr<IConnectionSettings>) = 0;
 
 		// Connect to a device
 		virtual void Connect(const std::string&) = 0;

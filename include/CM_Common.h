@@ -158,6 +158,8 @@ namespace iMS {
 
         std::atomic<_ConnectionStatus> m_status {_ConnectionStatus::UNKNOWN};
 
+        std::shared_ptr<IConnectionSettings> connSettings;
+
     private:
     	template <typename T, typename T2 = int>
         struct triggerEvents

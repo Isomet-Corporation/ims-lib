@@ -88,6 +88,7 @@ namespace iMS {
 		sendTimeout = std::chrono::milliseconds(100);
 		rxTimeout = std::chrono::milliseconds(500);
 		autoFreeTimeout = std::chrono::milliseconds(10000);
+        connSettings = nullptr;
 	}
 	 
 	CM_FTDI::~CM_FTDI()
@@ -169,9 +170,10 @@ namespace iMS {
 		return IMSList;
 	}
 
-	std::vector<std::shared_ptr<IMSSystem>> CM_FTDI::Discover(const ListBase<std::string>& PortMask)
+	std::vector<std::shared_ptr<IMSSystem>> CM_FTDI::Discover(const ListBase<std::string>& PortMask, std::shared_ptr<IConnectionSettings> settings)
 	{
 //		std::cout << "CM_FTDI::Discover()" << std::endl;
+        connSettings = settings;
 		return pImpl->ListFtUsbDevices();
 	}
 

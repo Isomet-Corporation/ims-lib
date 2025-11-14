@@ -38,6 +38,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <memory>
 
 /// \cond LIB_CREATION
 #if defined _WIN32 || defined __CYGWIN__
@@ -124,6 +125,10 @@ namespace iMS
 		/// \brief Returns the raw buffer of byte data that represents the settings configuration on the device
 		/// \return a byte buffer of configuration settings
 		virtual const std::vector<std::uint8_t>& ProcessData() const = 0;
+
+        /// \brief Implement this in each derived class to allow heap allocation to work in the IConnectionManager
+        /// \return a heap allocated pointer to a copy of the object
+        virtual std::shared_ptr<IConnectionSettings> Clone() const = 0;
     //@}
 		
 	};

@@ -91,7 +91,7 @@ namespace iMS
 			m_parent(parent), m_connString(connString), m_conn(conn) {
 #if defined (_WIN32)
 			CS_RS422 cs_rs422;
-			m_settings.emplace(cs_rs422.Ident(), DeviceInterfaceSettings(true, 16, 4));
+			m_settings.emplace(cs_rs422.Ident(), DeviceInterfaceSettings(true, 16, 16));
 #endif
 #if defined (_WIN32) || defined (__QNXNTO__) || defined(__linux__)
 			CS_ETH cs_eth;

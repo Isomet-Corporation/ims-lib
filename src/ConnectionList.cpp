@@ -229,9 +229,9 @@ static void stop_logging()
 	core->remove_all_sinks();
 }
 
-struct ConnectionListSettings
+struct ConnectionControl
 {
-	ConnectionListSettings() :
+	ConnectionControl() :
 		SendTimeout(200),
 		RxTimeout(500),
 		FreeTimeout(10000),
@@ -245,10 +245,10 @@ struct ConnectionListSettings
 	bool IncludeInScan;
 };
 
-struct ConnectionListSettingsMap
+struct ConnectionControlMap
 {
-	typedef std::map<std::string, ConnectionListSettings> SettingsMap_t;
-	SettingsMap_t mSettingsMap;
+	typedef std::map<std::string, ConnectionControl> ControlMap_t;
+	ControlMap_t mControlMap;
 	std::string mFilename;
 
 	void Load(const std::string& filename);
@@ -260,7 +260,7 @@ const pt::ptree& empty_ptree() {
 	return t;
 }
 
-void ConnectionListSettingsMap::Load(const std::string& filename)
+void ConnectionControlMap::Load(const std::string& filename)
 {
 	mFilename = filename;
 	pt::ptree tree;
@@ -275,16 +275,16 @@ void ConnectionListSettingsMap::Load(const std::string& filename)
 				if (!f.first.compare("Name")) module_name = f.second.data();
 			}
 			if (module_name != "") {
-				ConnectionListSettings settings;
-				settings.SendTimeout = v.second.get("send_timeout", 200);
-				settings.RxTimeout = v.second.get("recv_timeout", 500);
-				settings.FreeTimeout = v.second.get("free_timeout", 10000);
-				settings.DiscoveryTimeout = v.second.get("discover_timeout", 500);
-				settings.IncludeInScan = v.second.get("scan", true);
+				ConnectionControl controlSettings;
+				controlSettings.SendTimeout = v.second.get("send_timeout", 200);
+				controlSettings.RxTimeout = v.second.get("recv_timeout", 500);
+				controlSettings.FreeTimeout = v.second.get("free_timeout", 10000);
+				controlSettings.DiscoveryTimeout = v.second.get("discover_timeout", 500);
+				controlSettings.IncludeInScan = v.second.get("scan", true);
 
-				mSettingsMap.emplace(module_name, settings);
+				mControlMap.emplace(module_name, controlSettings);
 
-//				std::cout << "Module " << module_name << ": Send " << settings.SendTimeout << " Rx " << settings.RxTimeout << " Free " << settings.FreeTimeout << " Disc " << settings.DiscoveryTimeout << " Scan " << settings.IncludeInScan << std::endl;
+//				std::cout << "Module " << module_name << ": Send " << controlSettings.SendTimeout << " Rx " << controlSettings.RxTimeout << " Free " << controlSettings.FreeTimeout << " Disc " << controlSettings.DiscoveryTimeout << " Scan " << controlSettings.IncludeInScan << std::endl;
 			}
 		}
 	}
@@ -296,11 +296,11 @@ void ConnectionListSettingsMap::Load(const std::string& filename)
 
 }
 
-void ConnectionListSettingsMap::Save(const std::string& filename)
+void ConnectionControlMap::Save(const std::string& filename)
 {
 	pt::ptree tree;
 
-	BOOST_FOREACH(const SettingsMap_t::value_type& v, mSettingsMap)
+	BOOST_FOREACH(const ControlMap_t::value_type& v, mControlMap)
 	{
 		pt::ptree module_tree;
 		module_tree.add("<xmlattr>.Name", v.first);
@@ -342,16 +342,20 @@ namespace iMS
 		ConnectionTypesList::iterator end()   	{ return connList->end(); }
 
 		typedef std::map<std::string, ConnectionConfig> ConnectionConfigMap;
-		ConnectionConfigMap* config_map;
+		std::unique_ptr<ConnectionConfigMap> config_map;
 
-		ConnectionListSettingsMap* settings_map;
+		std::unique_ptr<ConnectionControlMap> control_map;
+
+        typedef std::map<std::string, std::shared_ptr<IConnectionSettings>> ConnectionSettingsMap;
+        std::unique_ptr<ConnectionSettingsMap> settings_map;
 	};
 
 	ConnectionList::Impl::Impl()
 	{
 		connList = std::make_unique<ConnectionTypesList>();
-		config_map = new ConnectionList::Impl::ConnectionConfigMap;
-		settings_map = new ConnectionListSettingsMap;
+		config_map = std::make_unique<ConnectionConfigMap>();
+		control_map = std::make_unique<ConnectionControlMap>();
+        settings_map = std::make_unique<ConnectionSettingsMap>();
 
 		init_logging();
 		logging::add_common_attributes();
@@ -363,7 +367,7 @@ namespace iMS
 #else
 		settings_path += "/connectionv2.xml";
 #endif
-		settings_map->Load(settings_path.string());
+		control_map->Load(settings_path.string());
 
 		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("ConnectionList::ConnectionList()");
 	}
@@ -371,9 +375,6 @@ namespace iMS
 	ConnectionList::Impl::~Impl()
 	{
 		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("ConnectionList::~ConnectionList()");
-
-		delete config_map;
-		delete settings_map;
 
 		stop_logging();
 	}
@@ -442,16 +443,17 @@ namespace iMS
 			iter++)
 		{
 			// Apply Connection Settings (Creates default entry if it doesn't exist)
-			const auto& settings = pImpl->settings_map->mSettingsMap[(*iter)->Ident()];
+			const auto& settings = pImpl->control_map->mControlMap[(*iter)->Ident()];
 
             int discovery_timeout = settings.DiscoveryTimeout;
             if (discovery_timeout > max_discover_timeout_ms) discovery_timeout = (int)max_discover_timeout_ms;
 			(*iter)->SetTimeouts(settings.SendTimeout, settings.RxTimeout, settings.FreeTimeout, discovery_timeout);
 			pImpl->config_map->emplace((*iter)->Ident(), ConnectionConfig(settings.IncludeInScan));
+            pImpl->settings_map->emplace((*iter)->Ident(), nullptr);
 			pImpl->ModuleNames.push_back((*iter)->Ident());
 		}
 
-		pImpl->settings_map->Save(pImpl->settings_map->mFilename);
+		pImpl->control_map->Save(pImpl->control_map->mFilename);
 	}
 
 	ConnectionList::~ConnectionList()
@@ -469,6 +471,15 @@ namespace iMS
 		return pImpl->ModuleNames;
 	}
 
+    void ConnectionList::Settings(const std::string& module, const IConnectionSettings* settings)
+    {
+        auto iter = pImpl->settings_map->find(module);
+        if (iter != pImpl->settings_map->end() )
+        {
+            iter->second = settings ? settings->Clone() : nullptr;
+        }
+    }
+
 	std::vector<std::shared_ptr<IMSSystem>> ConnectionList::Scan()
 	{
 		std::vector<std::shared_ptr<IMSSystem>> fulliMSList;
@@ -480,7 +491,7 @@ namespace iMS
 
 			if ((*pImpl->config_map)[object->Ident()].IncludeInScan) {
 				BOOST_LOG_SEV(lg::get(), sev::info) << "Scan(" << object->Ident() << ") start" << std::endl;
-				std::vector<std::shared_ptr<IMSSystem>> newiMSList = object->Discover((*pImpl->config_map)[object->Ident()].PortMask);
+				std::vector<std::shared_ptr<IMSSystem>> newiMSList = object->Discover((*pImpl->config_map)[object->Ident()].PortMask, (*pImpl->settings_map)[object->Ident()]);
 
 				// Add newly found iMS's to the full list of iMS's
 				fulliMSList.insert(fulliMSList.end(), newiMSList.begin(), newiMSList.end());
@@ -509,7 +520,7 @@ namespace iMS
 			auto object = *iter;
 
             if (object->Ident() == interfaceName) {
-                candidates = object->Discover(PortMask);
+                candidates = object->Discover(PortMask, (*pImpl->settings_map)[object->Ident()]);
                 break;
             }
         }
@@ -537,7 +548,7 @@ namespace iMS
 			auto object = *iter;
 
             if (object->Ident() == interfaceName) {
-                candidates = object->Discover(PortMask);
+                candidates = object->Discover(PortMask, (*pImpl->settings_map)[object->Ident()]);
                 break;
             }
         }
