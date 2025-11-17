@@ -56,8 +56,8 @@ namespace iMS
 		std::chrono::milliseconds TimeElapsed() const;
 		std::chrono::milliseconds MsgDuration() const;
 		std::chrono::milliseconds RxTimeSince(std::chrono::time_point<std::chrono::high_resolution_clock>& t) const;
-        bool Message::waitForCompletion(std::chrono::milliseconds timeout);
-        void Message::waitForCompletion();
+        bool waitForCompletion(std::chrono::milliseconds timeout);
+        void waitForCompletion();
 
 		// Mirror Host & Device Report methods
 		const std::vector<std::uint8_t>& SerialStream();

@@ -44,6 +44,8 @@ extern "C" { FILE __iob_func[3] = { *stdin,*stdout,*stderr }; }
 #define new DEBUG_NEW
 #endif
 
+#if defined(_WIN32)
+
 namespace iMS {
 
 	class CM_FTDI::Impl
@@ -480,3 +482,5 @@ namespace iMS {
 
 	}
 }
+
+#endif

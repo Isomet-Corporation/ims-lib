@@ -24,6 +24,8 @@
 #include "IEventTrigger.h"
 #include "IEventHandler.h"
 #include <iostream>
+#include <mutex>
+
 namespace iMS {
 
 	IEventTrigger::IEventTrigger()

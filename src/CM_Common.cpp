@@ -106,7 +106,7 @@ namespace iMS {
         if (DeviceIsOpen)
 		{
 			auto hnd = this->SendMsg(Rpt);
-            auto& m = m_msgRegistry.findMessage(hnd);
+            auto&& m = m_msgRegistry.findMessage(hnd);
 
             m->waitForCompletion();
             DeviceReport Resp = this->Response(hnd);
@@ -386,7 +386,7 @@ namespace iMS {
 
 	const DeviceReport CM_Common::Response(const MessageHandle h) const
 	{
-        auto& msg = m_msgRegistry.findMessage(h);
+        auto&& msg = m_msgRegistry.findMessage(h);
         if (nullptr != msg) {
             return *msg->Response();
         }

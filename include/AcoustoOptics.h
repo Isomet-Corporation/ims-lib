@@ -44,7 +44,7 @@
 #ifndef IMS_ACOUSTOOPTICS_H__
 #define IMS_ACOUSTOOPTICS_H__
 
-#include "iMSTypeDefs.h"
+#include "IMSTypeDefs.h"
 #include "Compensation.h"
 #include <string>
 
