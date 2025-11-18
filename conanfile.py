@@ -4,7 +4,7 @@ from conan.tools.cmake import CMake, cmake_layout
 
 class ImsApiConan(ConanFile):
     name = "libims"
-    version = "2.0.2"
+    version = "2.0.3"
     license = "MIT"  # Adjust to match your actual license
     author = "Isomet Engineer <isomet@isomet.com>"
     url = "https://your.repo.url"  # Optional
