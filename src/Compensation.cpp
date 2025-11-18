@@ -36,8 +36,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
-//#include <iostream>
-//#include <iomanip>
 #include <fstream>
 #include "math.h"
 
@@ -287,7 +285,7 @@ namespace iMS
 	CompensationTable::Impl::~Impl() {	};
 
 	// Default Constructor required for ImageProject's CompensationTableList
-	CompensationTable::CompensationTable() : CompensationTable(std::shared_ptr<IMSSystem>(), CompensationPoint())
+	CompensationTable::CompensationTable() : CompensationTable(IMSSystem::Create(), CompensationPoint())
 	{	}
 
 	// Empty Constructor
