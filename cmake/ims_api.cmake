@@ -39,6 +39,7 @@ set(ims_api_source_files
     ${api_source_dir}/WaveShaping.cpp
     ${api_source_dir}/SystemFunc.cpp
     ${api_source_dir}/ToneBuffer.cpp
+    ${api_source_dir}/VCO.cpp
     ${api_lib_dir}/sqlite3/readonlymemvfs.cpp
     ${api_lib_dir}/sqlite3/sqlite3.c
 )

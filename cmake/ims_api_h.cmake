@@ -24,6 +24,7 @@ set(ims_public_api_header_files
     ${api_include_dir}/SystemFunc.h
     ${api_include_dir}/ToneBuffer.h
     ${api_include_dir}/WaveShaping.h
+    ${api_include_dir}/VCO.h
 )
 
 set(ims_private_api_header_files

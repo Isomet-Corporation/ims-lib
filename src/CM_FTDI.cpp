@@ -82,7 +82,7 @@ namespace iMS {
 		std::shared_ptr<IConnectionManager> m_parent;
 	};
 
-	const std::list<std::string> CM_FTDI::Impl::SerialNumberPrefix = std::list<std::string>({ "iMS", "iDDS", "iCSA" });
+	const std::list<std::string> CM_FTDI::Impl::SerialNumberPrefix = std::list<std::string>({ "iMS", "iDDS", "iCSA", "iVCS" });
 
 	// Default Constructor
 	CM_FTDI::CM_FTDI() : pImpl(new CM_FTDI::Impl())
@@ -136,6 +136,7 @@ namespace iMS {
 			if (FT_OK == ftStatus)
 			{
 				const std::string serial = devInfo.SerialNumber;
+                BOOST_LOG_SEV(lg::get(), sev::trace) << "FTDI Serial Number: " << serial;
 				const int flags = devInfo.Flags;  // 0 = closed, 1 = open
 
 				// Check to see if Serial Number begins with one of the approved strings and device hasn't been opened by another process
