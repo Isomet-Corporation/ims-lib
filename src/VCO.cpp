@@ -26,32 +26,77 @@
 #include "IConnectionManager.h"
 #include "PrivateUtil.h"
 #include "IMSTypeDefs_p.h"
+#include "MessageRegistry.h"
 
 #define _USE_MATH_DEFINES
 #include "math.h"
 
 namespace iMS
 {
+	class VCOEventTrigger :
+		public IEventTrigger
+	{
+	public:
+		VCOEventTrigger() { updateCount(VCOEvents::Count); }
+		~VCOEventTrigger() {};
+	};
+
 	class VCO::Impl
 	{
 	public:
-		Impl(std::shared_ptr<IMSSystem>);
+		Impl(std::shared_ptr<IMSSystem>, const VCO* const);
 		~Impl();
-		std::weak_ptr<IMSSystem> m_ims;
-	};
 
-	VCO::Impl::Impl(std::shared_ptr<IMSSystem> iMS) :
-		m_ims(iMS)
+        std::map<MEASURE, Percent> m_measurements;
+		std::weak_ptr<IMSSystem> m_ims;
+
+        MessageRegistry<MessageHandle, HostReport> m_msgRegistry;
+        class ResponseReceiver : public IEventHandler
+		{
+		public:
+			ResponseReceiver(VCO::Impl* sf) : m_parent(sf) {};
+			void EventAction(void* sender, const int message, const int param);
+		private:
+			VCO::Impl* m_parent;
+		};
+		ResponseReceiver* Receiver;
+        VCOEventTrigger m_Event;
+	private:
+		const VCO * const m_parent;
+    };
+
+	VCO::Impl::Impl(std::shared_ptr<IMSSystem> ims, const VCO* const vco) :
+		m_ims(ims), Receiver(new ResponseReceiver(this)), m_parent(vco)
 	{
-		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("VCO::VCO()");
-	}
+		// Subscribe listener
+		auto conn = ims->Connection();
+		conn->MessageEventSubscribe(MessageEvents::SEND_ERROR, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+		conn->MessageEventSubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+    }
 
 	VCO::Impl::~Impl()
 	{
-		BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("VCO::~VCO()");
+		// Unsubscribe listener
+        with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) { 
+            auto conn = ims->Connection();
+            conn->MessageEventUnsubscribe(MessageEvents::SEND_ERROR, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::TIMED_OUT_ON_SEND, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_RECEIVED, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_VALID, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_TIMED_OUT, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_CRC, Receiver);
+            conn->MessageEventUnsubscribe(MessageEvents::RESPONSE_ERROR_INVALID, Receiver);
+        });
+
+		delete Receiver;
 	}
 
-	VCO::VCO(std::shared_ptr<IMSSystem> ims) : p_Impl(new Impl(ims))
+	VCO::VCO(std::shared_ptr<IMSSystem> ims) : p_Impl(new Impl(ims, this))
 	{
 	}
 
@@ -60,6 +105,58 @@ namespace iMS
 		delete p_Impl;
 		p_Impl = nullptr;
 	}
+
+	void VCO::Impl::ResponseReceiver::EventAction(void* sender, const int message, const int param)
+	{
+		switch (message)
+		{
+		case (MessageEvents::RESPONSE_RECEIVED) :
+		case (MessageEvents::RESPONSE_ERROR_VALID) : {
+
+			// Check for response and send to user code
+			{
+				if (m_parent->m_msgRegistry.size() > 0) {
+                    auto m = m_parent->m_msgRegistry.findMessage(param);
+                    if (m) {
+                        with_locked(m_parent->m_ims, [&](std::shared_ptr<IMSSystem> ims) { 
+                            auto conn = ims->Connection();
+                            const DeviceReport& Resp = conn->Response(param);
+                            auto v = Resp.Payload<std::vector<std::uint16_t>>();
+
+                            m_parent->m_measurements[VCO::MEASURE::ANLG_INPUT_A_VOLTS] = Percent(100.0 * (double)v[0] / 65535.0);
+                            m_parent->m_measurements[VCO::MEASURE::ANLG_INPUT_B_VOLTS] = Percent(100.0 * (double)v[1] / 65535.0);
+                            m_parent->m_measurements[VCO::MEASURE::ANLG_INPUT_A_PROCESSED] = Percent(100.0 * (double)v[2] / 65535.0);
+                            m_parent->m_measurements[VCO::MEASURE::ANLG_INPUT_B_PROCESSED] = Percent(100.0 * (double)v[3] / 65535.0);
+
+                        });
+                        m_parent->m_Event.Trigger<int>((void*)m_parent, VCOEvents::VCO_UPDATE_AVAILABLE, 0);
+                        m_parent->m_Event.Trigger<double>((void*)m_parent, VCOEvents::VCO_UPDATE_AVAILABLE, 0.0);
+                        m_parent->m_msgRegistry.removeMessage(param);
+                    }
+				}
+			}
+			break;
+		}
+		case (MessageEvents::TIMED_OUT_ON_SEND) :
+		case (MessageEvents::SEND_ERROR) :
+		case (MessageEvents::RESPONSE_TIMED_OUT) :
+		case (MessageEvents::RESPONSE_ERROR_CRC) :
+		case (MessageEvents::RESPONSE_ERROR_INVALID) : {
+
+			// Check for response and send to user code
+			{
+				if (m_parent->m_msgRegistry.size() > 0) {
+                    auto m = m_parent->m_msgRegistry.findMessage(param);
+                    if (m) {
+						m_parent->m_Event.Trigger<int>(this, VCOEvents::VCO_READ_FAILED, param);
+                        m_parent->m_msgRegistry.removeMessage(param);
+					}
+				}
+			}
+			break;
+		}
+		}
+    }
 
 	bool VCO::ConfigureCICFilter(bool enable, unsigned int filterLength)
 	{
@@ -343,7 +440,7 @@ namespace iMS
         }).value_or(false);
     }
 
-    bool VCO::ControlFunction(VCOOutput output, VCOFunction func)
+    bool VCO::TrackingMode(VCOOutput output, VCOTracking func)
     {
         return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
         {   
@@ -376,7 +473,7 @@ namespace iMS
             iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_VCOMux);
             switch(func)
             {
-                case VCOFunction::CONSTANT: data = (2 << shift); break;
+                case VCOTracking::CONSTANT: data = (2 << shift); break;
                 default: data = 0;
             }
             iorpt->Payload<std::uint16_t>(data); 
@@ -387,14 +484,15 @@ namespace iMS
             }
             delete iorpt;
 
-            // Set tracking and mute bits
+            // Set tracking bits
+            if (func == VCOTracking::CONSTANT) return true;
             iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
             switch(output)
             {
-                case VCOOutput::CH1_FREQUENCY: mask = (func == VCOFunction::CONSTANT) || (func == VCOFunction::MUTE) ? 0x100 : 0x103; break;
-                case VCOOutput::CH1_AMPLITUDE: mask = (func == VCOFunction::CONSTANT) || (func == VCOFunction::MUTE) ? 0x100 : 0x10C; break;
-                case VCOOutput::CH2_FREQUENCY: mask = (func == VCOFunction::CONSTANT) || (func == VCOFunction::MUTE) ? 0x400 : 0x430; break;
-                case VCOOutput::CH2_AMPLITUDE: mask = (func == VCOFunction::CONSTANT) || (func == VCOFunction::MUTE) ? 0x400 : 0x4C0; break;
+                case VCOOutput::CH1_FREQUENCY: mask = 0x03; break;
+                case VCOOutput::CH1_AMPLITUDE: mask = 0x0C; break;
+                case VCOOutput::CH2_FREQUENCY: mask = 0x30; break;
+                case VCOOutput::CH2_AMPLITUDE: mask = 0xC0; break;
                 default: return false;
             }
             iorpt->Payload<std::uint16_t>(mask); 
@@ -408,11 +506,9 @@ namespace iMS
             iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_VCOTrack);
             switch(func)
             {
-                case VCOFunction::TRACK: data = (1 << shift); break;
-                case VCOFunction::HOLD: data = 0; break;
-                case VCOFunction::CONDITIONAL: data = (2 << shift); break;
-                case VCOFunction::CONSTANT: data = 0; break;
-                case VCOFunction::MUTE: data = mask; break;
+                case VCOTracking::TRACK: data = (1 << shift); break;
+                case VCOTracking::HOLD: data = 0; break;
+                case VCOTracking::PIN_CONTROLLED: data = (2 << shift); break;
                 default: return false;
             }
             iorpt->Payload<std::uint16_t>(data); 
@@ -426,7 +522,7 @@ namespace iMS
         }).value_or(false);        
     }
 
-    bool VCO::ExternalRFMute(bool enable, RFChannel ch)
+    bool VCO::RFMute(VCOMute mute, RFChannel ch)
     {
         return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
         {   
@@ -441,13 +537,13 @@ namespace iMS
             // Set tracking and mute bits
             iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
             if (ch.IsAll()) {
-                mask = 0xA00;
+                mask = 0xF00;
             }
             else if (ch == 1) {
-                mask = 0x200;
+                mask = 0x300;
             }
             else if (ch == 2) {
-                mask = 0x800;
+                mask = 0xC00;
             }
             else {return false;}
             iorpt->Payload<std::uint16_t>(mask); 
@@ -459,7 +555,14 @@ namespace iMS
             delete iorpt;
 
             iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_VCOTrack);
-            std::uint16_t data = enable ? mask : 0;
+            std::uint16_t data;
+            if (mute == VCOMute::MUTE) {
+                data = 0x500;
+            } else if (mute == VCOMute::PIN_CONTROLLED) {
+                data = 0xA00;
+            } else {
+                data = 0;
+            }
             iorpt->Payload<std::uint16_t>(data); 
             if (NullMessage == conn->SendMsg(*iorpt))
             {
@@ -501,7 +604,7 @@ namespace iMS
 				}
 				delete iorpt;
 
-                this->ControlFunction(VCOOutput::CH1_FREQUENCY, VCOFunction::CONSTANT);
+                this->TrackingMode(VCOOutput::CH1_FREQUENCY, VCOTracking::CONSTANT);
             }            
             if ((ch == 2) || ch.IsAll()) {
                 iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Ch2FConstHi);
@@ -518,7 +621,7 @@ namespace iMS
 				}
 				delete iorpt;
 
-                this->ControlFunction(VCOOutput::CH2_FREQUENCY, VCOFunction::CONSTANT);
+                this->TrackingMode(VCOOutput::CH2_FREQUENCY, VCOTracking::CONSTANT);
             }
             return true;         
         }).value_or(false);                
@@ -546,7 +649,7 @@ namespace iMS
 				}
 				delete iorpt;
 
-                this->ControlFunction(VCOOutput::CH1_AMPLITUDE, VCOFunction::CONSTANT);
+                this->TrackingMode(VCOOutput::CH1_AMPLITUDE, VCOTracking::CONSTANT);
             }            
             if ((ch == 2) || ch.IsAll()) {
                 iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Ch2AConst);
@@ -559,7 +662,7 @@ namespace iMS
 				}
 				delete iorpt;
 
-                this->ControlFunction(VCOOutput::CH2_AMPLITUDE, VCOFunction::CONSTANT);
+                this->TrackingMode(VCOOutput::CH2_AMPLITUDE, VCOTracking::CONSTANT);
             }
             return true;
         }).value_or(false);   
@@ -586,5 +689,62 @@ namespace iMS
             return true;
         }).value_or(false);         
     }
+
+    bool VCO::ReadVoltageInput()
+    {
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {   
+             // Make sure Synthesiser is present
+            if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+
+            std::shared_ptr<HostReport> iorpt;
+            iorpt = std::make_shared<HostReport>(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_VCOMonCh1);
+
+            ReportFields f = iorpt->Fields();
+            f.len = static_cast<std::uint16_t>((int)MEASURE::Count * sizeof(std::uint16_t));
+            iorpt->Fields(f);
+
+            auto h = conn->SendMsg(*iorpt);
+            if (NullMessage == h)
+            {
+                return false;
+            }
+            p_Impl->m_msgRegistry.addMessage(h, iorpt);
+            return true;
+
+        }).value_or(false);           
+    }
+
+    const std::map<VCO::MEASURE, Percent>& VCO::GetVoltageInputData() const
+    {
+        return p_Impl->m_measurements;
+    }
+
+    std::map<std::string, Percent> VCO::GetVoltageInputDataStr() const
+    {
+        std::map<std::string, Percent> out;
+        for (auto& [k, v] : GetVoltageInputData())
+        {
+            switch(k)
+            {
+                case MEASURE::ANLG_INPUT_A_VOLTS: out["Voltage Input Ch A"] = v; break;
+                case MEASURE::ANLG_INPUT_B_VOLTS: out["Voltage Input Ch B"] = v; break;
+                case MEASURE::ANLG_INPUT_A_PROCESSED: out["Processed Value Ch A"] = v; break;
+                case MEASURE::ANLG_INPUT_B_PROCESSED: out["Processed Value Ch B"] = v; break;
+            }
+        }
+        return out;
+    }
+
+	void VCO::VCOEventSubscribe(const int message, IEventHandler* handler)
+	{
+		p_Impl->m_Event.Subscribe(message, handler);
+	}
+
+	void VCO::VCOEventUnsubscribe(const int message, const IEventHandler* handler)
+	{
+		p_Impl->m_Event.Unsubscribe(message, handler);
+	}
 
 }

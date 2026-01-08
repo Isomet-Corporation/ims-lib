@@ -36,7 +36,10 @@
 #define IMS_VCO_H__
 
 #include "IMSSystem.h"
+#include "IEventHandler.h"
 #include "IMSTypeDefs.h"
+
+#include <map>
 
 /// \cond LIB_CREATION
 #if defined _WIN32 || defined __CYGWIN__
@@ -78,6 +81,28 @@
 namespace iMS
 {
 	///
+	/// \class VCOEvents VCO.h include\VCO.h
+	/// \brief All the different types of events that can be triggered by the VCO class.
+	///
+	/// Some events contain floating point parameter data which can be processed by the IEventHandler::EventAction
+	/// derived method
+	/// \author Dave Cowan
+	/// \date 2026-01-07
+	/// \since 2.0.5
+	class LIBSPEC VCOEvents
+	{
+	public:
+		/// \enum Events List of Events raised by the VCO module
+		enum Events {
+			/// Indicates to the application that an update of diagnostics data is available to be read
+			VCO_UPDATE_AVAILABLE,
+			/// Indicates that the update that was requested has failed to respond with updated results
+			VCO_READ_FAILED,
+			Count
+		};
+	};
+
+	///
 	/// \class VCO VCO.h include\VCO.h
 	/// \brief Configures Voltage Controlled Synthesisers
 	///
@@ -110,16 +135,38 @@ namespace iMS
             X8 = 3
         };
 
-        enum class VCOFunction
+        enum class VCOTracking
         {
             TRACK,
             HOLD,
-            CONDITIONAL,
-            CONSTANT,
-            MUTE
+            PIN_CONTROLLED,
+            CONSTANT
         };
 
-		///
+        enum class VCOMute
+        {
+            UNMUTE,
+            MUTE,
+            PIN_CONTROLLED
+        };
+
+		/// \enum MEASURE
+		/// \brief Selects which VCO Input measurement to access
+		/// \since 2.0.5
+		enum class MEASURE
+		{
+			/// Voltage at Device Input Ch A
+			ANLG_INPUT_A_VOLTS,
+			/// Voltage at Device Input Ch B
+			ANLG_INPUT_B_VOLTS,
+			/// Processed Value (Filtered + Digital Gain) Ch A
+			ANLG_INPUT_A_PROCESSED,
+			/// Processed Value (Filtered + Digital Gain) Ch B
+			ANLG_INPUT_B_PROCESSED,
+            Count,
+		};
+        
+        ///
 		/// \name Constructor & Destructor
 		//@{
 		///
@@ -150,13 +197,20 @@ namespace iMS
     bool ApplyDigitalGain(VCOGain gain);
 
     bool Route(VCOOutput output, VCOInput input);
-    bool ControlFunction(VCOOutput output, VCOFunction func);
-    bool ExternalRFMute(bool enable = true, RFChannel ch = RFChannel::all);
+    bool TrackingMode(VCOOutput output, VCOTracking func);
+    bool RFMute(VCOMute = VCOMute::MUTE, RFChannel ch = RFChannel::all);
 
     bool SetConstantFrequency(MHz freq, RFChannel ch = RFChannel::all);
     bool SetConstantAmplitude(Percent ampl, RFChannel ch = RFChannel::all);
 
     bool SaveStartupState();
+
+    bool ReadVoltageInput();
+    const std::map<MEASURE, Percent>& GetVoltageInputData() const;
+    std::map<std::string, Percent> GetVoltageInputDataStr() const;    
+
+	void VCOEventSubscribe(const int message, IEventHandler* handler);
+	void VCOEventUnsubscribe(const int message, const IEventHandler* handler);
 
 	private:
 		// Makes this object non-copyable
