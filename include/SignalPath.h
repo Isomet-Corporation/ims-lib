@@ -545,6 +545,12 @@ namespace iMS
 	/// \return true if the command was issued successfully.
 	/// \since 1.7.0
 		bool AutoPhaseResync(bool enable = true);
+	/// \brief External Signal Phase Resynchronisation
+	/// Asynchronously Clears the phase accumulators of all RF Channels on the Rising edge of a signal on GPIO 0
+	/// \param[in] enable Set to true (or leave blank) to turn on the feature, false to turn off
+	/// \return true if the command was issued successfully.
+	/// \since 2.0.6
+		bool ExtPhaseResync(bool enable = true);        
 	//@}
 		
 	/// \name Enhanced Tone Functions

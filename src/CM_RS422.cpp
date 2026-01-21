@@ -205,7 +205,7 @@ namespace iMS {
 	CM_RS422::CM_RS422() : pImpl(new CM_RS422::Impl())
 	{
 		sendTimeout = std::chrono::milliseconds(100);
-		rxTimeout = std::chrono::milliseconds(500);
+		rxTimeout = std::chrono::milliseconds(1000);
 		autoFreeTimeout = std::chrono::milliseconds(10000);
         connSettings = nullptr;
 	}

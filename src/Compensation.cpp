@@ -1056,6 +1056,7 @@ namespace iMS
 		CompensationEventTrigger m_Event;
 
 		void AddPointToVector(std::shared_ptr<IMSSystem>, std::vector<std::uint8_t>&, const CompensationPoint&);
+        void CreateLocalTable(std::shared_ptr<IMSSystem>);
 
 		class ResponseReceiver : public IEventHandler
 		{
@@ -1207,31 +1208,7 @@ namespace iMS
             HostReport *iorpt;
             std::uint16_t data;
 
-            if (!p_Impl->m_channel.IsAll()) {
-                // Channel Scoped Compensation requested.  Confirm support in iMS firmware
-                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_Chan_Scope);
-                DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
-                delete iorpt;
-                if (Resp.Done()) {
-                    data = Resp.Payload<std::uint16_t>();
-                }
-                else return false;
-
-                if (!(data & 0x100))
-                    // no support for channel scoped compensation
-                    return false;
-            }
-
-            if (p_Impl->m_Table == nullptr) {
-                // Create Local copy of table that is reinterpreted to match connected device
-                if (p_Impl->m_channel.IsAll())
-                    p_Impl->m_Table = std::make_shared<CompensationTable>(ims, p_Impl->m_TableRef);
-                else
-                    p_Impl->m_Table = std::make_shared<CompensationTable>(ims->Synth().GetCap().LUTDepth - 2, 
-                        ims->Synth().GetCap().lowerFrequency, ims->Synth().GetCap().upperFrequency,
-                        p_Impl->m_TableRef);
-            }
-
+            p_Impl->CreateLocalTable(ims);
 
             p_Impl->downloadWorker.start();
             p_Impl->rxWorker.start();
@@ -1295,35 +1272,7 @@ namespace iMS
             // Make sure Synthesiser is present
             if (!ims->Synth().IsValid()) return false;
 
-            if (!p_Impl->m_channel.IsAll()) {
-                // Channel Scoped Compensation requested.  Confirm support in iMS firmware
-                auto conn = ims->Connection();
-
-                HostReport *iorpt;
-
-                iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_Chan_Scope);
-                DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
-                delete iorpt;
-                std::uint16_t data;
-                if (Resp.Done()) {
-                    data = Resp.Payload<std::uint16_t>();
-                }
-                else return false;
-
-                if (!(data & 0x100))
-                    // no support for channel scoped compensation
-                    return false;
-            }
-
-            if (p_Impl->m_Table == nullptr) {
-                // Create Local copy of table that is reinterpreted to match connected device
-                if (p_Impl->m_channel.IsAll())
-                    p_Impl->m_Table = std::make_shared<CompensationTable>(ims, p_Impl->m_TableRef);
-                else
-                    p_Impl->m_Table = std::make_shared<CompensationTable>(ims->Synth().GetCap().LUTDepth - 2,
-                        ims->Synth().GetCap().lowerFrequency, ims->Synth().GetCap().upperFrequency,
-                        p_Impl->m_TableRef);
-            }
+            p_Impl->CreateLocalTable(ims);
 
             p_Impl->verifyWorker.start();
             p_Impl->rxWorker.start();
@@ -1400,6 +1349,35 @@ namespace iMS
 		lut_data.push_back(static_cast<std::uint8_t>(sync_anlg & 0xFF));
 		lut_data.push_back(static_cast<std::uint8_t>((sync_anlg >> 8) & 0xFF));
 	}
+
+    void CompensationTableDownload::Impl::CreateLocalTable(std::shared_ptr<IMSSystem> ims) {
+        bool forceGlbl = false;
+
+        if (m_Table == nullptr) {
+            auto conn = ims->Connection();
+            if (!m_channel.IsAll()) {
+                // Channel Scoped Compensation requested.  Confirm support in iMS firmware
+                auto iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, SYNTH_REG_Chan_Scope);
+                DeviceReport Resp = conn->SendMsgBlocking(*iorpt);
+                delete iorpt;
+                if (Resp.Done()) {
+                    std::uint16_t data = Resp.Payload<std::uint16_t>();
+                    if (!(data & 0x100)) {
+                        // no support for channel scoped compensation
+                        forceGlbl = true; 
+                    }
+                }
+                else forceGlbl = true;
+            }
+            // Create Local copy of table that is reinterpreted to match connected device
+            if (m_channel.IsAll() || forceGlbl)
+                m_Table = std::make_shared<CompensationTable>(ims, m_TableRef);
+            else
+                m_Table = std::make_shared<CompensationTable>(ims->Synth().GetCap().LUTDepth - 2, 
+                    ims->Synth().GetCap().lowerFrequency, ims->Synth().GetCap().upperFrequency,
+                    m_TableRef);
+        }
+    }
 
 	// CompensationTable Downloading Thread
 	void CompensationTableDownload::Impl::DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
@@ -1650,6 +1628,8 @@ namespace iMS
         { 
             FileSystemManager fsm(ims);
             std::uint32_t addr;
+
+            p_Impl->CreateLocalTable(ims); // ensure table exists in memory, correct to connected iMS parameters
 
             std::vector<std::uint8_t> data;
             for (CompensationTable::const_iterator it = p_Impl->m_Table->cbegin(); it != p_Impl->m_Table->cend(); ++it)

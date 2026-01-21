@@ -2214,6 +2214,51 @@ namespace iMS
         }).value_or(false);
 	}
 
+    bool SignalPath::ExtPhaseResync(bool enable)
+    {
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        {  
+		if (!ims->Synth().IsValid()) return false;
+            auto conn = ims->Connection();
+
+            // Send Synth Reg commands
+            std::shared_ptr<HostReport> iorpt;
+
+            iorpt = std::make_shared<HostReport>(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
+            iorpt->Payload<std::uint16_t>(0x10);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                return false;
+            }
+
+            // Ensure signal is set to an input
+            iorpt = std::make_shared<HostReport>(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IOSig);
+            iorpt->Payload<std::uint16_t>(0x10);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                return false;
+            }
+
+            iorpt = std::make_shared<HostReport>(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_IO_Config_Mask);
+            iorpt->Payload<std::uint16_t>(0x4);
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                return false;
+            }
+
+            iorpt = std::make_shared<HostReport>(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_Phase_Resync);
+            std::uint16_t data = 0;
+            if (enable) data = 4;
+            iorpt->Payload<std::uint16_t>(data);
+
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                return false;
+            }
+            return true;
+        }).value_or(false);
+    }
+
 	bool SignalPath::AddFrequencyOffset(MHz& offset, RFChannel chan)
 	{
         return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool

@@ -26,6 +26,7 @@
 #include "PrivateUtil.h"
 #include "IEventTrigger.h"
 #include "Message.h"
+#include "MessageRegistry.h"
 
 #include <thread>
 
@@ -49,12 +50,12 @@ namespace iMS {
 
 		EEPROMEventTrigger m_Event;
 		std::vector<std::uint8_t> m_EEData;
-		std::list<MessageHandle> m_EEReadList;
-		std::list<MessageHandle> m_EEWriteList;
-		MessageHandle m_EEFinalRead;
-		MessageHandle m_EEFinalWrite;
-		bool m_AccessFailure;
-		mutable std::mutex m_EEList_mutex;
+        MessageRegistry<MessageHandle, HostReport> m_ReadRegistry;
+        MessageRegistry<MessageHandle, HostReport> m_WriteRegistry;
+        std::atomic_bool m_ReadComplete;
+        std::atomic_bool m_WriteComplete;
+		bool m_ReadAccessFailure;
+		bool m_WriteAccessFailure;
 
 		template <typename T>
 		void EEPROMDataImpl(const T& t, T*);
@@ -81,7 +82,7 @@ namespace iMS {
 		std::weak_ptr<IMSSystem> m_ims;
 	};
 
-	EEPROM::Impl::Impl(std::shared_ptr<IMSSystem> ims) : m_EEFinalRead(NullMessage), m_EEFinalWrite(NullMessage), m_AccessFailure(false),
+	EEPROM::Impl::Impl(std::shared_ptr<IMSSystem> ims) : m_ReadComplete(false), m_WriteComplete(false), m_ReadAccessFailure(false), m_WriteAccessFailure(false),
 			Receiver(new ResponseReceiver(this)), m_ims(ims)
 	{
 		// Subscribe listener
@@ -214,46 +215,51 @@ namespace iMS {
 		{
 		case (MessageEvents::RESPONSE_RECEIVED) :
 		case (MessageEvents::RESPONSE_ERROR_VALID) : {
-
-			// Add response to verify list for checking by rx processing thread
-			{
-				if (!m_parent->m_EEReadList.empty()) {
-                    with_locked(m_parent->m_ims, [&](std::shared_ptr<IMSSystem> ims) {   
+            if (m_parent->m_ReadRegistry.size() > 0) {
+                auto m = m_parent->m_ReadRegistry.findMessage(param);
+                if (m) {
+                    with_locked(m_parent->m_ims, [&](std::shared_ptr<IMSSystem> ims) { 
                         auto conn = ims->Connection();
-                        std::unique_lock<std::mutex> lck{ m_parent->m_EEList_mutex };
-                        if (!m_parent->m_EEReadList.empty() && (param == m_parent->m_EEReadList.front()))
-                        {
-                            m_parent->m_EEReadList.pop_front();
-                            std::vector<std::uint8_t> packet_data = conn->Response(param).Payload < std::vector<std::uint8_t> >();
-                            m_parent->m_EEData.insert(m_parent->m_EEData.cend(), packet_data.cbegin(), packet_data.cend());
-                            if (param == m_parent->m_EEFinalRead) {
-                                if (m_parent->m_AccessFailure) {
-                                    m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
-                                }
-                                else {
-                                    m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_READ_DONE, param);
-                                }
-                            }
-                        }
+                        auto packet_data = conn->Response(param).Payload < std::vector<std::uint8_t> >();
+                        m_parent->m_EEData.insert(m_parent->m_EEData.cend(), packet_data.cbegin(), packet_data.cend());
                     });
-				}
-				if (!m_parent->m_EEWriteList.empty()) {
-					std::unique_lock<std::mutex> lck{ m_parent->m_EEList_mutex };
-					if (!m_parent->m_EEWriteList.empty() && (param == m_parent->m_EEWriteList.front()))
-					{
-						m_parent->m_EEWriteList.pop_front();
-						if (param == m_parent->m_EEFinalWrite) {
-							if (m_parent->m_AccessFailure) {
-								m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
-							}
-							else {
-								m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_WRITE_DONE, param);
-							}
-						}
-					}
-					lck.unlock();
-				}
-			}
+                    m_parent->m_ReadRegistry.removeMessage(param);
+
+                    if (!m_parent->m_ReadRegistry.size() && m_parent->m_ReadComplete)
+                    {
+                        if (m_parent->m_ReadAccessFailure) {
+                            m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
+                        }
+                        else {
+                            m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_READ_DONE, param);
+                        }
+                        m_parent->m_ReadComplete.store(false);
+                    }
+                }
+            }
+
+            if (m_parent->m_WriteRegistry.size() > 0) {
+                auto m = m_parent->m_WriteRegistry.findMessage(param);
+                if (m) {
+                    with_locked(m_parent->m_ims, [&](std::shared_ptr<IMSSystem> ims) { 
+                        auto conn = ims->Connection();
+                        auto packet_data = conn->Response(param).Payload < std::vector<std::uint8_t> >();
+                        m_parent->m_EEData.insert(m_parent->m_EEData.cend(), packet_data.cbegin(), packet_data.cend());
+                    });
+                    m_parent->m_WriteRegistry.removeMessage(param);
+
+                    if (!m_parent->m_WriteRegistry.size() && m_parent->m_WriteComplete)
+                    {
+                        if (m_parent->m_WriteAccessFailure) {
+                            m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
+                        }
+                        else {
+                            m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_WRITE_DONE, param);
+                        }                            
+                        m_parent->m_WriteComplete.store(false);
+                    }
+                }
+            }
 			break;
 		}
 		case (MessageEvents::TIMED_OUT_ON_SEND) :
@@ -262,32 +268,33 @@ namespace iMS {
 		case (MessageEvents::RESPONSE_ERROR_CRC) :
 		case (MessageEvents::RESPONSE_ERROR_INVALID) : {
 
-			// Add error to list and trigger processing thread if handle exists
-			{
-				if (!m_parent->m_EEReadList.empty()) {
-					std::unique_lock<std::mutex> lck{ m_parent->m_EEList_mutex };
-					if (!m_parent->m_EEReadList.empty() && (param == m_parent->m_EEReadList.front()))
-					{
-						m_parent->m_EEReadList.pop_front();
-						//m_parent->m_EEReadList.clear();
-						//m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
-						m_parent->m_AccessFailure = true;
-						if (param == m_parent->m_EEFinalRead) m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
-					}
-					lck.unlock();
-				}
-				if (!m_parent->m_EEWriteList.empty()) {
-					std::unique_lock<std::mutex> lck{ m_parent->m_EEList_mutex };
-					if (!m_parent->m_EEWriteList.empty() && (param == m_parent->m_EEWriteList.front()))
-					{
-						m_parent->m_EEWriteList.pop_front();
-						//m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
-						m_parent->m_AccessFailure = true;
-						if (param == m_parent->m_EEFinalWrite) m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
-					}
-					lck.unlock();
-				}
-			}
+            if (m_parent->m_ReadRegistry.size() > 0) {
+                auto m = m_parent->m_ReadRegistry.findMessage(param);
+                if (m) {
+                    m_parent->m_ReadAccessFailure = true;
+                    m_parent->m_ReadRegistry.removeMessage(param);
+
+                    if (!m_parent->m_ReadRegistry.size() && m_parent->m_ReadComplete)
+                    {
+                        m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
+                        m_parent->m_ReadComplete.store(false);
+                    }
+                }
+            }
+
+            if (m_parent->m_WriteRegistry.size() > 0) {
+                auto m = m_parent->m_WriteRegistry.findMessage(param);
+                if (m) {
+                    m_parent->m_WriteAccessFailure = true;
+                    m_parent->m_WriteRegistry.removeMessage(param);
+
+                    if (!m_parent->m_WriteRegistry.size() && m_parent->m_WriteComplete)
+                    {
+                        m_parent->m_Event.Trigger<int>(this, EEPROMEvents::EEPROM_ACCESS_FAILED, param);
+                        m_parent->m_WriteComplete.store(false);
+                    }
+                }
+            }
 			break;
 		}
 		}
@@ -295,17 +302,18 @@ namespace iMS {
 
 	int EEPROM::ReadEEPROM(TARGET ee, unsigned int addr, std::size_t size)
 	{
+        // Reset buffer
+        p_Impl->m_EEData.clear();
+        p_Impl->m_ReadRegistry.clear();
+        p_Impl->m_ReadAccessFailure = false;
+        p_Impl->m_ReadComplete.store(false);
+
         return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> int
         { 
             if (!ims->Synth().IsValid()) return -1;
             auto conn = ims->Connection();
-            HostReport *iorpt;
-
-            // Reset buffer
-            p_Impl->m_EEData.clear();
-            p_Impl->m_EEReadList.clear();
-            p_Impl->m_EEFinalRead = NullMessage;
-            p_Impl->m_AccessFailure = false;
+            std::shared_ptr<HostReport> iorpt;
+            MessageHandle h = NullMessage;
 
             HostReport::Actions actions;
             switch (ee)
@@ -315,10 +323,14 @@ namespace iMS {
             case TARGET::RF_AMPLIFIER: actions = HostReport::Actions::RFA_EEPROM; break;
             default: return -1;
             }
-            iorpt = new HostReport(actions, HostReport::Dir::READ, static_cast<std::uint16_t>(addr & 0xFFFF));
+            iorpt = std::make_shared<HostReport>(actions, HostReport::Dir::READ, static_cast<std::uint16_t>(addr & 0xFFFF));
             int transfer_size = 0;
             for (unsigned int i = 0; i < size; i += transfer_size)
             {
+                while (p_Impl->m_ReadRegistry.size() >= 4) {
+                    std::this_thread::yield();
+                }
+
                 ReportFields f = iorpt->Fields();
                 if ((size - i) > iorpt->PAYLOAD_MAX_LENGTH)
                 {
@@ -335,32 +347,31 @@ namespace iMS {
                 f.addr = static_cast<std::uint16_t>((addr + i) & 0xFFFF);
                 f.context = static_cast<std::uint8_t>(((addr + i) >> 16) & 0xFF);
                 iorpt->Fields(f);
-                auto h = conn->SendMsg(*iorpt);
+                h = conn->SendMsg(*iorpt);
+                if (NullMessage == h)
                 {
-                    std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
-                    p_Impl->m_EEReadList.push_back(h);
-                    lck.unlock();
+                    return -1;
                 }
+                p_Impl->m_ReadRegistry.addMessage(h, iorpt);
                 if (!(transfer_size = f.len)) break;
             }
-            delete iorpt;
 
-            {
-                std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
-                p_Impl->m_EEFinalRead = p_Impl->m_EEReadList.back();
-                lck.unlock();
-            }
-            return p_Impl->m_EEFinalRead;
+            p_Impl->m_ReadComplete.store(true);
+            return h;
         }).value_or(-1);
 	}
 
 	bool EEPROM::WriteEEPROM(TARGET ee, unsigned int addr)
 	{
+        p_Impl->m_WriteRegistry.clear();
+        p_Impl->m_WriteAccessFailure = false;
+        p_Impl->m_WriteComplete.store(false);
+
         return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
         { 
             if (!ims->Synth().IsValid()) return false;
             auto conn = ims->Connection();
-            HostReport *iorpt;
+            std::shared_ptr<HostReport> iorpt;
 
             HostReport::Actions actions;
             switch (ee)
@@ -371,14 +382,14 @@ namespace iMS {
                 default: return false;
             }
 
-            p_Impl->m_EEWriteList.clear();
-            p_Impl->m_EEFinalWrite = NullMessage;
-            p_Impl->m_AccessFailure = false;
-
-            iorpt = new HostReport(actions, HostReport::Dir::WRITE, static_cast<std::uint16_t>(addr & 0xFFFF));
+            iorpt = std::make_shared<HostReport>(actions, HostReport::Dir::WRITE, static_cast<std::uint16_t>(addr & 0xFFFF));
             int transfer_size = 0;
             for (unsigned int i = 0; i < p_Impl->m_EEData.size(); i += transfer_size)
             {
+                while (p_Impl->m_WriteRegistry.size() >= 4) {
+                    std::this_thread::yield();
+                }
+
                 iorpt->ClearPayload();
                 ReportFields f = iorpt->Fields();
                 f.addr = static_cast<std::uint16_t>((addr + i) & 0xFFFF);
@@ -404,18 +415,17 @@ namespace iMS {
                 }
                 iorpt->Payload<std::vector<std::uint8_t>>(std::vector<std::uint8_t>(first, last));
                 auto h = conn->SendMsg(*iorpt);
+                if (NullMessage == h)
                 {
-                    std::unique_lock<std::mutex> lck{ p_Impl->m_EEList_mutex };
-                    p_Impl->m_EEWriteList.push_back(h);
-                    lck.unlock();
+                    return false;
                 }
+                p_Impl->m_WriteRegistry.addMessage(h, iorpt);
                 if (!(transfer_size = std::distance(first, last))) break;
             }
-            delete iorpt;
 
-            p_Impl->m_EEFinalWrite = p_Impl->m_EEWriteList.back();
+            p_Impl->m_WriteComplete.store(true);
             return true;
-        }).value_or(-1);
+        }).value_or(false);
 	}
 
 	void EEPROM::EEPROMEventSubscribe(const int message, IEventHandler* handler)
