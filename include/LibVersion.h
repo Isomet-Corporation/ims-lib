@@ -95,7 +95,7 @@
 ///
 /// The API Patch Version number for use in preprocessing directives
 ///
-#define IMS_API_PATCH 6
+#define IMS_API_PATCH 7
 //@}
 
 /// \namespace iMS
