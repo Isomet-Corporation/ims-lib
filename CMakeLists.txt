@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(libims VERSION 2.0.0 DESCRIPTION "Isomet iMS Synthesiser Library" LANGUAGES CXX)
+project(libims VERSION 2.0.7 DESCRIPTION "Isomet iMS Synthesiser Library" LANGUAGES C CXX)
 
 message(STATUS "Building for Platform: '${CMAKE_GENERATOR_PLATFORM}'")
 
@@ -17,7 +17,7 @@ include(GNUInstallDirs)
 # Conan integration and Dependency Resolution
 # Only do these things when building standalone
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    include(${CMAKE_BINARY_DIR}/generators/conan_toolchain.cmake) # Conan Toolchain (CMakeToolchain)
+#    include(${CMAKE_BINARY_DIR}/generators/conan_toolchain.cmake) # Conan Toolchain (CMakeToolchain)
     ##
     ## Check for LibXML2
     ##
