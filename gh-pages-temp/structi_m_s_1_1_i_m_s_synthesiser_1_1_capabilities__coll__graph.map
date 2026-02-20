@@ -1,0 +1,8 @@
+<map id="iMS::IMSSynthesiser::Capabilities" name="iMS::IMSSynthesiser::Capabilities">
+<area shape="rect" id="Node000001" title="Returns information about the capabilities of the Synthesiser hardware." alt="" coords="5,244,151,287"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_frequency.html" title="Type Definition for all operations that require a frequency specification." alt="" coords="16,5,129,32"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="71,45,72,81,73,172,79,244,73,243,68,172,66,81,70,50"/>
+<area shape="rect" id="Node000003" href="$classi_m_s_1_1_m_hz.html" title="Type Definition for all operations that require a frequency specification in MegaHertz." alt="" coords="178,81,258,108"/>
+<area shape="poly" id="edge3_Node000003_Node000002" title=" " alt="" coords="111,37,196,80,191,82,111,42"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="200,121,97,245,93,242,195,119"/>
+</map>

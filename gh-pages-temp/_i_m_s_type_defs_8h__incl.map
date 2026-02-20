@@ -1,0 +1,13 @@
+<map id="IMSTypeDefs.h" name="IMSTypeDefs.h">
+<area shape="rect" id="Node000001" title="Useful Type Definitions for working with iMS Systems." alt="" coords="163,5,276,32"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,80,63,107"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="188,35,78,78,76,73,186,30"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="87,80,165,107"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="206,32,155,73,153,68,201,33"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="189,80,250,107"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="221,31,222,66,217,63,217,34"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="273,80,331,107"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="235,30,279,70,274,69,233,35"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="354,80,415,107"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="249,30,344,73,339,74,248,35"/>
+</map>

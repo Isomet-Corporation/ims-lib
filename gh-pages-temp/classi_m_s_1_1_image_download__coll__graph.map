@@ -1,0 +1,5 @@
+<map id="iMS::ImageDownload" name="iMS::ImageDownload">
+<area shape="rect" id="Node000001" title="Provides a mechanism for downloading and verifying Images to a Controller&#39;s memory." alt="" coords="5,80,152,107"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_i_bulk_transfer.html" title="Interface Specification class for sending large binary data objects to the iMS." alt="" coords="13,5,144,32"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="80,46,81,80,76,79,77,50"/>
+</map>

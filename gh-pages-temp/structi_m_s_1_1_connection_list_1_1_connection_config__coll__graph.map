@@ -1,0 +1,5 @@
+<map id="iMS::ConnectionList::ConnectionConfig" name="iMS::ConnectionList::ConnectionConfig">
+<area shape="rect" id="Node000001" title="Controls the behaviour of a Connection Module during its discovery process." alt="" coords="5,120,145,163"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_list_base.html" title=" " alt="" coords="8,5,142,48"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="77,62,78,120,72,119,73,65"/>
+</map>

@@ -1,0 +1,5 @@
+<map id="iMS::ToneBufferDownload" name="iMS::ToneBufferDownload">
+<area shape="rect" id="Node000001" title="Provides a mechanism for downloading ToneBuffer&#39;s to a Synthesiser&#39;s LTB memory." alt="" coords="5,80,178,107"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_i_bulk_transfer.html" title="Interface Specification class for sending large binary data objects to the iMS." alt="" coords="26,5,157,32"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="93,46,94,81,89,79,90,50"/>
+</map>

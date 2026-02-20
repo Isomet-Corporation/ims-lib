@@ -1,0 +1,28 @@
+var files_dup =
+[
+    [ "docs", "dir_49e56c817e5e54854c35e136979f97ca.html", null ],
+    [ "AcoustoOptics.h", "_acousto_optics_8h.html", "_acousto_optics_8h" ],
+    [ "Auxiliary.h", "_auxiliary_8h.html", "_auxiliary_8h" ],
+    [ "Compensation.h", "_compensation_8h.html", "_compensation_8h" ],
+    [ "ConnectionList.h", "_connection_list_8h.html", "_connection_list_8h" ],
+    [ "Containers.h", "_containers_8h.html", "_containers_8h" ],
+    [ "CS_ETH.h", "_c_s___e_t_h_8h.html", null ],
+    [ "CS_RS422.h", "_c_s___r_s422_8h.html", null ],
+    [ "Diagnostics.h", "_diagnostics_8h.html", "_diagnostics_8h" ],
+    [ "FileSystem.h", "_file_system_8h.html", "_file_system_8h" ],
+    [ "FirmwareUpgrade.h", "_firmware_upgrade_8h.html", "_firmware_upgrade_8h" ],
+    [ "IBulkTransfer.h", "_i_bulk_transfer_8h.html", "_i_bulk_transfer_8h" ],
+    [ "IConnectionSettings.h", "_i_connection_settings_8h.html", "_i_connection_settings_8h" ],
+    [ "IEventHandler.h", "_i_event_handler_8h.html", "_i_event_handler_8h" ],
+    [ "Image.h", "_image_8h.html", "_image_8h" ],
+    [ "ImageOps.h", "_image_ops_8h.html", "_image_ops_8h" ],
+    [ "ImageProject.h", "_image_project_8h.html", "_image_project_8h" ],
+    [ "IMSSystem.h", "_i_m_s_system_8h.html", "_i_m_s_system_8h" ],
+    [ "IMSTypeDefs.h", "_i_m_s_type_defs_8h.html", "_i_m_s_type_defs_8h" ],
+    [ "LibVersion.h", "_lib_version_8h.html", "_lib_version_8h" ],
+    [ "SignalPath.h", "_signal_path_8h.html", "_signal_path_8h" ],
+    [ "SystemFunc.h", "_system_func_8h.html", "_system_func_8h" ],
+    [ "ToneBuffer.h", "_tone_buffer_8h.html", "_tone_buffer_8h" ],
+    [ "VCO.h", "_v_c_o_8h.html", "_v_c_o_8h" ],
+    [ "WaveShaping.h", "_wave_shaping_8h.html", "_wave_shaping_8h" ]
+];

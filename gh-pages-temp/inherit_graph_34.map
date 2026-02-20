@@ -1,0 +1,9 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" href="$classi_m_s_1_1_i_bulk_transfer.html" title="Interface Specification class for sending large binary data objects to the iMS." alt="" coords="5,56,136,83"/>
+<area shape="rect" id="Node000001" href="$classi_m_s_1_1_compensation_table_download.html" title="Provides a mechanism for downloading and verifying Compensation Tables to a Synthesiser&#39;s Look&#45;Up mem..." alt="" coords="184,5,409,32"/>
+<area shape="poly" id="edge6_Node000000_Node000001" title=" " alt="" coords="147,49,236,31,231,34,149,55"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_image_download.html" title="Provides a mechanism for downloading and verifying Images to a Controller&#39;s memory." alt="" coords="223,56,370,83"/>
+<area shape="poly" id="edge7_Node000000_Node000002" title=" " alt="" coords="151,67,225,68,220,70,151,72"/>
+<area shape="rect" id="Node000003" href="$classi_m_s_1_1_tone_buffer_download.html" title="Provides a mechanism for downloading ToneBuffer&#39;s to a Synthesiser&#39;s LTB memory." alt="" coords="210,107,382,133"/>
+<area shape="poly" id="edge8_Node000000_Node000003" title=" " alt="" coords="148,84,236,105,231,107,148,89"/>
+</map>

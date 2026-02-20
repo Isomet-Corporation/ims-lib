@@ -1,0 +1,61 @@
+<map id="AcoustoOptics.h" name="AcoustoOptics.h">
+<area shape="rect" id="Node000001" title="Classes for obtaining parameters associated with Acousto&#45;Optic materials and devices The iMS SDK main..." alt="" coords="541,5,660,32"/>
+<area shape="rect" id="Node000002" href="$_i_m_s_type_defs_8h.html" title="Useful Type Definitions for working with iMS Systems." alt="" coords="116,304,229,331"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="584,34,204,297,201,293,581,30"/>
+<area shape="rect" id="Node000008" href="$_compensation_8h.html" title="Classes for creating and downloading data that is used in the Compensation tables of the Synthesiser." alt="" coords="542,80,659,107"/>
+<area shape="poly" id="edge7_Node000001_Node000008" title=" " alt="" coords="602,30,603,66,598,63,599,35"/>
+<area shape="rect" id="Node000014" title=" " alt="" coords="674,379,727,405"/>
+<area shape="poly" id="edge39_Node000001_Node000014" title=" " alt="" coords="639,30,681,48,728,74,771,109,790,130,806,153,816,183,816,214,810,244,797,274,762,328,726,370,723,365,758,325,792,272,805,243,811,213,810,184,801,156,786,133,768,113,725,78,679,53,639,35"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="192,379,249,405"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="182,329,206,366,201,365,180,334"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="5,379,84,405"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="153,332,81,373,79,368,148,331"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="377,379,437,405"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="214,329,365,376,360,378,213,334"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="273,379,330,405"/>
+<area shape="poly" id="edge5_Node000002_Node000006" title=" " alt="" coords="196,329,269,370,263,371,194,334"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="108,379,168,405"/>
+<area shape="poly" id="edge6_Node000002_Node000007" title=" " alt="" coords="169,330,152,366,148,363,164,333"/>
+<area shape="poly" id="edge29_Node000008_Node000002" title=" " alt="" coords="550,108,490,130,423,157,359,191,297,230,202,297,199,292,294,225,356,187,421,152,488,125,555,106"/>
+<area shape="rect" id="Node000009" href="$_containers_8h.html" title="Container Classes for storing various types of data related to Image classes and others." alt="" coords="832,304,927,331"/>
+<area shape="poly" id="edge8_Node000008_Node000009" title=" " alt="" coords="659,97,695,103,733,114,771,130,805,153,832,184,853,220,867,257,876,290,871,287,862,258,848,223,828,187,801,157,769,135,732,119,694,108,659,102"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="987,379,1043,405"/>
+<area shape="poly" id="edge38_Node000008_Node000010" title=" " alt="" coords="659,97,746,115,792,130,835,152,866,175,895,201,944,260,981,318,1006,366,1001,364,976,320,939,263,891,205,863,179,832,157,790,135,744,120,659,102"/>
+<area shape="rect" id="Node000015" href="$_i_m_s_system_8h.html" title="Classes within this group are used to store information about an iMS System and to Connect / Disconne..." alt="" coords="628,229,730,256"/>
+<area shape="poly" id="edge15_Node000008_Node000015" title=" " alt="" coords="608,105,668,216,663,215,606,110"/>
+<area shape="rect" id="Node000017" title=" " alt="" coords="532,379,600,405"/>
+<area shape="poly" id="edge37_Node000008_Node000017" title=" " alt="" coords="557,108,526,128,511,141,499,156,495,172,496,195,510,252,533,313,555,365,551,363,528,315,505,254,490,196,489,172,494,153,507,137,523,123,561,106"/>
+<area shape="rect" id="Node000018" href="$_i_event_handler_8h.html" title="Interface Class for User Application code to receive and process events from the iMS library." alt="" coords="331,229,446,256"/>
+<area shape="poly" id="edge26_Node000008_Node000018" title=" " alt="" coords="549,108,502,128,454,157,426,186,404,218,400,214,421,183,451,153,500,124,553,106"/>
+<area shape="rect" id="Node000019" href="$_i_bulk_transfer_8h.html" title="Interface Specification class for sending large binary data objects to the iMS." alt="" coords="681,155,792,181"/>
+<area shape="poly" id="edge30_Node000008_Node000019" title=" " alt="" coords="624,105,702,147,697,147,624,110"/>
+<area shape="rect" id="Node000020" href="$_file_system_8h.html" title="Classes for reading, writing and managing the file system built into an iMS Synthesiser." alt="" coords="509,155,607,181"/>
+<area shape="poly" id="edge32_Node000008_Node000020" title=" " alt="" coords="595,105,575,143,571,139,591,109"/>
+<area shape="poly" id="edge12_Node000009_Node000005" title=" " alt="" coords="834,326,453,386,452,381,828,326"/>
+<area shape="poly" id="edge9_Node000009_Node000010" title=" " alt="" coords="904,329,981,371,975,371,902,334"/>
+<area shape="rect" id="Node000011" title=" " alt="" coords="851,379,889,405"/>
+<area shape="poly" id="edge10_Node000009_Node000011" title=" " alt="" coords="880,329,875,365,871,362,876,333"/>
+<area shape="rect" id="Node000012" title=" " alt="" coords="913,379,963,405"/>
+<area shape="poly" id="edge11_Node000009_Node000012" title=" " alt="" coords="891,329,921,367,916,365,888,334"/>
+<area shape="rect" id="Node000013" title=" " alt="" coords="759,379,812,405"/>
+<area shape="poly" id="edge13_Node000009_Node000013" title=" " alt="" coords="865,330,815,372,813,367,860,332"/>
+<area shape="poly" id="edge14_Node000009_Node000014" title=" " alt="" coords="851,331,742,377,741,371,845,332"/>
+<area shape="poly" id="edge21_Node000015_Node000002" title=" " alt="" coords="628,254,244,308,243,303,628,249"/>
+<area shape="poly" id="edge22_Node000015_Node000009" title=" " alt="" coords="714,254,833,298,827,298,714,259"/>
+<area shape="poly" id="edge23_Node000015_Node000013" title=" " alt="" coords="690,254,771,367,765,365,687,259"/>
+<area shape="poly" id="edge24_Node000015_Node000014" title=" " alt="" coords="683,255,699,364,694,362,679,258"/>
+<area shape="rect" id="Node000016" href="$_i_connection_settings_8h.html" title="Interface Class for User Application code to modify iMS Systems connection parameters." alt="" coords="353,304,504,331"/>
+<area shape="poly" id="edge16_Node000015_Node000016" title=" " alt="" coords="638,256,488,302,487,297,633,257"/>
+<area shape="poly" id="edge25_Node000015_Node000017" title=" " alt="" coords="672,256,586,368,583,364,667,258"/>
+<area shape="poly" id="edge19_Node000016_Node000005" title=" " alt="" coords="427,330,417,366,413,362,423,333"/>
+<area shape="poly" id="edge17_Node000016_Node000006" title=" " alt="" coords="409,331,338,373,336,368,404,332"/>
+<area shape="poly" id="edge18_Node000016_Node000014" title=" " alt="" coords="476,329,661,379,656,380,475,334"/>
+<area shape="poly" id="edge20_Node000016_Node000017" title=" " alt="" coords="453,329,531,371,526,371,452,334"/>
+<area shape="poly" id="edge28_Node000018_Node000005" title=" " alt="" coords="376,255,361,273,349,291,342,310,344,330,358,350,377,370,372,369,354,354,339,332,337,310,344,288,357,270,371,258"/>
+<area shape="poly" id="edge27_Node000018_Node000006" title=" " alt="" coords="377,255,356,279,336,305,322,335,311,366,307,362,317,333,332,303,352,276,372,258"/>
+<area shape="poly" id="edge31_Node000019_Node000015" title=" " alt="" coords="729,180,700,219,697,215,724,183"/>
+<area shape="poly" id="edge36_Node000020_Node000012" title=" " alt="" coords="608,177,694,197,795,226,885,261,919,281,941,302,948,317,951,333,948,366,944,362,946,334,943,319,937,306,916,286,883,266,793,231,693,202,608,182"/>
+<area shape="poly" id="edge33_Node000020_Node000015" title=" " alt="" coords="579,179,648,221,642,221,579,185"/>
+<area shape="poly" id="edge35_Node000020_Node000017" title=" " alt="" coords="560,180,567,365,562,362,556,184"/>
+<area shape="poly" id="edge34_Node000020_Node000018" title=" " alt="" coords="526,183,433,225,431,220,531,181"/>
+</map>
