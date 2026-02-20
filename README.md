@@ -1,29 +1,353 @@
-# README #
+# iMS Control Library
 
-This README would normally document whatever steps are necessary to get your application up and running.
+## Overview
 
-### What is this repository for? ###
+The iMS Control Library is a modern C++ library used to develop control system software for **Isomet Acousto-Optic driver electronics**.
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+Isomet designs and manufactures precision acousto-optic devices and driver systems for OEM scientific and industrial applications.
 
-### How do I get set up? ###
+🌐 Company website: https://www.isomet.com
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+This library provides the core control and hardware abstraction layer used by Isomet software systems and partner integrations.
 
-### Contribution guidelines ###
+---
 
-* Writing tests
-* Code review
-* Other guidelines
+## Purpose
 
-### Who do I talk to? ###
+The IMS Control Library enables developers to:
 
-* Repo owner or admin
-* Other community or team contact
+- Interface with Isomet acousto-optic driver electronics
+- Abstract low-level hardware communication
+- Control frequency, amplitude, timing, and channel configuration
+- Integrate Isomet hardware into custom applications
+- Build higher-level software systems on a stable control API
+
+It is intended for use in:
+
+- Desktop control software
+- Industrial control systems
+- Laboratory instrumentation software
+- Embedded control applications
+- Real-time control environments
+
+---
+
+## Embedded & Real-Time Suitability
+
+In addition to desktop applications, the library is suitable for deployment in embedded and real-time environments, including:
+
+- Embedded Linux platforms
+- QNX Neutrino RTOS
+- Industrial control PCs
+- Dedicated hardware controller systems
+
+Design characteristics supporting embedded and RTOS deployment:
+
+- No external runtime dependencies
+- Deterministic control paths
+- Clear hardware abstraction boundaries
+- CMake-based cross-compilation support
+- Support for static or shared linking
+
+The codebase is structured to allow integration into production embedded control systems where reliability and predictable behavior are critical.
+
+---
+
+## Key Features
+
+- Modern C++ implementation
+- Cross-platform support (Windows / Linux / Embedded Linux / QNX)
+- CMake-based build system
+- Optional shared library (DLL / SO) build
+- Suitable for static linking in embedded systems
+- Doxygen-based API documentation
+- Designed for integration into larger systems
+
+---
+
+# Quick Start
+
+There are three ways of developing C++ software using the iMS Library
+
+1. Install the pre-compiled library from the Isomet SDK
+1. Build the library from source
+1. Integrate the library code directly into your build process
+
+## Option 1 - Install pre-compiled library binaries
+
+For simple build requirements on popular platforms (e.g. Windows 10/11), this is by far the quickest and easiest option.
+
+### Windows 10 / 11
+
+Download the Windows 10 / 11 Isomet iMS SDK from the Isomet website: [iMS SDK](https://isomet.com/ims4_sw.html)
+
+### Ubuntu Linux
+
+We are working on support for installing the iMS Control Library directly from the Ubuntu apt server.  Please check back later.
+
+## Option 2 - Build the library from source
+
+Use this option when support for a specific OS, runtime library or compiler is required.
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Isomet-Corporation/ims-lib
+cd ims-lib
+```
+
+---
+
+### 2. Build the Library
+
+The library uses a CMake build front end with Conan dependency management. Build scripts in the repository automate the configuration and build process.
+
+#### Windows (Visual Studio)
+
+In a Powershell prompt:
+
+```powershell
+.\build.ps1 -BuildType Release
+```
+
+Optional flags:
+ 
+```powershell
+   -StageDir [dir]           <= Change the build artifact location
+   -Clean                    <= Cleans the build folder before running the build
+   -Profile [profile]        <= Choose a non-default Conan profile
+``` 
+
+#### Linux / Embedded Linux
+
+```bash
+./build.sh -s <stage_dir>
+```
+
+Optional flags:
+
+```bash
+   -c                       <= Cleans the build folder before running the build
+   -t <Debug|Release>       <= Change the build configuration
+   -p <profile>             <= Choose a non-default Conan profile
+   -d                       <= Include a library symlink (libims.so)
+```
+
+Artifacts will be staged to stage_dir (default 'stage' in the current working directory)
+
+```
+stage/
+ ├── include/
+ ├── <os>_<arch>/lib/
+ └── docs/
+```
+
+In your application project, include headers from:
+
+```
+stage/include
+```
+
+and link against the library located in:
+
+```
+stage/<os>_<arch>/lib
+```
+
+---
+
+## Option 3 - Integrate Directly Into Your Application
+
+Instead of building a separate dynamic library, you can integrate the library source code from this repository as a Git submodule:
+
+```bash
+git submodule add https://github.com/Isomet-Corporation/ims-lib external/ims-lib
+```
+
+In your `CMakeLists.txt`:
+
+```cmake
+add_subdirectory(external/ims-lib)
+target_link_libraries(MyApplication PRIVATE ims)
+```
+
+Advantages of this approach:
+
+- No separate SDK packaging during development
+- Unified compiler and build configuration
+- Easier cross-compilation
+- Improved optimization and debugging
+- Reduced deployment complexity for embedded targets
+
+---
+
+## Alternative Options
+
+The iMS Control LIbrary is written in C++ as this provides:
+
+- Low latency hardware control for real-time operation
+- Superior performance for performance critical applications
+- Direct control of hardware and device drivers
+- Easy integration with manufacturer device libraries
+
+Where high performance application design is critical, we recommend designing your iMS application in C++ linked to the iMS Control Library using one of the above options.
+
+However, we recognise that C++ native application design is not a straightforward engineering task, therefore the following options for iMS application design are also available:
+
+1. Python.  The iMS Lib Python extension [here](https://github.com/Isomet-Corporation/imslib-python) allows straightforward programming of iMS systems using simple Python scripts or more extensive Python applications alongside the full ecosystem of Python frameworks and libraries.  The imslib Python extension is a wrapper around the C++ library and exposes the full library functionality without the requirement to program in C++.
+2. C#.  The iMS C# extension is installed as part of the Isomet SDK.  It is a wrapper around the C++ library exposing the full library functionality and allows GUI development of iMS applications in the cross-platform .NET environment.
+3. iMS Hardware Server.  This application is built on top of the C++ library and runs as a background process, connecting to attached iMS hardware.  The server provides a [gRPC](https://grpc.io/) service over any private or public network.  Client applications written in any gRPC-supported language can communicate with the server and instruct it to perform a function (e.g. control iMS power, single tone mode, download compensation tables, play images). 
+
+# Build Requirements
+
+## Core Build Dependencies
+
+### Windows
+
+- Visual Studio (MSVC toolchain; 2022 or newer recommended)
+- CMake (>= 3.20 recommended)
+- Ninja (optional but recommended)
+- Conan
+- Git
+
+### Linux / Embedded Linux
+
+- GCC (>= 7) or Clang toolchain
+- CMake (>= 3.20)
+- Ninja (optional but recommended)
+- Conan
+- Git
+- build-essential
+
+Example (Ubuntu):
+
+```bash
+sudo apt install build-essential cmake conan ninja-build git
+```
+
+For QNX Neutrino RTOS builds, use the appropriate QNX toolchain file with CMake.
+
+---
+
+# Documentation Build (Optional)
+
+Documentation generation requires Doxygen and LaTeX.
+
+These dependencies are **not required** for building the control library itself.
+
+## Windows
+
+- Doxygen
+- Graphviz (optional for diagrams)
+- MiKTeX (with `pdflatex` available in PATH)
+
+## Linux (Ubuntu)
+
+```bash
+sudo apt install \
+  doxygen \
+  graphviz \
+  texlive-latex-base \
+  texlive-latex-recommended \
+  texlive-latex-extra \
+  texlive-fonts-recommended
+```
+
+---
+
+## Build Documentation Only
+
+### Windows
+
+```powershell
+.\build.ps1 -BuildDocs
+```
+
+### Linux
+
+```bash
+./build.sh -u
+```
+
+This enables `BUILD_DOCS=ON` in CMake and builds:
+
+- `docs` (HTML)
+- `docs_pdf` (PDF)
+
+Generated files are staged to:
+
+```
+stage/docs/
+```
+
+---
+
+# Output Structure
+
+```
+stage/
+ ├── include/
+ ├── windows_x64/lib/
+ ├── linux_x86_64/lib/
+ ├── linux_arm64/lib/
+ └── docs/
+```
+
+The structure supports multi-architecture staging for deployment packaging.
+
+---
+
+# Example Integration: iMS Hardware Server
+
+The iMS Hardware Server integrates this repository as a Git submodule and compiles it directly into the application.
+
+This avoids distributing standalone DLL/SO files during development and ensures consistent build configuration across environments.
+
+---
+
+# Related Projects
+
+This library forms the foundation for:
+
+- iMS Hardware Server
+- iMS Studio
+- the Python wrapped library (ctypes / pybind11)
+- C# wrapped library (P/Invoke / C++/CLI bridge)
+
+Repository links to be provided.
+
+---
+
+# Online Documentation
+
+Live API documentation:  
+(Location to be announced)
+
+The online documentation mirrors the Doxygen-generated HTML documentation.
+
+---
+
+# License
+
+This project is licensed under the **MIT License**.
+
+The MIT License is a permissive open source license that:
+
+- Allows commercial use
+- Allows modification and redistribution
+- Allows static or dynamic linking
+- Provides limited liability protection
+- Requires preservation of copyright and license notice
+
+See the `LICENSE` file in this repository for the full license text.
+
+---
+
+# Support
+
+For hardware or product inquiries:
+
+https://www.isomet.com
+
+For software issues or feature requests, please open a GitHub issue in this repository,
+or contact Isomet directly
