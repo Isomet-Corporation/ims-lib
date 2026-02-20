@@ -1,0 +1,9 @@
+<map id="iMS::ClockGenConfiguration" name="iMS::ClockGenConfiguration">
+<area shape="rect" id="Node000001" title="Set values in this struct to configure the clock generator for clock output mode." alt="" coords="100,104,288,131"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_frequency.html" title="Type Definition for all operations that require a frequency specification." alt="" coords="5,5,119,32"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="82,41,122,78,165,103,160,104,119,82,81,46"/>
+<area shape="rect" id="Node000003" href="$classi_m_s_1_1_degrees.html" title="Type Definition for all operations that require an angle specification in degrees." alt="" coords="143,5,245,32"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="196,46,196,105,192,103,192,49"/>
+<area shape="rect" id="Node000004" href="$classi_m_s_1_1_percent.html" title="Type Definition for all operations that require a percentage specification." alt="" coords="269,5,367,32"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="304,43,270,82,229,106,227,101,267,78,299,46"/>
+</map>

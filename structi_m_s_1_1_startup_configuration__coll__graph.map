@@ -1,0 +1,11 @@
+<map id="iMS::StartupConfiguration" name="iMS::StartupConfiguration">
+<area shape="rect" id="Node000001" title="The Synthesiser stores in its non&#45;volatile memory a set of configuration values that are preloaded on..." alt="" coords="123,244,294,271"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_percent.html" title="Type Definition for all operations that require a percentage specification." alt="" coords="5,81,103,108"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="53,121,59,172,67,197,81,218,100,233,125,246,120,246,98,238,77,222,62,199,54,173,51,126"/>
+<area shape="rect" id="Node000003" href="$classi_m_s_1_1_degrees.html" title="Type Definition for all operations that require an angle specification in degrees." alt="" coords="158,81,259,108"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="211,122,211,244,206,243,206,125"/>
+<area shape="rect" id="Node000004" href="$classi_m_s_1_1k_hz.html" title="Type Definition for all operations that require a frequency specification in kiloHertz." alt="" coords="300,81,376,108"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="341,122,335,173,326,199,311,222,294,236,274,246,272,241,291,231,307,218,321,196,330,172,337,126"/>
+<area shape="rect" id="Node000005" href="$classi_m_s_1_1_frequency.html" title="Type Definition for all operations that require a frequency specification." alt="" coords="281,5,395,32"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="339,45,340,82,336,80,337,49"/>
+</map>

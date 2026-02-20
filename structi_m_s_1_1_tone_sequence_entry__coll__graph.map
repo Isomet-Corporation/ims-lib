@@ -1,0 +1,5 @@
+<map id="iMS::ToneSequenceEntry" name="iMS::ToneSequenceEntry">
+<area shape="rect" id="Node000001" title="Inserts a ToneBuffer playback into an ImageSequence." alt="" coords="5,80,175,107"/>
+<area shape="rect" id="Node000002" href="$structi_m_s_1_1_sequence_entry.html" title="Abstract base class entry for creating ImageSequence &#39;s. Add derived classes to the ImageSequence." alt="" coords="19,5,161,32"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="92,46,92,81,88,79,88,50"/>
+</map>

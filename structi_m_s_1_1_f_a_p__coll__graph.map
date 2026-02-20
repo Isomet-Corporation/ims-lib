@@ -1,0 +1,11 @@
+<map id="iMS::FAP" name="iMS::FAP">
+<area shape="rect" id="Node000001" title="FAP (Frequency/Amplitude/Phase) triad stores the instantaneous definition of a single RF output." alt="" coords="137,180,214,207"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_m_hz.html" title="Type Definition for all operations that require a frequency specification in MegaHertz." alt="" coords="22,81,102,108"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="89,116,163,178,158,180,87,121"/>
+<area shape="rect" id="Node000003" href="$classi_m_s_1_1_frequency.html" title="Type Definition for all operations that require a frequency specification." alt="" coords="5,5,119,32"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="63,45,65,81,59,81,61,50"/>
+<area shape="rect" id="Node000004" href="$classi_m_s_1_1_percent.html" title="Type Definition for all operations that require a percentage specification." alt="" coords="127,81,224,108"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="177,122,178,181,173,179,173,125"/>
+<area shape="rect" id="Node000005" href="$classi_m_s_1_1_degrees.html" title="Type Definition for all operations that require an angle specification in degrees." alt="" coords="249,81,350,108"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="274,117,193,182,190,177,268,118"/>
+</map>

@@ -1,0 +1,18 @@
+#projectlogo img {
+    height: 64px;
+    margin-right: 16px;
+}
+
+/* Improve table of contents readability */
+div.contents {
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 14px;
+}
+
+/* Code blocks */
+div.fragment {
+    background-color: #3e3e3e;
+    border-left: 4px solid #0078d4;
+    padding: 8px;
+    font-family: Consolas, monospace;
+}

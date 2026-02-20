@@ -1,0 +1,7 @@
+<map id="iMS::Frequency" name="iMS::Frequency">
+<area shape="rect" id="Node000001" title="Type Definition for all operations that require a frequency specification." alt="" coords="40,5,153,32"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_m_hz.html" title="Type Definition for all operations that require a frequency specification in MegaHertz." alt="" coords="5,80,86,107"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="81,44,56,81,52,78,76,46"/>
+<area shape="rect" id="Node000003" href="$classi_m_s_1_1k_hz.html" title="Type Definition for all operations that require a frequency specification in kiloHertz." alt="" coords="110,80,186,107"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="115,42,142,80,137,79,113,47"/>
+</map>

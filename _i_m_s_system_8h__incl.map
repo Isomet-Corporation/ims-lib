@@ -1,0 +1,38 @@
+<map id="IMSSystem.h" name="IMSSystem.h">
+<area shape="rect" id="Node000001" title="Classes within this group are used to store information about an iMS System and to Connect / Disconne..." alt="" coords="326,5,428,32"/>
+<area shape="rect" id="Node000002" href="$_i_connection_settings_8h.html" title="Interface Class for User Application code to modify iMS Systems connection parameters." alt="" coords="358,80,508,107"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="388,30,417,68,412,67,386,35"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="300,155,353,181"/>
+<area shape="poly" id="edge20_Node000001_Node000004" title=" " alt="" coords="372,31,349,81,333,141,329,138,344,79,368,34"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="462,155,530,181"/>
+<area shape="poly" id="edge21_Node000001_Node000006" title=" " alt="" coords="429,24,480,43,503,58,522,79,528,95,527,112,515,144,511,140,522,111,523,95,518,81,500,62,477,47,428,30"/>
+<area shape="rect" id="Node000007" href="$_i_m_s_type_defs_8h.html" title="Useful Type Definitions for working with iMS Systems." alt="" coords="594,80,707,107"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="425,30,590,75,585,76,425,35"/>
+<area shape="rect" id="Node000011" href="$_containers_8h.html" title="Container Classes for storing various types of data related to Image classes and others." alt="" coords="138,80,233,107"/>
+<area shape="poly" id="edge12_Node000001_Node000011" title=" " alt="" coords="341,34,234,77,232,72,346,31"/>
+<area shape="rect" id="Node000015" title=" " alt="" coords="222,155,276,181"/>
+<area shape="poly" id="edge19_Node000001_Node000015" title=" " alt="" coords="369,32,272,145,268,141,364,33"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="554,155,611,181"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="460,105,545,148,540,147,459,110"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="417,106,359,148,357,143,412,108"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="378,155,438,181"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="431,106,419,142,415,138,427,109"/>
+<area shape="poly" id="edge5_Node000002_Node000006" title=" " alt="" coords="445,105,478,144,473,142,443,110"/>
+<area shape="poly" id="edge10_Node000007_Node000003" title=" " alt="" coords="641,106,606,146,603,141,636,108"/>
+<area shape="poly" id="edge9_Node000007_Node000005" title=" " alt="" coords="611,107,454,156,453,151,606,108"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="635,155,692,181"/>
+<area shape="poly" id="edge7_Node000007_Node000008" title=" " alt="" coords="655,105,661,141,657,138,651,109"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="717,155,795,181"/>
+<area shape="poly" id="edge8_Node000007_Node000009" title=" " alt="" coords="670,105,728,146,722,145,668,110"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="819,155,879,181"/>
+<area shape="poly" id="edge11_Node000007_Node000010" title=" " alt="" coords="686,105,807,151,802,150,685,110"/>
+<area shape="poly" id="edge18_Node000011_Node000004" title=" " alt="" coords="210,105,291,147,286,148,209,110"/>
+<area shape="poly" id="edge16_Node000011_Node000005" title=" " alt="" coords="224,105,365,151,360,153,223,110"/>
+<area shape="rect" id="Node000012" title=" " alt="" coords="80,155,136,181"/>
+<area shape="poly" id="edge13_Node000011_Node000012" title=" " alt="" coords="174,106,134,146,131,142,169,108"/>
+<area shape="rect" id="Node000013" title=" " alt="" coords="161,155,199,181"/>
+<area shape="poly" id="edge14_Node000011_Node000013" title=" " alt="" coords="186,105,184,140,180,138,182,109"/>
+<area shape="rect" id="Node000014" title=" " alt="" coords="5,155,56,181"/>
+<area shape="poly" id="edge15_Node000011_Node000014" title=" " alt="" coords="159,110,71,151,69,146,157,105"/>
+<area shape="poly" id="edge17_Node000011_Node000015" title=" " alt="" coords="197,105,231,143,225,143,195,110"/>
+</map>

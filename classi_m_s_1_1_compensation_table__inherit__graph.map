@@ -1,0 +1,5 @@
+<map id="iMS::CompensationTable" name="iMS::CompensationTable">
+<area shape="rect" id="Node000001" title="A table of CompensationPoints storing look&#45;up data that can be transferred to memory in the Synthesis..." alt="" coords="30,96,197,123"/>
+<area shape="rect" id="Node000002" href="$classi_m_s_1_1_deque_base.html" title=" " alt="" coords="5,5,222,48"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="115,62,116,97,111,94,112,66"/>
+</map>

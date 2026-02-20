@@ -1,0 +1,47 @@
+<map id="IMSSystem.h" name="IMSSystem.h">
+<area shape="rect" id="Node000001" title="Classes within this group are used to store information about an iMS System and to Connect / Disconne..." alt="" coords="427,5,528,32"/>
+<area shape="rect" id="Node000002" href="$_auxiliary_8h.html" title="Classes for performing various auxiliary actions not directly related to driving Acousto&#45;Optic device..." alt="" coords="24,155,105,181"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="409,21,319,25,217,34,168,42,125,52,91,66,69,82,60,98,57,118,63,154,57,154,52,118,55,97,65,78,89,61,124,47,167,37,216,29,319,20,413,19"/>
+<area shape="rect" id="Node000003" href="$_system_func_8h.html" title="Classes for performing system functions not directly related to RF signal generation and output." alt="" coords="11,229,117,256"/>
+<area shape="poly" id="edge25_Node000001_Node000003" title=" " alt="" coords="409,23,319,30,214,40,117,57,79,69,52,82,28,103,13,125,8,150,15,180,30,207,51,228,46,230,26,210,10,182,3,150,8,123,24,99,49,78,77,64,116,52,213,35,319,25,414,21"/>
+<area shape="rect" id="Node000004" href="$_compensation_8h.html" title="Classes for creating and downloading data that is used in the Compensation tables of the Synthesiser." alt="" coords="231,155,348,181"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="432,40,402,60,369,82,329,121,300,156,297,152,325,117,365,78,399,55,437,37"/>
+<area shape="rect" id="Node000007" href="$_connection_list_8h.html" title="Creates iMS Connection Interfaces for Application Use and scans them to discover all available iMS Sy..." alt="" coords="607,80,727,107"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="525,35,636,79,631,80,525,41"/>
+<area shape="rect" id="Node000008" href="$_diagnostics_8h.html" title="Access diagnostic reporting information about the connected iMS System." alt="" coords="751,80,852,107"/>
+<area shape="poly" id="edge7_Node000001_Node000008" title=" " alt="" coords="543,32,753,80,748,81,543,37"/>
+<area shape="rect" id="Node000009" href="$_file_system_8h.html" title="Classes for reading, writing and managing the file system built into an iMS Synthesiser." alt="" coords="79,80,177,107"/>
+<area shape="poly" id="edge8_Node000001_Node000009" title=" " alt="" coords="410,36,179,84,177,79,413,31"/>
+<area shape="rect" id="Node000010" href="$_tone_buffer_8h.html" title="Class for storing an array of Synthesiser tones." alt="" coords="374,229,469,256"/>
+<area shape="poly" id="edge26_Node000001_Node000010" title=" " alt="" coords="445,40,427,60,413,81,403,121,404,163,411,200,419,230,415,228,406,202,399,163,398,121,408,79,423,57,441,43"/>
+<area shape="rect" id="Node000011" href="$_firmware_upgrade_8h.html" title="Classes for upgrading the unit embedded firmware." alt="" coords="877,80,1012,107"/>
+<area shape="poly" id="edge13_Node000001_Node000011" title=" " alt="" coords="544,28,878,80,873,83,544,33"/>
+<area shape="rect" id="Node000012" href="$_i_bulk_transfer_8h.html" title="Interface Specification class for sending large binary data objects to the iMS." alt="" coords="422,80,533,107"/>
+<area shape="poly" id="edge14_Node000001_Node000012" title=" " alt="" coords="479,46,480,81,475,78,476,50"/>
+<area shape="rect" id="Node000013" href="$_image_ops_8h.html" title="Classes for downloading and playback of Image data." alt="" coords="543,229,636,256"/>
+<area shape="poly" id="edge18_Node000001_Node000013" title=" " alt="" coords="507,39,546,78,570,114,584,154,591,195,592,230,588,227,586,195,579,155,565,116,542,82,506,44"/>
+<area shape="rect" id="Node000014" href="$_signal_path_8h.html" title="Classes for controlling the flow of data and RF signals through the Synthesiser." alt="" coords="202,80,297,107"/>
+<area shape="poly" id="edge19_Node000001_Node000014" title=" " alt="" coords="421,39,291,82,288,77,426,36"/>
+<area shape="rect" id="Node000016" href="$_v_c_o_8h.html" title="Class for controlling Voltage Controlled Synthesisers." alt="" coords="1036,80,1098,107"/>
+<area shape="poly" id="edge27_Node000001_Node000016" title=" " alt="" coords="544,21,759,39,892,55,1025,77,1038,83,1033,83,1024,83,891,61,758,45,544,26"/>
+<area shape="rect" id="Node000017" href="$_wave_shaping_8h.html" title="Class for shaping and modulating the RF waveform after synthesis." alt="" coords="1121,80,1234,107"/>
+<area shape="poly" id="edge28_Node000001_Node000017" title=" " alt="" coords="543,22,793,42,1110,77,1123,82,1118,82,1109,83,792,48,544,27"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="65,195,67,229,62,228,63,200"/>
+<area shape="rect" id="Node000005" href="$_acousto_optics_8h.html" title="Classes for obtaining parameters associated with Acousto&#45;Optic materials and devices The iMS SDK main..." alt="" coords="232,229,350,256"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="292,195,293,230,288,228,288,199"/>
+<area shape="rect" id="Node000006" href="$_image_project_8h.html" title="Classes for organising Images and associated data." alt="" coords="367,304,476,331"/>
+<area shape="poly" id="edge5_Node000004_Node000006" title=" " alt="" coords="257,189,238,206,224,222,217,239,222,255,252,282,289,299,329,309,369,316,364,316,328,315,287,304,249,286,218,257,212,238,219,220,234,202,252,191"/>
+<area shape="poly" id="edge9_Node000009_Node000002" title=" " alt="" coords="106,121,77,156,73,153,108,116"/>
+<area shape="poly" id="edge10_Node000009_Node000004" title=" " alt="" coords="170,111,264,153,259,155,170,116"/>
+<area shape="poly" id="edge11_Node000009_Node000010" title=" " alt="" coords="148,116,181,149,220,179,288,204,376,229,371,230,286,209,218,184,177,153,147,121"/>
+<area shape="poly" id="edge12_Node000010_Node000006" title=" " alt="" coords="423,270,424,305,419,302,420,274"/>
+<area shape="poly" id="edge15_Node000012_Node000004" title=" " alt="" coords="428,114,324,156,321,152,433,111"/>
+<area shape="poly" id="edge17_Node000012_Node000010" title=" " alt="" coords="470,120,428,231,424,227,465,123"/>
+<area shape="poly" id="edge16_Node000012_Node000013" title=" " alt="" coords="512,113,536,131,557,153,578,193,589,230,584,228,573,195,553,156,533,135,511,118"/>
+<area shape="poly" id="edge24_Node000014_Node000003" title=" " alt="" coords="223,119,82,231,78,227,221,114"/>
+<area shape="rect" id="Node000015" href="$_image_8h.html" title="Classes for storing sequences of synchronous multi&#45;channel RF drive data." alt="" coords="474,155,542,181"/>
+<area shape="poly" id="edge20_Node000014_Node000015" title=" " alt="" coords="309,109,476,156,471,158,309,114"/>
+<area shape="poly" id="edge22_Node000015_Node000006" title=" " alt="" coords="505,195,497,227,482,257,461,285,438,306,436,301,457,281,478,255,492,225,501,198"/>
+<area shape="poly" id="edge23_Node000015_Node000010" title=" " alt="" coords="484,190,438,231,435,227,479,193"/>
+<area shape="poly" id="edge21_Node000015_Node000013" title=" " alt="" coords="534,189,578,229,573,228,533,194"/>
+</map>

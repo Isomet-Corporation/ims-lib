@@ -1,0 +1,14 @@
+<map id="SignalPath.h" name="SignalPath.h">
+<area shape="rect" id="Node000001" title="Classes for controlling the flow of data and RF signals through the Synthesiser." alt="" coords="144,5,239,32"/>
+<area shape="rect" id="Node000002" href="$_image_8h.html" title="Classes for storing sequences of synchronous multi&#45;channel RF drive data." alt="" coords="101,80,170,107"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="174,42,147,81,143,78,171,46"/>
+<area shape="rect" id="Node000006" href="$_system_func_8h.html" title="Classes for performing system functions not directly related to RF signal generation and output." alt="" coords="194,80,301,107"/>
+<area shape="poly" id="edge6_Node000001_Node000006" title=" " alt="" coords="211,42,241,80,235,80,210,47"/>
+<area shape="rect" id="Node000003" href="$_image_ops_8h.html" title="Classes for downloading and playback of Image data." alt="" coords="5,155,98,181"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="108,119,68,156,64,152,111,115"/>
+<area shape="rect" id="Node000004" href="$_image_project_8h.html" title="Classes for organising Images and associated data." alt="" coords="122,229,232,256"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="145,120,176,229,171,229,141,124"/>
+<area shape="rect" id="Node000005" href="$_tone_buffer_8h.html" title="Class for storing an array of Synthesiser tones." alt="" coords="172,155,267,181"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="162,115,208,154,202,155,161,120"/>
+<area shape="poly" id="edge5_Node000005_Node000004" title=" " alt="" coords="207,194,186,231,182,227,202,196"/>
+</map>

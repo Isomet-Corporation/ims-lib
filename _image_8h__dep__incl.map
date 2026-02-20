@@ -1,0 +1,10 @@
+<map id="Image.h" name="Image.h">
+<area shape="rect" id="Node000001" title="Classes for storing sequences of synchronous multi&#45;channel RF drive data." alt="" coords="101,5,170,32"/>
+<area shape="rect" id="Node000002" href="$_image_ops_8h.html" title="Classes for downloading and playback of Image data." alt="" coords="5,80,98,107"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="108,45,68,81,64,78,111,40"/>
+<area shape="rect" id="Node000003" href="$_image_project_8h.html" title="Classes for organising Images and associated data." alt="" coords="122,155,232,181"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="145,45,176,154,171,154,141,49"/>
+<area shape="rect" id="Node000004" href="$_tone_buffer_8h.html" title="Class for storing an array of Synthesiser tones." alt="" coords="172,80,267,107"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="162,40,208,79,202,80,161,45"/>
+<area shape="poly" id="edge4_Node000004_Node000003" title=" " alt="" coords="207,119,186,156,182,152,202,121"/>
+</map>

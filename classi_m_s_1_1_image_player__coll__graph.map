@@ -1,0 +1,5 @@
+<map id="iMS::ImagePlayer" name="iMS::ImagePlayer">
+<area shape="rect" id="Node000001" title="Once an Image has been downloaded to Controller memory, ImagePlayer can be used to configure and begi..." alt="" coords="61,104,186,131"/>
+<area shape="rect" id="Node000002" href="$structi_m_s_1_1_image_player_1_1_play_configuration.html" title="This struct sets the attributes for the ImagePlayer to use when initiating an Image Playback." alt="" coords="5,5,242,32"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="126,46,126,105,121,103,121,49"/>
+</map>
