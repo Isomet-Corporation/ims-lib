@@ -21,7 +21,7 @@ cp -r "$STAGE_DIR"/* "$GH_PAGES_DIR"/
 # Commit & push
 cd "$GH_PAGES_DIR"
 git add .
-git commit -m "Update docs $(date +%Y-%m-%d)"
-git push origin gh-pages
+git commit -m "Update docs $(date +%Y-%m-%d_%H:%M)"
+git push origin gh-pages --force
 
 echo "Documentation deployed to GitHub Pages."

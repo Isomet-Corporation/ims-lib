@@ -20,8 +20,8 @@ Copy-Item -Recurse -Force -Path (Join-Path $StageDir "*") -Destination $GhPagesD
 # Commit & push
 Push-Location $GhPagesDir
 git add .
-git commit -m "Update docs $(Get-Date -Format yyyy-MM-dd)"
-git push origin gh-pages
+git commit -m "Update docs $(Get-Date -Format "yyyy-MM-dd HH:mm")"
+git push origin gh-pages --force
 Pop-Location
 
 Write-Host "Documentation deployed to GitHub Pages."
