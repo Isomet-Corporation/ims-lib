@@ -1,0 +1,148 @@
+/**
+@mainpage IMS SDK
+
+@tableofcontents
+
+@section overview Overview
+
+The IMS SDK provides the official public interface for integrating with the
+IMS platform. It enables client applications, plugins, and external systems
+to interact with IMS components in a stable and supported manner.
+
+The SDK is designed for:
+
+- High-performance native applications
+- Hardware integration
+- Automation systems
+- External tooling and data processing pipelines
+
+This documentation is generated directly from the distributed public headers,
+ensuring alignment between the SDK reference and the shipped binaries.
+
+---
+
+@section version_info Version Information
+
+<b>SDK Version:</b> \SDK_VERSION
+
+The shared library follows semantic versioning:
+
+- Linux: `libims.so.<major>.<minor>.<patch>`
+- Windows: `imsLibrary.dll`
+
+Backward compatibility is guaranteed within the same major version.
+
+Debug builds are available with a 'd' suffix
+
+---
+
+@section installation Installation
+
+The SDK distribution contains:
+
+- `include/` — Public header files
+- `lib/` — Import libraries and shared libraries
+
+## Linux
+
+Link against:
+
+@code
+-lims          (Release)
+-limsd         (Debug)
+@endcode
+
+Ensure the shared library is available in:
+
+- `LD_LIBRARY_PATH`, or
+- `/usr/lib`, or
+- application rpath
+
+Example:
+
+@code
+g++ main.cpp -I/path/to/sdk/include -L/path/to/sdk/lib -lims
+@endcode
+
+---
+
+## Windows
+
+Link against:
+
+- `imsLibrary.lib` (Release)
+- `imsLibraryd.lib` (Debug)
+
+Ensure `imsLibrary.dll` (or `imsLibraryd.dll`) is available on the system PATH or alongside your executable.
+
+---
+
+@section architecture Architecture
+
+The SDK is organized into logical modules:
+
+- Core API
+- Configuration & Settings
+- Device Control
+- Data Acquisition
+- Utility Services
+
+Refer to the Modules page for detailed descriptions.
+
+---
+
+@section threading Threading Model
+
+Unless explicitly stated:
+
+- Public API functions are thread-safe.
+- Individual object instances are not implicitly synchronized.
+- The caller is responsible for concurrency control where required.
+
+---
+
+@section memory Memory Ownership
+
+The API follows strict ownership conventions:
+
+- Functions that allocate memory document ownership explicitly.
+- Objects created via factory functions must be destroyed using matching API calls.
+- Caller-provided buffers must meet documented size requirements.
+
+Failure to adhere to documented ownership rules results in undefined behavior.
+
+---
+
+@section error_handling Error Handling
+
+Errors are reported via:
+
+- Return codes
+- Status/result objects
+- Exceptions (C++ interfaces where applicable)
+
+All public API functions document possible failure modes.
+
+---
+
+@section support Support & Compatibility
+
+This SDK version is intended for use with the corresponding IMS runtime.
+
+Mixing SDK and runtime versions across major revisions is not supported.
+
+For integration guidance, refer to the module documentation and example usage
+provided within the header reference.
+
+---
+
+@section generated Documentation Notes
+
+This documentation is automatically generated using Doxygen
+from the public headers shipped with the SDK.
+
+Only public API symbols are included. Internal implementation
+details are intentionally excluded.
+
+Generated on: \date
+*/

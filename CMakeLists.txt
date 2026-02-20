@@ -186,6 +186,39 @@ set_target_properties(${IMS_TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
 set_target_properties(${IMS_TARGET_NAME} PROPERTIES PUBLIC_HEADER "${ims_public_api_header_files}")
 set_target_properties(${IMS_TARGET_NAME} PROPERTIES DEBUG_POSTFIX "d")
 
+## Documentation
+option(BUILD_DOCS "Build SDK documentation" OFF)
+
+if(BUILD_DOCS)
+    find_package(Doxygen REQUIRED)
+    find_package(LATEX REQUIRED)
+
+    set(STAGE_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/stage/include")
+
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/docs/Doxyfile.in
+        ${CMAKE_BINARY_DIR}/Doxyfile
+        @ONLY
+    )
+
+    add_custom_target(docs
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_BINARY_DIR}/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating SDK documentation with Doxygen"
+    )
+
+    add_custom_target(docs_pdf ALL
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_BINARY_DIR}/Doxyfile
+        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}/docs/latex pdflatex refman.tex
+        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}/docs/latex pdflatex refman.tex
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_BINARY_DIR}/docs/latex/refman.pdf
+            ${CMAKE_BINARY_DIR}/docs/IMS_SDK.pdf
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating IMS SDK PDF documentation in ${CMAKE_BINARY_DIR}/docs/latex"
+    )
+endif()
+
 # Only do these things when building standalone
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     #

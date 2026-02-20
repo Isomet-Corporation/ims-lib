@@ -181,7 +181,6 @@ namespace iMS
 		/// Once constructed, the object can neither be copied or assigned to another instance.
 		///
 		/// \param[in] ims A const reference to the iMS System
-		/// \param[in] chan to indicate which of the synthesised RF Channels should have wave shaping applied (or all)
 		/// \since 2.0.4
 		VCO(std::shared_ptr<IMSSystem> ims);
 		///

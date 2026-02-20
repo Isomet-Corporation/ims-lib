@@ -1,0 +1,46 @@
+PROJECT_NAME           = "Isomet iMS Synthesiser System SDK  "
+PROJECT_NUMBER         = @PROJECT_VERSION@
+PROJECT_LOGO           = @CMAKE_SOURCE_DIR@/docs/logo.png
+
+OUTPUT_DIRECTORY       = @CMAKE_BINARY_DIR@/docs
+
+INPUT                  = @STAGE_INCLUDE_DIR@ docs/mainpage.dox
+FILE_PATTERNS          = *.h
+RECURSIVE              = YES
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = YES
+HTML_OUTPUT            = html
+HTML_EXTRA_STYLESHEET  = @CMAKE_SOURCE_DIR@/docs/custom.css
+
+LATEX_OUTPUT           = latex
+# Optional: disable unnecessary sections for cleaner PDF
+PAPER_TYPE             = a4
+LATEX_BATCHMODE        = YES
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+USE_PDFLATEX           = YES
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = png
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+
+FULL_PATH_NAMES        = NO
+STRIP_FROM_PATH        = @STAGE_INCLUDE_DIR@
+
+QUIET                  = NO
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+
+HTML_DYNAMIC_SECTIONS  = YES
+GENERATE_TREEVIEW      = YES
+FULL_PATH_NAMES        = NO
+DISABLE_INDEX          = NO
+
+USE_MDFILE_AS_MAINPAGE = docs/mainpage.dox
+
+# Custom aliases
+ALIASES += SDK_VERSION="@PROJECT_VERSION@"
