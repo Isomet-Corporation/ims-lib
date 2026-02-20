@@ -1,0 +1,9 @@
+<map id="iMS::IBulkTransfer" name="iMS::IBulkTransfer">
+<area shape="rect" id="Node000001" title="Interface Specification class for sending large binary data objects to the iMS." alt="" coords="286,5,425,31"/>
+<area shape="rect" id="Node000002" href="$classiMS_1_1CompensationTableDownload.html" title="Provides a mechanism for downloading and verifying Compensation Tables to a Synthesiser&#39;s Look&#45;Up mem..." alt="" coords="5,79,252,104"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="307,37,166,81,165,76,305,32"/>
+<area shape="rect" id="Node000003" href="$classiMS_1_1ImageDownload.html" title="Provides a mechanism for downloading and verifying Images to a Controller&#39;s memory." alt="" coords="275,79,435,104"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="358,44,358,79,353,79,353,44"/>
+<area shape="rect" id="Node000004" href="$classiMS_1_1ToneBufferDownload.html" title="Provides a mechanism for downloading ToneBuffer&#39;s to a Synthesiser&#39;s LTB memory." alt="" coords="460,79,648,104"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="401,33,522,76,521,81,399,38"/>
+</map>

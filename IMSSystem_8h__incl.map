@@ -1,0 +1,38 @@
+<map id="IMSSystem.h" name="IMSSystem.h">
+<area shape="rect" id="Node000001" title="Classes within this group are used to store information about an iMS System and to Connect / Disconne..." alt="" coords="349,5,456,31"/>
+<area shape="rect" id="Node000002" href="$IConnectionSettings_8h.html" title="Interface Class for User Application code to modify iMS Systems connection parameters." alt="" coords="381,79,545,104"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="415,29,446,66,442,70,411,33"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="323,152,381,177"/>
+<area shape="poly" id="edge20_Node000001_Node000004" title=" " alt="" coords="397,32,372,80,358,139,352,138,367,78,392,30"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="496,152,573,177"/>
+<area shape="poly" id="edge21_Node000001_Node000006" title=" " alt="" coords="457,22,484,29,513,39,539,55,560,77,566,93,565,110,553,141,548,139,560,109,560,94,555,80,535,59,510,44,483,34,456,27"/>
+<area shape="rect" id="Node000007" href="$IMSTypeDefs_8h.html" title="Useful Type Definitions for working with iMS Systems." alt="" coords="638,79,757,104"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="451,28,637,73,636,78,449,33"/>
+<area shape="rect" id="Node000011" href="$Containers_8h.html" title="Container Classes for storing various types of data related to Image classes and others." alt="" coords="151,79,255,104"/>
+<area shape="poly" id="edge12_Node000001_Node000011" title=" " alt="" coords="371,33,249,76,248,71,370,28"/>
+<area shape="rect" id="Node000015" title=" " alt="" coords="240,152,299,177"/>
+<area shape="poly" id="edge19_Node000001_Node000015" title=" " alt="" coords="394,33,291,143,287,140,390,29"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="598,152,661,177"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="490,102,591,144,589,149,488,106"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="446,106,383,147,380,142,443,102"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="405,152,472,177"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="461,105,449,140,444,138,456,103"/>
+<area shape="poly" id="edge5_Node000002_Node000006" title=" " alt="" coords="476,102,515,140,511,144,473,106"/>
+<area shape="poly" id="edge10_Node000007_Node000003" title=" " alt="" coords="688,106,652,144,648,140,684,102"/>
+<area shape="poly" id="edge9_Node000007_Node000005" title=" " alt="" coords="656,107,486,153,485,148,655,101"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="685,152,747,177"/>
+<area shape="poly" id="edge7_Node000007_Node000008" title=" " alt="" coords="703,104,712,138,707,140,698,105"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="771,152,858,177"/>
+<area shape="poly" id="edge8_Node000007_Node000009" title=" " alt="" coords="718,102,785,142,782,147,715,106"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="883,152,949,177"/>
+<area shape="poly" id="edge11_Node000007_Node000010" title=" " alt="" coords="733,101,870,146,868,151,732,107"/>
+<area shape="poly" id="edge18_Node000011_Node000004" title=" " alt="" coords="228,102,316,144,314,148,226,106"/>
+<area shape="poly" id="edge16_Node000011_Node000005" title=" " alt="" coords="241,101,393,147,391,152,240,107"/>
+<area shape="rect" id="Node000012" title=" " alt="" coords="86,152,149,177"/>
+<area shape="poly" id="edge13_Node000011_Node000012" title=" " alt="" coords="191,106,143,145,140,141,187,102"/>
+<area shape="rect" id="Node000013" title=" " alt="" coords="173,152,216,177"/>
+<area shape="poly" id="edge14_Node000011_Node000013" title=" " alt="" coords="204,105,200,139,195,138,199,104"/>
+<area shape="rect" id="Node000014" title=" " alt="" coords="5,152,61,177"/>
+<area shape="poly" id="edge15_Node000011_Node000014" title=" " alt="" coords="176,106,75,149,73,144,174,102"/>
+<area shape="poly" id="edge17_Node000011_Node000015" title=" " alt="" coords="216,103,251,140,247,144,212,106"/>
+</map>

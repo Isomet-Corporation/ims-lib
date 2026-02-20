@@ -1,3 +1,5 @@
 <map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
-<area shape="rect" id="Node000000" href="$classi_m_s_1_1_percent.html" title="Type Definition for all operations that require a percentage specification." alt="" coords="5,5,103,32"/>
+<area shape="rect" id="Node000000" href="$classiMS_1_1ListBase.html" title=" " alt="" coords="5,5,213,31"/>
+<area shape="rect" id="Node000001" href="$classiMS_1_1ToneBufferList.html" title="A List of ToneBuffer&#39;s used as a container by ImageProject." alt="" coords="261,5,408,31"/>
+<area shape="poly" id="edge13_Node000000_Node000001" title=" " alt="" coords="227,15,261,15,261,21,227,21"/>
 </map>

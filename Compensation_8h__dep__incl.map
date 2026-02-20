@@ -1,0 +1,7 @@
+<map id="Compensation.h" name="Compensation.h">
+<area shape="rect" id="Node000001" title="Classes for creating and downloading data that is used in the Compensation tables of the Synthesiser." alt="" coords="78,5,206,31"/>
+<area shape="rect" id="Node000002" href="$AcoustoOptics_8h.html" title="Classes for obtaining parameters associated with Acousto&#45;Optic materials and devices The iMS SDK main..." alt="" coords="5,79,132,104"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="122,42,82,80,79,77,118,38"/>
+<area shape="rect" id="Node000003" href="$ImageProject_8h.html" title="Classes for organising Images and associated data." alt="" coords="157,79,277,104"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="166,38,206,77,203,80,162,42"/>
+</map>

@@ -1,0 +1,5 @@
+<map id="iMS::CompensationTableDownload" name="iMS::CompensationTableDownload">
+<area shape="rect" id="Node000001" title="Provides a mechanism for downloading and verifying Compensation Tables to a Synthesiser&#39;s Look&#45;Up mem..." alt="" coords="5,79,252,104"/>
+<area shape="rect" id="Node000002" href="$classiMS_1_1IBulkTransfer.html" title="Interface Specification class for sending large binary data objects to the iMS." alt="" coords="59,5,198,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="131,44,131,79,126,79,126,44"/>
+</map>

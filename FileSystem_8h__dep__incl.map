@@ -1,0 +1,16 @@
+<map id="FileSystem.h" name="FileSystem.h">
+<area shape="rect" id="Node000001" title="Classes for reading, writing and managing the file system built into an iMS Synthesiser." alt="" coords="154,5,261,31"/>
+<area shape="rect" id="Node000002" href="$Auxiliary_8h.html" title="Classes for performing various auxiliary actions not directly related to driving Acousto&#45;Optic device..." alt="" coords="23,79,114,104"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="174,39,93,81,90,76,172,34"/>
+<area shape="rect" id="Node000004" href="$Compensation_8h.html" title="Classes for creating and downloading data that is used in the Compensation tables of the Synthesiser." alt="" coords="143,79,271,104"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="210,44,210,79,205,79,205,44"/>
+<area shape="rect" id="Node000007" href="$ToneBuffer_8h.html" title="Class for storing an array of Synthesiser tones." alt="" coords="300,79,403,104"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="244,34,329,76,327,81,241,39"/>
+<area shape="rect" id="Node000003" href="$SystemFunc_8h.html" title="Classes for performing system functions not directly related to RF signal generation and output." alt="" coords="5,152,119,177"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="69,118,66,152,60,152,64,118"/>
+<area shape="rect" id="Node000005" href="$AcoustoOptics_8h.html" title="Classes for obtaining parameters associated with Acousto&#45;Optic materials and devices The iMS SDK main..." alt="" coords="143,152,269,177"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="210,118,209,152,204,152,204,118"/>
+<area shape="rect" id="Node000006" href="$ImageProject_8h.html" title="Classes for organising Images and associated data." alt="" coords="294,152,414,177"/>
+<area shape="poly" id="edge5_Node000004_Node000006" title=" " alt="" coords="244,107,331,149,329,154,242,112"/>
+<area shape="poly" id="edge7_Node000007_Node000006" title=" " alt="" coords="355,118,356,152,351,152,350,118"/>
+</map>

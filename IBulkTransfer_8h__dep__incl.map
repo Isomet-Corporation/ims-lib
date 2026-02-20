@@ -1,0 +1,14 @@
+<map id="IBulkTransfer.h" name="IBulkTransfer.h">
+<area shape="rect" id="Node000001" title="Interface Specification class for sending large binary data objects to the iMS." alt="" coords="149,5,267,31"/>
+<area shape="rect" id="Node000002" href="$Compensation_8h.html" title="Classes for creating and downloading data that is used in the Compensation tables of the Synthesiser." alt="" coords="5,79,133,104"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="175,39,93,81,91,76,172,34"/>
+<area shape="rect" id="Node000005" href="$ImageOps_8h.html" title="Classes for downloading and playback of Image data." alt="" coords="158,79,258,104"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="211,44,211,79,205,79,205,44"/>
+<area shape="rect" id="Node000006" href="$ToneBuffer_8h.html" title="Class for storing an array of Synthesiser tones." alt="" coords="282,79,385,104"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="241,35,314,76,312,81,239,40"/>
+<area shape="rect" id="Node000003" href="$AcoustoOptics_8h.html" title="Classes for obtaining parameters associated with Acousto&#45;Optic materials and devices The iMS SDK main..." alt="" coords="6,152,133,177"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="72,118,72,152,67,152,67,118"/>
+<area shape="rect" id="Node000004" href="$ImageProject_8h.html" title="Classes for organising Images and associated data." alt="" coords="215,152,335,177"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="116,106,242,149,241,154,114,111"/>
+<area shape="poly" id="edge6_Node000006_Node000004" title=" " alt="" coords="317,116,286,154,282,150,313,113"/>
+</map>

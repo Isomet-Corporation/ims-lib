@@ -1,7 +1,7 @@
 <map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
-<area shape="rect" id="Node000000" href="$classi_m_s_1_1_frequency.html" title="Type Definition for all operations that require a frequency specification." alt="" coords="5,31,119,57"/>
-<area shape="rect" id="Node000001" href="$classi_m_s_1_1_m_hz.html" title="Type Definition for all operations that require a frequency specification in MegaHertz." alt="" coords="167,5,247,32"/>
-<area shape="poly" id="edge4_Node000000_Node000001" title=" " alt="" coords="133,29,169,25,164,26,135,34"/>
-<area shape="rect" id="Node000002" href="$classi_m_s_1_1k_hz.html" title="Type Definition for all operations that require a frequency specification in kiloHertz." alt="" coords="169,56,245,83"/>
-<area shape="poly" id="edge5_Node000000_Node000002" title=" " alt="" coords="134,54,171,62,166,63,134,59"/>
+<area shape="rect" id="Node000000" href="$classiMS_1_1Frequency.html" title="Type Definition for all operations that require a frequency specification." alt="" coords="5,31,127,56"/>
+<area shape="rect" id="Node000001" href="$classiMS_1_1MHz.html" title="Type Definition for all operations that require a frequency specification in MegaHertz." alt="" coords="175,5,257,31"/>
+<area shape="poly" id="edge4_Node000000_Node000001" title=" " alt="" coords="140,28,174,22,175,28,141,33"/>
+<area shape="rect" id="Node000002" href="$classiMS_1_1kHz.html" title="Type Definition for all operations that require a frequency specification in kiloHertz." alt="" coords="177,55,255,80"/>
+<area shape="poly" id="edge5_Node000000_Node000002" title=" " alt="" coords="141,53,177,58,176,64,140,58"/>
 </map>

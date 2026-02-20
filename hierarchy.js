@@ -1,110 +1,111 @@
 var hierarchy =
 [
-    [ "iMS::AODevice", "classi_m_s_1_1_a_o_device.html", null ],
-    [ "iMS::AODeviceList", "structi_m_s_1_1_a_o_device_list.html", null ],
-    [ "iMS::Auxiliary", "classi_m_s_1_1_auxiliary.html", null ],
-    [ "iMS::AuxiliaryEvents", "classi_m_s_1_1_auxiliary_events.html", null ],
-    [ "iMS::IMSController::Capabilities", "structi_m_s_1_1_i_m_s_controller_1_1_capabilities.html", null ],
-    [ "iMS::IMSSynthesiser::Capabilities", "structi_m_s_1_1_i_m_s_synthesiser_1_1_capabilities.html", null ],
-    [ "iMS::ClockGenConfiguration", "structi_m_s_1_1_clock_gen_configuration.html", null ],
-    [ "iMS::CompensationEvents", "classi_m_s_1_1_compensation_events.html", null ],
-    [ "iMS::CompensationPoint", "classi_m_s_1_1_compensation_point.html", null ],
-    [ "iMS::CompensationPointSpecification", "classi_m_s_1_1_compensation_point_specification.html", null ],
-    [ "iMS::CompensationTableExporter", "classi_m_s_1_1_compensation_table_exporter.html", null ],
-    [ "iMS::CompensationTableImporter", "classi_m_s_1_1_compensation_table_importer.html", null ],
-    [ "iMS::ConnectionList::ConnectionConfig", "structi_m_s_1_1_connection_list_1_1_connection_config.html", null ],
-    [ "iMS::ConnectionList", "classi_m_s_1_1_connection_list.html", null ],
-    [ "iMS::Crystal", "classi_m_s_1_1_crystal.html", null ],
-    [ "iMS::DDSScriptDownload", "classi_m_s_1_1_d_d_s_script_download.html", null ],
-    [ "iMS::DDSScriptRegister", "classi_m_s_1_1_d_d_s_script_register.html", null ],
-    [ "iMS::Degrees", "classi_m_s_1_1_degrees.html", null ],
-    [ "iMS::DequeBase&lt; T &gt;", "classi_m_s_1_1_deque_base.html", null ],
-    [ "iMS::DequeBase&lt; CompensationPoint &gt;", "classi_m_s_1_1_deque_base.html", [
-      [ "iMS::CompensationTable", "classi_m_s_1_1_compensation_table.html", null ]
+    [ "iMS::AODevice", "classiMS_1_1AODevice.html", null ],
+    [ "iMS::AODeviceList", "structiMS_1_1AODeviceList.html", null ],
+    [ "iMS::Auxiliary", "classiMS_1_1Auxiliary.html", null ],
+    [ "iMS::AuxiliaryEvents", "classiMS_1_1AuxiliaryEvents.html", null ],
+    [ "iMS::IMSController::Capabilities", "structiMS_1_1IMSController_1_1Capabilities.html", null ],
+    [ "iMS::IMSSynthesiser::Capabilities", "structiMS_1_1IMSSynthesiser_1_1Capabilities.html", null ],
+    [ "iMS::ClockGenConfiguration", "structiMS_1_1ClockGenConfiguration.html", null ],
+    [ "iMS::CompensationEvents", "classiMS_1_1CompensationEvents.html", null ],
+    [ "iMS::CompensationPoint", "classiMS_1_1CompensationPoint.html", null ],
+    [ "iMS::CompensationPointSpecification", "classiMS_1_1CompensationPointSpecification.html", null ],
+    [ "iMS::CompensationTableExporter", "classiMS_1_1CompensationTableExporter.html", null ],
+    [ "iMS::CompensationTableImporter", "classiMS_1_1CompensationTableImporter.html", null ],
+    [ "iMS::ConnectionList::ConnectionConfig", "structiMS_1_1ConnectionList_1_1ConnectionConfig.html", null ],
+    [ "iMS::ConnectionList", "classiMS_1_1ConnectionList.html", null ],
+    [ "iMS::Crystal", "classiMS_1_1Crystal.html", null ],
+    [ "iMS::DDSScriptDownload", "classiMS_1_1DDSScriptDownload.html", null ],
+    [ "iMS::DDSScriptRegister", "classiMS_1_1DDSScriptRegister.html", null ],
+    [ "iMS::Degrees", "classiMS_1_1Degrees.html", null ],
+    [ "iMS::DequeBase< T >", "classiMS_1_1DequeBase.html", null ],
+    [ "iMS::DequeBase< CompensationPoint >", "classiMS_1_1DequeBase.html", [
+      [ "iMS::CompensationTable", "classiMS_1_1CompensationTable.html", null ]
     ] ],
-    [ "iMS::DequeBase&lt; Image &gt;", "classi_m_s_1_1_deque_base.html", [
-      [ "iMS::ImageGroup", "classi_m_s_1_1_image_group.html", null ]
+    [ "iMS::DequeBase< Image >", "classiMS_1_1DequeBase.html", [
+      [ "iMS::ImageGroup", "classiMS_1_1ImageGroup.html", null ]
     ] ],
-    [ "iMS::DequeBase&lt; ImagePoint &gt;", "classi_m_s_1_1_deque_base.html", [
-      [ "iMS::Image", "classi_m_s_1_1_image.html", null ]
+    [ "iMS::DequeBase< ImagePoint >", "classiMS_1_1DequeBase.html", [
+      [ "iMS::Image", "classiMS_1_1Image.html", null ]
     ] ],
-    [ "iMS::Diagnostics", "classi_m_s_1_1_diagnostics.html", null ],
-    [ "iMS::DiagnosticsEvents", "classi_m_s_1_1_diagnostics_events.html", null ],
-    [ "iMS::distance&lt; Ratio &gt;", "classi_m_s_1_1distance.html", null ],
-    [ "iMS::DownloadEvents", "classi_m_s_1_1_download_events.html", null ],
+    [ "iMS::Diagnostics", "classiMS_1_1Diagnostics.html", null ],
+    [ "iMS::DiagnosticsEvents", "classiMS_1_1DiagnosticsEvents.html", null ],
+    [ "iMS::distance< Ratio >", "classiMS_1_1distance.html", null ],
+    [ "iMS::DownloadEvents", "classiMS_1_1DownloadEvents.html", null ],
     [ "std::enable_shared_from_this", null, [
-      [ "iMS::IMSSystem", "classi_m_s_1_1_i_m_s_system.html", null ]
+      [ "iMS::IMSSystem", "classiMS_1_1IMSSystem.html", null ]
     ] ],
-    [ "iMS::FAP", "structi_m_s_1_1_f_a_p.html", null ],
-    [ "iMS::FileSystemManager", "classi_m_s_1_1_file_system_manager.html", null ],
-    [ "iMS::FileSystemTableEntry", "structi_m_s_1_1_file_system_table_entry.html", null ],
-    [ "iMS::FileSystemTableViewer", "classi_m_s_1_1_file_system_table_viewer.html", null ],
-    [ "iMS::FirmwareUpgrade", "classi_m_s_1_1_firmware_upgrade.html", null ],
-    [ "iMS::FirmwareUpgradeError", "classi_m_s_1_1_firmware_upgrade_error.html", null ],
-    [ "iMS::FirmwareUpgradeEvents", "classi_m_s_1_1_firmware_upgrade_events.html", null ],
-    [ "iMS::FirmwareUpgradeProgress", "classi_m_s_1_1_firmware_upgrade_progress.html", null ],
-    [ "iMS::Frequency", "classi_m_s_1_1_frequency.html", [
-      [ "iMS::MHz", "classi_m_s_1_1_m_hz.html", null ],
-      [ "iMS::kHz", "classi_m_s_1_1k_hz.html", null ]
+    [ "iMS::FAP", "structiMS_1_1FAP.html", null ],
+    [ "iMS::FileSystemManager", "classiMS_1_1FileSystemManager.html", null ],
+    [ "iMS::FileSystemTableEntry", "structiMS_1_1FileSystemTableEntry.html", null ],
+    [ "iMS::FileSystemTableViewer", "classiMS_1_1FileSystemTableViewer.html", null ],
+    [ "iMS::FirmwareUpgrade", "classiMS_1_1FirmwareUpgrade.html", null ],
+    [ "iMS::FirmwareUpgradeError", "classiMS_1_1FirmwareUpgradeError.html", null ],
+    [ "iMS::FirmwareUpgradeEvents", "classiMS_1_1FirmwareUpgradeEvents.html", null ],
+    [ "iMS::FirmwareUpgradeProgress", "classiMS_1_1FirmwareUpgradeProgress.html", null ],
+    [ "iMS::Frequency", "classiMS_1_1Frequency.html", [
+      [ "iMS::MHz", "classiMS_1_1MHz.html", null ],
+      [ "iMS::kHz", "classiMS_1_1kHz.html", null ]
     ] ],
-    [ "iMS::FWVersion", "structi_m_s_1_1_f_w_version.html", null ],
-    [ "iMS::IBulkTransfer", "classi_m_s_1_1_i_bulk_transfer.html", [
-      [ "iMS::CompensationTableDownload", "classi_m_s_1_1_compensation_table_download.html", null ],
-      [ "iMS::ImageDownload", "classi_m_s_1_1_image_download.html", null ],
-      [ "iMS::ToneBufferDownload", "classi_m_s_1_1_tone_buffer_download.html", null ]
+    [ "iMS::FWVersion", "structiMS_1_1FWVersion.html", null ],
+    [ "iMS::IBulkTransfer", "classiMS_1_1IBulkTransfer.html", [
+      [ "iMS::CompensationTableDownload", "classiMS_1_1CompensationTableDownload.html", null ],
+      [ "iMS::ImageDownload", "classiMS_1_1ImageDownload.html", null ],
+      [ "iMS::ToneBufferDownload", "classiMS_1_1ToneBufferDownload.html", null ]
     ] ],
-    [ "iMS::IConnectionSettings", "classi_m_s_1_1_i_connection_settings.html", null ],
-    [ "iMS::IEventHandler", "classi_m_s_1_1_i_event_handler.html", null ],
-    [ "iMS::ImageFormat", "classi_m_s_1_1_image_format.html", null ],
-    [ "iMS::ImagePlayer", "classi_m_s_1_1_image_player.html", null ],
-    [ "iMS::ImagePlayerEvents", "classi_m_s_1_1_image_player_events.html", null ],
-    [ "iMS::ImagePoint", "classi_m_s_1_1_image_point.html", null ],
-    [ "iMS::ImageProject", "classi_m_s_1_1_image_project.html", null ],
-    [ "iMS::ImageTableEntry", "structi_m_s_1_1_image_table_entry.html", null ],
-    [ "iMS::ImageTableViewer", "classi_m_s_1_1_image_table_viewer.html", null ],
-    [ "iMS::IMSController", "classi_m_s_1_1_i_m_s_controller.html", null ],
-    [ "iMS::IMSOption", "classi_m_s_1_1_i_m_s_option.html", null ],
-    [ "iMS::IMSSynthesiser", "classi_m_s_1_1_i_m_s_synthesiser.html", null ],
-    [ "iMS::LibVersion", "classi_m_s_1_1_lib_version.html", null ],
-    [ "iMS::ListBase&lt; T &gt;", "classi_m_s_1_1_list_base.html", null ],
-    [ "iMS::ListBase&lt; CompensationFunction &gt;", "classi_m_s_1_1_list_base.html", [
-      [ "iMS::CompensationFunctionList", "classi_m_s_1_1_compensation_function_list.html", null ]
+    [ "iMS::IConnectionSettings", "classiMS_1_1IConnectionSettings.html", null ],
+    [ "iMS::IEventHandler", "classiMS_1_1IEventHandler.html", null ],
+    [ "iMS::ImageFormat", "classiMS_1_1ImageFormat.html", null ],
+    [ "iMS::ImagePlayer", "classiMS_1_1ImagePlayer.html", null ],
+    [ "iMS::ImagePlayerEvents", "classiMS_1_1ImagePlayerEvents.html", null ],
+    [ "iMS::ImagePoint", "classiMS_1_1ImagePoint.html", null ],
+    [ "iMS::ImageProject", "classiMS_1_1ImageProject.html", null ],
+    [ "iMS::ImageTableEntry", "structiMS_1_1ImageTableEntry.html", null ],
+    [ "iMS::ImageTableViewer", "classiMS_1_1ImageTableViewer.html", null ],
+    [ "iMS::IMSController", "classiMS_1_1IMSController.html", null ],
+    [ "iMS::IMSOption", "classiMS_1_1IMSOption.html", null ],
+    [ "iMS::IMSSynthesiser", "classiMS_1_1IMSSynthesiser.html", null ],
+    [ "iMS::LibVersion", "classiMS_1_1LibVersion.html", null ],
+    [ "iMS::ListBase< T >", "classiMS_1_1ListBase.html", null ],
+    [ "iMS::ListBase< CompensationFunction >", "classiMS_1_1ListBase.html", [
+      [ "iMS::CompensationFunctionList", "classiMS_1_1CompensationFunctionList.html", null ]
     ] ],
-    [ "iMS::ListBase&lt; CompensationPointSpecification &gt;", "classi_m_s_1_1_list_base.html", [
-      [ "iMS::CompensationFunction", "classi_m_s_1_1_compensation_function.html", null ]
+    [ "iMS::ListBase< CompensationPointSpecification >", "classiMS_1_1ListBase.html", [
+      [ "iMS::CompensationFunction", "classiMS_1_1CompensationFunction.html", null ]
     ] ],
-    [ "iMS::ListBase&lt; ImageGroup &gt;", "classi_m_s_1_1_list_base.html", [
-      [ "iMS::ImageGroupList", "classi_m_s_1_1_image_group_list.html", null ]
+    [ "iMS::ListBase< ImageGroup >", "classiMS_1_1ListBase.html", [
+      [ "iMS::ImageGroupList", "classiMS_1_1ImageGroupList.html", null ]
     ] ],
-    [ "iMS::ListBase&lt; std::shared_ptr&lt; SequenceEntry &gt; &gt;", "classi_m_s_1_1_list_base.html", [
-      [ "iMS::ImageSequence", "classi_m_s_1_1_image_sequence.html", null ]
+    [ "iMS::ListBase< std::shared_ptr< SequenceEntry > >", "classiMS_1_1ListBase.html", [
+      [ "iMS::ImageSequence", "classiMS_1_1ImageSequence.html", null ]
     ] ],
-    [ "iMS::ListBase&lt; ToneBuffer &gt;", "classi_m_s_1_1_list_base.html", [
-      [ "iMS::ToneBufferList", "classi_m_s_1_1_tone_buffer_list.html", null ]
+    [ "iMS::ListBase< std::string >", "classiMS_1_1ListBase.html", null ],
+    [ "iMS::ListBase< ToneBuffer >", "classiMS_1_1ListBase.html", [
+      [ "iMS::ToneBufferList", "classiMS_1_1ToneBufferList.html", null ]
     ] ],
-    [ "iMS::Percent", "classi_m_s_1_1_percent.html", null ],
-    [ "iMS::ImagePlayer::PlayConfiguration", "structi_m_s_1_1_image_player_1_1_play_configuration.html", null ],
-    [ "iMS::RFChannel", "classi_m_s_1_1_r_f_channel.html", null ],
-    [ "iMS::SequenceManager::SeqConfiguration", "structi_m_s_1_1_sequence_manager_1_1_seq_configuration.html", null ],
-    [ "iMS::SequenceDownload", "classi_m_s_1_1_sequence_download.html", null ],
-    [ "iMS::SequenceEntry", "structi_m_s_1_1_sequence_entry.html", [
-      [ "iMS::ImageSequenceEntry", "structi_m_s_1_1_image_sequence_entry.html", null ],
-      [ "iMS::ToneSequenceEntry", "structi_m_s_1_1_tone_sequence_entry.html", null ]
+    [ "iMS::Percent", "classiMS_1_1Percent.html", null ],
+    [ "iMS::ImagePlayer::PlayConfiguration", "structiMS_1_1ImagePlayer_1_1PlayConfiguration.html", null ],
+    [ "iMS::RFChannel", "classiMS_1_1RFChannel.html", null ],
+    [ "iMS::SequenceManager::SeqConfiguration", "structiMS_1_1SequenceManager_1_1SeqConfiguration.html", null ],
+    [ "iMS::SequenceDownload", "classiMS_1_1SequenceDownload.html", null ],
+    [ "iMS::SequenceEntry", "structiMS_1_1SequenceEntry.html", [
+      [ "iMS::ImageSequenceEntry", "structiMS_1_1ImageSequenceEntry.html", null ],
+      [ "iMS::ToneSequenceEntry", "structiMS_1_1ToneSequenceEntry.html", null ]
     ] ],
-    [ "iMS::SequenceEvents", "classi_m_s_1_1_sequence_events.html", null ],
-    [ "iMS::SequenceManager", "classi_m_s_1_1_sequence_manager.html", null ],
-    [ "iMS::SignalPath", "classi_m_s_1_1_signal_path.html", null ],
-    [ "iMS::SignalPathEvents", "classi_m_s_1_1_signal_path_events.html", null ],
-    [ "iMS::StartupConfiguration", "structi_m_s_1_1_startup_configuration.html", null ],
-    [ "iMS::SweepTone", "structi_m_s_1_1_sweep_tone.html", null ],
-    [ "iMS::SystemFunc", "classi_m_s_1_1_system_func.html", null ],
-    [ "iMS::SystemFuncEvents", "classi_m_s_1_1_system_func_events.html", null ],
-    [ "iMS::ToneBuffer", "classi_m_s_1_1_tone_buffer.html", null ],
-    [ "iMS::ToneBufferEvents", "classi_m_s_1_1_tone_buffer_events.html", null ],
-    [ "iMS::UserFileReader", "classi_m_s_1_1_user_file_reader.html", null ],
-    [ "iMS::UserFileWriter", "classi_m_s_1_1_user_file_writer.html", null ],
-    [ "iMS::VCO", "classi_m_s_1_1_v_c_o.html", null ],
-    [ "iMS::VCOEvents", "classi_m_s_1_1_v_c_o_events.html", null ],
-    [ "iMS::VelocityConfiguration", "structi_m_s_1_1_velocity_configuration.html", null ],
-    [ "iMS::WaveShaping", "classi_m_s_1_1_wave_shaping.html", null ]
+    [ "iMS::SequenceEvents", "classiMS_1_1SequenceEvents.html", null ],
+    [ "iMS::SequenceManager", "classiMS_1_1SequenceManager.html", null ],
+    [ "iMS::SignalPath", "classiMS_1_1SignalPath.html", null ],
+    [ "iMS::SignalPathEvents", "classiMS_1_1SignalPathEvents.html", null ],
+    [ "iMS::StartupConfiguration", "structiMS_1_1StartupConfiguration.html", null ],
+    [ "iMS::SweepTone", "structiMS_1_1SweepTone.html", null ],
+    [ "iMS::SystemFunc", "classiMS_1_1SystemFunc.html", null ],
+    [ "iMS::SystemFuncEvents", "classiMS_1_1SystemFuncEvents.html", null ],
+    [ "iMS::ToneBuffer", "classiMS_1_1ToneBuffer.html", null ],
+    [ "iMS::ToneBufferEvents", "classiMS_1_1ToneBufferEvents.html", null ],
+    [ "iMS::UserFileReader", "classiMS_1_1UserFileReader.html", null ],
+    [ "iMS::UserFileWriter", "classiMS_1_1UserFileWriter.html", null ],
+    [ "iMS::VCO", "classiMS_1_1VCO.html", null ],
+    [ "iMS::VCOEvents", "classiMS_1_1VCOEvents.html", null ],
+    [ "iMS::VelocityConfiguration", "structiMS_1_1VelocityConfiguration.html", null ],
+    [ "iMS::WaveShaping", "classiMS_1_1WaveShaping.html", null ]
 ];

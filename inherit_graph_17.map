@@ -1,5 +1,5 @@
 <map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
-<area shape="rect" id="Node000000" href="$classi_m_s_1_1_deque_base.html" title=" " alt="" coords="5,5,186,32"/>
-<area shape="rect" id="Node000001" href="$classi_m_s_1_1_image_group.html" title="An ImageGroup collects together multiple associated images and a single ImageSequence for controlling..." alt="" coords="234,5,357,32"/>
-<area shape="poly" id="edge2_Node000000_Node000001" title=" " alt="" coords="201,16,236,19,231,19,202,21"/>
+<area shape="rect" id="Node000000" href="$classiMS_1_1DequeBase.html" title=" " alt="" coords="5,5,204,31"/>
+<area shape="rect" id="Node000001" href="$classiMS_1_1ImageGroup.html" title="An ImageGroup collects together multiple associated images and a single ImageSequence for controlling..." alt="" coords="252,5,387,31"/>
+<area shape="poly" id="edge2_Node000000_Node000001" title=" " alt="" coords="218,15,252,15,252,21,218,21"/>
 </map>
