@@ -113,9 +113,13 @@ In a Powershell prompt:
 Optional flags:
  
 ```powershell
-   -StageDir [dir]           <= Change the build artifact location
-   -Clean                    <= Cleans the build folder before running the build
-   -Profile [profile]        <= Choose a non-default Conan profile
+   -BuildType [Debug|Release]
+   -BuildDocs                  <= Only Create the user documentation
+   -CompilerVersion            <= Select MSVC version (e.g. 193 = VS2022)
+   -Arch                       <= Select Platform Architecutre (e.g. x86, x86_64, armv7hf)
+   -StageDir [dir]             <= Change the build artifact location
+   -Clean                      <= Cleans the build folder before running the build
+   -Profile [profile]          <= Choose a non-default Conan profile
 ``` 
 
 #### Linux / Embedded Linux
@@ -128,9 +132,11 @@ Optional flags:
 
 ```bash
    -c                       <= Cleans the build folder before running the build
+   -a                       <= Select the architecture (e.g. x86, x86_64, armv7hf)
    -t <Debug|Release>       <= Change the build configuration
    -p <profile>             <= Choose a non-default Conan profile
    -d                       <= Include a library symlink (libims.so)
+   -u                       <= Build User Documentation
 ```
 
 Artifacts will be staged to stage_dir (default 'stage' in the current working directory)
@@ -218,14 +224,21 @@ However, we recognise that C++ native application design is not a straightforwar
 - Conan
 - Git
 - build-essential
+- xxd
 
 Example (Ubuntu):
 
 ```bash
-sudo apt install build-essential cmake conan ninja-build git
+sudo apt install build-essential cmake ninja-build git xxd
 ```
 
 For QNX Neutrino RTOS builds, use the appropriate QNX toolchain file with CMake.
+
+### Conan
+
+The project use Conan for build dependency resolution.  Please install conan using the conan documentation as a guide: https://docs.conan.io/2/installation.html
+
+Conan is usually installed using the Python Pip package manager but can be installed from a binary package downloaded from the above location
 
 ---
 

@@ -5,6 +5,7 @@ set -euo pipefail
 # Defaults
 ########################################
 BUILD_TYPE="Release"
+ARCH="x86_64"
 STAGE_DIR="stage"
 PROFILE="default"
 BUILD_DOCS=0
@@ -16,11 +17,12 @@ DEV_SDK=0
 # Usage
 ########################################
 usage() {
-    echo "Usage: $0 -s <stage_dir> [-t Debug|Release] [-p <conan profile>] [-c] [-d] [-u] [-h]"
+    echo "Usage: $0 -s <stage_dir> [-t Debug|Release] [-a <arch>] [-p <conan profile>] [-c] [-d] [-u] [-h]"
     echo ""
     echo "Options:"
     echo "  -s DIR        Production staging directory (required)"
     echo "  -t TYPE       Debug | Release (default: Release)"
+    echo "  -a            Architecture (e.g. x86, x86_64, armv7hf), default: x86_64"
     echo "  -p PROFILE    Conan profile (default: default)"
     echo "  -c            Clean build"
     echo "  -d            Include development symlink (libims.so)"
@@ -32,10 +34,11 @@ usage() {
 ########################################
 # Parse args
 ########################################
-while getopts "s:t:p:cduh" opt; do
+while getopts "s:t:a:p:cduh" opt; do
     case ${opt} in
         s) STAGE_DIR="$OPTARG" ;;
         t) BUILD_TYPE="$OPTARG" ;;
+        a) ARCH="$OPTARG" ;;
         p) PROFILE="$OPTARG" ;;
         c) CLEAN=1 ;;
         d) DEV_SDK=1 ;;   # development SDK
@@ -57,7 +60,7 @@ TOOLCHAIN_FILE="$BUILD_DIR/generators/conan_toolchain.cmake"
 
 # Detect OS and architecture
 OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"  # linux, darwin, etc.
-ARCH="$(uname -m)"                                   # x86_64, aarch64, i386
+#ARCH="$(uname -m)"                                   # x86_64, aarch64, i386
 OS_ARCH="${OS_NAME}_${ARCH}"
 
 # Prepare directories
@@ -101,7 +104,11 @@ mkdir -p "$BUILD_DIR"
 ########################################
 echo "Running Conan install..."
 # Toolchain will be generated in build/generators
-conan install . --profile "$PROFILE" -s build_type="$BUILD_TYPE" --build=missing
+conan install . --profile "$PROFILE" \
+    -s build_type="$BUILD_TYPE" \
+    -s arch="$ARCH" \
+    -s compiler.cppstd=17 \
+    --build=missing
 
 if [[ ! -f "$TOOLCHAIN_FILE" ]]; then
     echo "Error: Conan toolchain file not found: $TOOLCHAIN_FILE"

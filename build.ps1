@@ -1,29 +1,52 @@
 <#
 .SYNOPSIS
     Build IMS API library and stage production artifacts for SDK packaging.
+
+.PARAMETER BuildType
+    Build configuration: Release (default) or Debug
+
+.PARAMETER Arch
+    Target architecture: x86 (32-bit) or x86_64 (default)
+
+.PARAMETER BuildDocs
+    Switch to build documentation only
+
+.PARAMETER CompilerVersion
+    Compiler version to pass to Conan (e.g., 192 for Visual Studio 2019)
+
 .DESCRIPTION
     - Builds Debug or Release using Visual Studio / CMake
     - Uses Conan 2.x for dependencies
     - Stages binaries, libraries, and only public headers into a staging folder
 #>
 
-Param(
+[CmdletBinding()]
+param(
     [string]$StageDir,
+
     [ValidateSet("Debug","Release")]
     [string]$BuildType = "Release",   # Debug or Release
+
+    [ValidateSet("x86","x86_64")]
+    [string]$Arch = "x86_64",
+
     [switch]$BuildDocs,               # Optional switch to build docs
+
+    [string]$CompilerVersion = "",
+
     [string]$Profile = "default",
     [switch]$Clean
 )
 
 if (-not $StageDir) {
-    Write-Host "Usage: .\build.ps1 -StageDir <path> [-BuildType Debug|Release] [-BuildDocs] [-Profile <conan profile>] [-Clean]"
+    Write-Host "Usage: .\build.ps1 -StageDir <path> [-BuildType Debug|Release] [-BuildDocs]
+      [-CompilerVersion <version>] [-Profile <conan profile>] [-Clean]"
     exit 1
 }
 
 # Detect OS architecture
 $OSName = "windows"
-$Arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
+#$Arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
 $OSArch = "${OSName}_${Arch}"
 
 #$BuildDir = Join-Path "build" $BuildType
@@ -51,8 +74,22 @@ if ($Clean) {
 # ----------------------------
 # Conan install
 # ----------------------------
+$ConanCmd = @(
+    "conan install .",
+    "--profile $Profile",
+    "-s build_type=$BuildType",
+    "-s arch=$Arch",
+    "-s compiler.cppstd=17",
+    "--build=missing",
+    "-of $BuildDir"
+)
+
+if ($CompilerVersion) { $ConanCmd += "-s compiler.version=$CompilerVersion" }
+
 Write-Host "Running Conan install..."
-conan install . --profile $Profile --settings build_type=$BuildType --build=missing -of $BuildDir
+Write-Host $ConanCmd -join " "
+Invoke-Expression ($ConanCmd -join " ")
+#conan install . --profile $Profile --settings build_type=$BuildType --build=missing -of $BuildDir
 
 # Toolchain file location (always in build/generators)
 $ToolchainFile = "build\generators\conan_toolchain.cmake"
@@ -62,9 +99,20 @@ if (-not $BuildDocs) {
     # Configure & Build
     # ----------------------------
     Write-Host "Configuring CMake..."
-    cmake -S . -B $BuildDir -G "Visual Studio 17 2022" `
-        -DCMAKE_TOOLCHAIN_FILE="$ToolchainFile" `
-        -DCMAKE_BUILD_TYPE=$BuildType
+    $CMakeArgs = @(
+        "-S .",
+        "-B $BuildDir",
+        "-DCMAKE_TOOLCHAIN_FILE=$BuildDir\generators\conan_toolchain.cmake",
+        "-DCMAKE_BUILD_TYPE=$BuildType"
+    )
+
+    # Specify architecture for Visual Studio
+    if ($Arch -eq "x86") {
+        $CMakeArgs += "-A Win32"
+    } elseif ($Arch -eq "x86_64") {
+        $CMakeArgs += "-A x64"
+    }
+    & cmake @CMakeArgs
 
     Write-Host "Building project..."
     cmake --build $BuildDir --config $BuildType
@@ -74,7 +122,7 @@ if (-not $BuildDocs) {
     # ----------------------------
     Write-Host "Staging include headers -> $IncludeDir"
     Write-Host "Staging libraries -> $LibDir"
-    if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
+#    if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
     New-Item -ItemType Directory -Force -Path $IncludeDir, $LibDir, $DocsDir | Out-Null
 
     # Copy binaries

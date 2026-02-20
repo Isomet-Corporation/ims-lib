@@ -54,3 +54,4 @@ CMakeFiles/
 res/settings_ini.h
 stage/
 CMakePresets.json
+CMakeUserPresets.json

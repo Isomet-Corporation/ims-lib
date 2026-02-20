@@ -13,6 +13,7 @@ GENERATE_HTML          = YES
 GENERATE_LATEX         = YES
 HTML_OUTPUT            = html
 HTML_EXTRA_STYLESHEET  = @CMAKE_SOURCE_DIR@/docs/custom.css
+HTML_HEADER            = @CMAKE_SOURCE_DIR@/docs/header.html
 
 LATEX_OUTPUT           = latex
 # Optional: disable unnecessary sections for cleaner PDF
