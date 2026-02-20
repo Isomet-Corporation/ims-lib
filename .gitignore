@@ -52,3 +52,5 @@ DartConfiguration.tcl
 build/
 CMakeFiles/
 res/settings_ini.h
+stage/
+CMakePresets.json

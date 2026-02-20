@@ -280,6 +280,7 @@ Generated files are staged to:
 stage/docs/
 ```
 
+Built documentation is deployed online to Github Pages using the deploy.sh and deploy.ps1 scripts (repo write access required)
 ---
 
 # Output Structure
@@ -320,10 +321,9 @@ Repository links to be provided.
 
 # Online Documentation
 
-Live API documentation:  
-(Location to be announced)
+Live API documentation:  https://isomet-corporation.github.io/ims-lib/
 
-The online documentation mirrors the Doxygen-generated HTML documentation.
+The online documentation mirrors the local Doxygen-generated HTML documentation.
 
 ---
 
