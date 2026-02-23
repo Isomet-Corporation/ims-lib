@@ -244,7 +244,7 @@ namespace iMS {
 		{
 		}
 
-		Impl(FAP start, FAP end, std::chrono::duration<double>& up, std::chrono::duration<double>& down, int steps, ENHANCED_TONE_MODE mode, DAC_CURRENT_REFERENCE scaling)
+		Impl(FAP start, FAP end, const std::chrono::duration<double>& up, const std::chrono::duration<double>& down, int steps, ENHANCED_TONE_MODE mode, DAC_CURRENT_REFERENCE scaling)
 			: start(start), end(end), up_ramp(up), down_ramp(down), n_steps(steps), mode(mode), scaling(scaling)
 		{
 		}
@@ -289,7 +289,7 @@ namespace iMS {
 	DAC_CURRENT_REFERENCE& SweepTone::scaling() { return p_Impl->scaling; }
 	const DAC_CURRENT_REFERENCE& SweepTone::scaling() const { return p_Impl->scaling; }
 
-	SweepTone::SweepTone(FAP start, FAP end, std::chrono::duration<double>& up, std::chrono::duration<double>& down, int steps, ENHANCED_TONE_MODE mode, DAC_CURRENT_REFERENCE scaling)
+	SweepTone::SweepTone(FAP start, FAP end, const std::chrono::duration<double>& up, const std::chrono::duration<double>& down, int steps, ENHANCED_TONE_MODE mode, DAC_CURRENT_REFERENCE scaling)
 		: p_Impl(new Impl(start, end, up, down, steps, mode, scaling)) {}
 
 	SweepTone::SweepTone(const SweepTone &rhs) : p_Impl(new Impl())

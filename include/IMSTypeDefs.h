@@ -452,7 +452,7 @@ namespace iMS
 	/// \brief Parital specification Constructor programs a single tone only (no sweep)
 		SweepTone(FAP tone);
 	/// \brief Full specification Constructor
-		SweepTone(FAP start, FAP end, std::chrono::duration<double>& up, std::chrono::duration<double>& down, int steps, ENHANCED_TONE_MODE mode, DAC_CURRENT_REFERENCE scaling);
+		SweepTone(FAP start, FAP end, const std::chrono::duration<double>& up, const std::chrono::duration<double>& down, int steps, ENHANCED_TONE_MODE mode, DAC_CURRENT_REFERENCE scaling);
 	/// \brief Copy Constructor
 		SweepTone(const SweepTone &);
 	/// \brief Assignment Constructor
