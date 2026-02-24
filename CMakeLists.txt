@@ -1,16 +1,32 @@
 cmake_minimum_required(VERSION 3.15)
-project(libims VERSION 2.0.7 DESCRIPTION "Isomet iMS Synthesiser Library" LANGUAGES C CXX)
+
+if(MSVC)
+    set(IMS_TARGET_NAME "imsLibrary")
+else()
+    set(IMS_TARGET_NAME "ims")
+endif()
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(${IMS_TARGET_NAME} VERSION 2.0.7 DESCRIPTION "Isomet iMS Synthesiser Library" LANGUAGES C CXX)
+    set_target_properties(${IMS_TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
+    set_target_properties(${IMS_TARGET_NAME} PROPERTIES PUBLIC_HEADER "${ims_public_api_header_files}")
+    set_target_properties(${IMS_TARGET_NAME} PROPERTIES DEBUG_POSTFIX "d")
+    message(STATUS "Building Standalone iMS Library ${IMS_TARGET_NAME$} v${PROJECT_VERSION}")
+endif()
 
 message(STATUS "Building for Platform: '${CMAKE_GENERATOR_PLATFORM}'")
 
+option(IMSLIB_BUILD_SHARED "Build imslib as a shared library" ON)
+if(IMSLIB_BUILD_SHARED)
+    message(STATUS "Building ims-lib as shared library")
+    set(IMSLIB_LIB_TYPE SHARED)
+else()
+    message(STATUS "Building ims-lib as static library")
+    set(IMSLIB_LIB_TYPE STATIC)
+endif()
+
 # Min C++17
 set(CMAKE_CXX_STANDARD 17)
-
-if(MSVC)
-    set(IMS_LIBRARY_NAME "imsLibrary")
-else()
-    set(IMS_LIBRARY_NAME "ims")
-endif()
 
 include(GNUInstallDirs)
 
@@ -79,13 +95,7 @@ else()
     set (api_db_resource ${api_resource_dir}/imshw.rc)
 endif()
 
-if(NOT DEFINED IMS_TARGET_NAME)
-    set(IMS_TARGET_NAME ${IMS_LIBRARY_NAME})
-endif()
-
-if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    add_library(${IMS_LIBRARY_NAME} "")
-endif()
+add_library(${IMS_TARGET_NAME} ${IMSLIB_LIB_TYPE} "")
 
 target_include_directories(${IMS_TARGET_NAME} AFTER 
     PRIVATE
@@ -110,7 +120,9 @@ endif()
 #
 if(MSVC)
     target_compile_definitions(${IMS_TARGET_NAME} PRIVATE FTD2XX_STATIC)
-    target_compile_definitions(${IMS_TARGET_NAME} PRIVATE _EXPORTING_IMS)
+    if (${IMSLIB_BUILD_SHARED})
+        target_compile_definitions(${IMS_TARGET_NAME} PRIVATE _EXPORTING_IMS)
+    endif()
     target_compile_definitions(${IMS_TARGET_NAME} PRIVATE _WIN32_WINNT=0x0A00)
     target_compile_definitions(${IMS_TARGET_NAME} PRIVATE UNICODE)
 
@@ -126,6 +138,9 @@ if(MSVC)
    #endif ()    
 endif()
 
+if (NOT ${IMSLIB_BUILD_SHARED})
+    target_compile_definitions(${IMS_TARGET_NAME} PRIVATE _STATIC_IMS)
+endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX)
 endif()
@@ -175,16 +190,15 @@ target_link_libraries(${IMS_TARGET_NAME}
 )
 
 if(MSVC)
-target_link_directories(${IMS_TARGET_NAME} PRIVATE ${api_lib_dir}/FTDI/Static/${CMAKE_GENERATOR_PLATFORM})
-target_link_libraries(${IMS_TARGET_NAME} 
-    PRIVATE 
-    ftd2xx.lib
-)
-endif()
+add_library(ftd2xx STATIC IMPORTED)
 
-set_target_properties(${IMS_TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
-set_target_properties(${IMS_TARGET_NAME} PROPERTIES PUBLIC_HEADER "${ims_public_api_header_files}")
-set_target_properties(${IMS_TARGET_NAME} PROPERTIES DEBUG_POSTFIX "d")
+set_target_properties(ftd2xx PROPERTIES
+    IMPORTED_LOCATION
+    ${api_lib_dir}/FTDI/Static/${CMAKE_GENERATOR_PLATFORM}/ftd2xx.lib
+)
+
+target_link_libraries(${IMS_TARGET_NAME} PRIVATE ftd2xx)
+endif()
 
 ## Documentation
 option(BUILD_DOCS "Build SDK documentation" OFF)
@@ -246,12 +260,12 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     install(
         TARGETS ${IMS_TARGET_NAME}
         EXPORT "${IMS_TARGET_NAME}Targets"
-    #    COMPONENT ${IMS_LIBRARY_NAME} # must be here, not any line lower
+    #    COMPONENT ${IMS_TARGET_NAME} # must be here, not any line lower
         # these get default values from GNUInstallDirs, no need to set them
         #RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # bin
         #LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # lib
         #ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} # lib
-        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${IMS_LIBRARY_NAME} # include
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${IMS_TARGET_NAME} # include
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} # include
     )
 

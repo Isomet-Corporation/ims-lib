@@ -369,6 +369,6 @@ namespace iMS {
 
   //	const int RFChannel::min = 1;
   //	const int RFChannel::max = 4;
-	const int RFChannel::all = 0x246A;  // 'magic' value to indicate all channels
+  //	const int RFChannel::all = 0x246A;  // 'magic' value to indicate all channels
 
 }

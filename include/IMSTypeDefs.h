@@ -522,9 +522,9 @@ namespace iMS
 
 	//@{
 	/// \brief Returns minimum and maximum allowed values
-		static const int min = 1;
-		static const int max = 4;
-		static const int all;
+		static constexpr int min = 1;
+		static constexpr int max = 4;
+		static constexpr int all = 0x246A;  // 'magic' value to indicate all channels
 		//@}
 
 	/// \brief Return an integer representing the RF Channel that the object references
