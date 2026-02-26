@@ -421,6 +421,8 @@ namespace iMS
 	{
 		HostReport *iorpt;
 
+        if (p_Impl->m_conn.get() == nullptr) return false;
+
 		std::uint16_t ctrlr_magic=0xFFFF, synth_magic=0xFFFF;
 		{
 			// Read Controller Magic Number
@@ -551,21 +553,25 @@ namespace iMS
 
 	void IMSSystem::Connect()
 	{
+        if (p_Impl->m_conn.get() == nullptr) return;
 		p_Impl->m_conn->Connect(p_Impl->m_connString);
 	}
 
 	void IMSSystem::Disconnect() 
 	{
+        if (p_Impl->m_conn.get() == nullptr) return;
 		p_Impl->m_conn->Disconnect();
 	}
 	
 	void IMSSystem::SetTimeouts(int send_timeout_ms, int rx_timeout_ms, int free_timeout_ms, int discover_timeout_ms)
 	{
+        if (p_Impl->m_conn.get() == nullptr) return;
 		p_Impl->m_conn->SetTimeouts(send_timeout_ms, rx_timeout_ms, free_timeout_ms, discover_timeout_ms);
 	}
 
 	bool IMSSystem::Open() const
 	{
+        if (p_Impl->m_conn.get() == nullptr) return false;
 		return p_Impl->m_conn->Open();
 	}
 	void IMSSystem::Ctlr(const IMSController& c)
