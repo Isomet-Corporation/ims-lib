@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-if(MSVC)
+if(WIN32)
     set(IMS_TARGET_NAME "imsLibrary")
 else()
     set(IMS_TARGET_NAME "ims")
@@ -8,9 +8,6 @@ endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(${IMS_TARGET_NAME} VERSION 2.0.7 DESCRIPTION "Isomet iMS Synthesiser Library" LANGUAGES C CXX)
-    set_target_properties(${IMS_TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
-    set_target_properties(${IMS_TARGET_NAME} PROPERTIES PUBLIC_HEADER "${ims_public_api_header_files}")
-    set_target_properties(${IMS_TARGET_NAME} PROPERTIES DEBUG_POSTFIX "d")
     message(STATUS "Building Standalone iMS Library ${IMS_TARGET_NAME$} v${PROJECT_VERSION}")
 endif()
 
@@ -97,6 +94,10 @@ endif()
 
 add_library(${IMS_TARGET_NAME} ${IMSLIB_LIB_TYPE} "")
 
+set_target_properties(${IMS_TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
+set_target_properties(${IMS_TARGET_NAME} PROPERTIES PUBLIC_HEADER "${ims_public_api_header_files}")
+set_target_properties(${IMS_TARGET_NAME} PROPERTIES DEBUG_POSTFIX "d")
+
 target_include_directories(${IMS_TARGET_NAME} AFTER 
     PRIVATE
     ${api_include_dir}
@@ -118,7 +119,7 @@ endif()
 #
 # Compiler specific Definitions
 #
-if(MSVC)
+if(WIN32)
     target_compile_definitions(${IMS_TARGET_NAME} PRIVATE FTD2XX_STATIC)
     if (${IMSLIB_BUILD_SHARED})
         target_compile_definitions(${IMS_TARGET_NAME} PRIVATE _EXPORTING_IMS)
@@ -189,7 +190,7 @@ target_link_libraries(${IMS_TARGET_NAME}
         ${libxml2_LIBRARIES}
 )
 
-if(MSVC)
+if(WIN32)
 add_library(ftd2xx STATIC IMPORTED)
 
 set_target_properties(ftd2xx PROPERTIES

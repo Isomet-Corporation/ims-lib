@@ -1,0 +1,55 @@
+{
+  "Name": "ims-lib",
+  "DependsOn": [],
+  "OutputDir": "dist",
+  "Tasks": [
+    {
+      "Name": "Releasex86",
+      "Script": "build.ps1",
+      "Args": {
+        "-StageDir": "stage",
+        "-BuildType": "Release",
+        "-Arch": "x86",
+        "-Clean": true
+      }
+    },
+    {
+      "Name": "Releasex64",
+      "Script": "build.ps1",
+      "Args": {
+        "-StageDir": "stage",
+        "-BuildType": "Release",
+        "-Arch": "x86_64",
+        "-Clean": true
+      }
+    },
+    {
+      "Name": "Debugx86",
+      "Script": "build.ps1",
+      "Args": {
+        "-StageDir": "stage",
+        "-BuildType": "Debug",
+        "-Arch": "x86",
+        "-Clean": true
+      }
+    },
+    {
+      "Name": "Debugx64",
+      "Script": "build.ps1",
+      "Args": {
+        "-StageDir": "stage",
+        "-BuildType": "Debug",
+        "-Arch": "x86_64",
+        "-Clean": true
+      }
+    },
+    {
+      "Name": "Docs",
+      "Script": "build.ps1",
+      "Args": {
+        "-StageDir": "stage",
+        "-BuildDocs": true
+      }
+    }
+  ]
+}

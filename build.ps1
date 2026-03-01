@@ -56,9 +56,12 @@ $LibDir     = Join-Path (Join-Path $StageDir $OSArch) "lib"
 $DocsDir    = Join-Path $StageDir "docs"
 
 Write-Host "========================================"
-Write-Host "Build Type : $BuildType"
-Write-Host "Stage Dir  : $StageDir"
-Write-Host "Profile    : $Profile"
+Write-Host "Build Type    : $BuildType"
+Write-Host "Stage Dir     : $StageDir"
+Write-Host "Architecture  : $Arch"
+Write-Host "Profile       : $Profile"
+Write-Host "Build Docs    : $BuildDocs"
+Write-Host "Clean         : $Clean"
 Write-Host "========================================"
 
 # ----------------------------
