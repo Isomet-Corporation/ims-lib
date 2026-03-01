@@ -94,7 +94,9 @@ endif()
 
 add_library(${IMS_TARGET_NAME} ${IMSLIB_LIB_TYPE} "")
 
-set_target_properties(${IMS_TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set_target_properties(${IMS_TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
+endif()
 set_target_properties(${IMS_TARGET_NAME} PROPERTIES PUBLIC_HEADER "${ims_public_api_header_files}")
 set_target_properties(${IMS_TARGET_NAME} PROPERTIES DEBUG_POSTFIX "d")
 
