@@ -31,6 +31,7 @@
 #include <queue>
 #include <condition_variable>
 #include <shared_mutex>
+#include <atomic>
 
 namespace iMS
 {
@@ -70,8 +71,8 @@ namespace iMS
 		void AddBuffer(const std::vector<std::uint8_t>& buf);
 		bool HasData() const;
 
-		// Return a pointer to the Received Report to allow user to access data
-		const DeviceReport* Response() const;
+		// Return the Received Report to allow user to access data
+		DeviceReport Response() const;
 
 	private:
 		static const char * StatusEnumStrings[] ;
@@ -84,14 +85,15 @@ namespace iMS
 		DeviceReport m_resp;
 		MessageHandle m_id;
 		static MessageHandle mIDCount;
-		Status m_status{Status::UNSENT};
+		std::atomic<Status> m_status{Status::UNSENT};
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_sent;
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_recd;
 		std::deque<std::uint8_t> unparsed_buf;
 
         // Synchronisation
-        mutable std::shared_mutex m_mutex;
-        std::condition_variable_any m_cv;
+        mutable std::shared_mutex m_waitMutex;
+		mutable std::mutex m_parseMutex;
+		std::condition_variable_any m_cv;
 	};
 
 }

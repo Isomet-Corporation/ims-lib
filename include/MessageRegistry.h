@@ -92,16 +92,34 @@ namespace iMS {
         // Safe iteration (read-only)
         void forEachMessage(const std::function<void(const MessagePtr&)>& fn) const
         {
-            std::shared_lock lock(m_mutex);
-            for (const auto& [handle, msg] : m_messages)
+            std::vector<MessagePtr> snapshot;
+
+            {
+                std::shared_lock lock(m_mutex);
+
+                snapshot.reserve(m_messages.size());
+                for (const auto& [handle, msg] : m_messages)
+                    snapshot.push_back(msg);
+            } // lock released here
+
+            for (const auto& msg : snapshot)
                 fn(msg);
         }
 
-        // Optional: safe modification iteration
+        // Optional: safe modification iteration.
         void forEachMessageMutable(const std::function<void(MessagePtr&)>& fn)
         {
-            std::unique_lock lock(m_mutex);
-            for (auto& [handle, msg] : m_messages)
+            std::vector<MessagePtr> snapshot;
+
+            {
+                std::shared_lock lock(m_mutex);
+
+                snapshot.reserve(m_messages.size());
+                for (auto& [handle, msg] : m_messages)
+                    snapshot.push_back(msg);
+            } // lock released
+
+            for (auto& msg : snapshot)
                 fn(msg);
         }
 

@@ -40,7 +40,7 @@ namespace iMS
 		// Unique ID integer for each new instance
 		m_id = mIDCount++;
 
-		m_status = Status::UNSENT;
+		m_status.store(Status::UNSENT, std::memory_order_release);
 	}
 
 	Message::~Message()
@@ -75,52 +75,55 @@ namespace iMS
 		m_tm_recd = std::chrono::high_resolution_clock::now();
 	}
 
+	static bool isTerminal(Message::Status s)
+	{
+		return s != Message::Status::UNSENT &&
+			s != Message::Status::SENT &&
+			s != Message::Status::RX_PARTIAL &&
+			s != Message::Status::INTERRUPT;
+	}
+
 	void Message::setStatus(const Message::Status s)
 	{
-        if ((m_status == Status::UNSENT) && (s > Status::UNSENT)) {
-            this->markSendTime();
+        if ((m_status.load(std::memory_order_acquire) == Status::UNSENT) && (s > Status::UNSENT)) {
+            markSendTime();
         }
-        bool c = this->isComplete();
-        {
-            std::unique_lock lock(m_mutex);
-            m_status = s;
-        }
-        if (!c && this->isComplete()) {
-            this->markRecdTime();
+        bool c = isComplete();
+		m_status.store(s, std::memory_order_release);
+        if (!c && isComplete()) {
+            markRecdTime();
             m_cv.notify_all();
         }
 	}
 
 	Message::Status Message::getStatus() const
 	{
-        std::shared_lock lock(m_mutex);
-        return m_status;
+        return m_status.load(std::memory_order_acquire);
 	}
 
     bool Message::isComplete() const {
         auto s = this->getStatus();
-        return (s != Status::UNSENT && s != Status::SENT && s != Status::RX_PARTIAL && s != Status::INTERRUPT);
+        return isTerminal(s);
     }
 
     // Wait until status changes to RX_OK or timeout
     bool Message::waitForCompletion(std::chrono::milliseconds timeout) {
-        std::shared_lock lock(m_mutex);
+        std::shared_lock lock(m_waitMutex);
         return m_cv.wait_for(lock, timeout, [&]{ 
-            return isComplete();
+			return isTerminal(m_status.load(std::memory_order_acquire));
         });
     }
 
     void Message::waitForCompletion() {
-        std::shared_lock lock(m_mutex);
+        std::shared_lock lock(m_waitMutex);
         m_cv.wait(lock, [&]{ 
-            return isComplete();
+			return isTerminal(m_status.load(std::memory_order_acquire));
         });
     }
 
 	std::string Message::getStatusText() const
 	{
-        std::shared_lock lock(m_mutex);        
-		return std::string(Message::StatusEnumStrings[(int)m_status]);
+		return std::string(Message::StatusEnumStrings[(int)getStatus()]);
 	}
 
 	MessageHandle Message::getMessageHandle() const
@@ -152,7 +155,7 @@ namespace iMS
 	void Message::Parse(const std::uint8_t rxchar)
 	{
         {
-            std::unique_lock lock(m_mutex);
+            std::unique_lock<std::mutex> lock(m_parseMutex);
             m_resp.Parse(rxchar);
         }
 	}
@@ -174,10 +177,10 @@ namespace iMS
 		m_resp.ResetParser();
 	}
 
-	const DeviceReport* Message::Response() const
+	DeviceReport Message::Response() const
 	{
-        std::shared_lock lock(m_mutex);           
-		return &m_resp;
+        std::unique_lock<std::mutex> lock(m_parseMutex);
+		return m_resp;
 	}
 
     // AddBuffer is not synchronised so it must be called from the same thread that does the parsing

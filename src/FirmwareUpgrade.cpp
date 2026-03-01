@@ -31,6 +31,7 @@
 #include <condition_variable>
 #include <thread>
 #include <atomic>
+#include <future>
 
 namespace iMS
 {
@@ -77,6 +78,8 @@ namespace iMS
 		std::thread downloadThread;
 		mutable std::mutex m_dlmutex;
 		std::condition_variable m_dlcond;
+		std::promise<void> startupPromise;
+		std::future<void> startupFuture;
 		void DownloadWorker();
 
 		void UpdateStatus();
@@ -103,7 +106,8 @@ namespace iMS
 	};
 
 	FirmwareUpgrade::Impl::Impl(std::shared_ptr<IMSSystem> ims, const FirmwareUpgrade* fw, std::istream& strm) :
-		m_ims(ims), m_parent(fw), m_strm(strm), m_Event(new FirmwareUpgradeEventTrigger())
+		m_ims(ims), m_parent(fw), m_strm(strm), m_Event(new FirmwareUpgradeEventTrigger()),
+		startupFuture(startupPromise.get_future())
 	{
 		IsDone.store(false);
 		IsError.store(false);
@@ -135,6 +139,9 @@ namespace iMS
 
     bool FirmwareUpgrade::StartUpgrade(const UpgradeTarget target)
     {
+		// Wait for worker to be ready
+		p_Impl->startupFuture.wait();
+
         return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
         {         
             // Make sure Controller and Synthesiser are present
@@ -197,7 +204,10 @@ namespace iMS
      
     bool FirmwareUpgrade::VerifyIntegrity(const UpgradeTarget target)
     {
-        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+		// Wait for worker to be ready
+		p_Impl->startupFuture.wait();
+		
+		return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
         {          
             // Make sure Controller and Synthesiser are present
             if (!ims->Ctlr().IsValid()) return false;
@@ -424,6 +434,10 @@ namespace iMS
 
 	void FirmwareUpgrade::Impl::DownloadWorker()
 	{
+		{
+			// Notify main thread that worker has started
+			startupPromise.set_value();
+		}
 		std::vector<uint8_t> buffer(IOReport::PAYLOAD_MAX_LENGTH);
 		
 		while (downloaderRunning) {

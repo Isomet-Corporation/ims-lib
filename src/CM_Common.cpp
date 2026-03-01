@@ -52,7 +52,7 @@ namespace iMS {
 			ss.clear(); ss.str("");
 		}
 
-		ss << "D->H: " << *msg->Response();
+		ss << "D->H: " << msg->Response();
 		BOOST_LOG_SEV(lg::get(), sev::trace) << ss.str();
 	}
 
@@ -157,7 +157,7 @@ namespace iMS {
         std::shared_ptr<Message> interruptMsg;
 
         m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
-            if (!m->Response()->Done() && !m->Response()->Idle())
+            if (!m->Response().Done() && !m->Response().Idle())
                 activeMsgFound = true;
             if (m->getStatus() == Message::Status::INTERRUPT) {
                 interruptInProgress = true;
@@ -186,7 +186,7 @@ namespace iMS {
             return c;
         }
 
-        while (!m_glblRx.empty() && !m->Response()->UnexpectedChar() && !m->Response()->Done()) {
+        while (!m_glblRx.empty() && !m->Response().UnexpectedChar() && !m->Response().Done()) {
             c = m_glblRx.front();
             m_glblRx.pop_front();
             m->Parse(c);
@@ -202,18 +202,18 @@ namespace iMS {
 
     void CM_Common::HandleResponseDone(std::shared_ptr<Message> m)
     {
-        if (m->Response()->HardwareAlarm())
+        if (m->Response().HardwareAlarm())
         {
             PushEvent<int>(MessageEvents::INTERLOCK_ALARM_SET, m->getMessageHandle());
             LogAndNotify(sev::warning, m, ">>> INTERLOCK ALARM <<<", false, false);
         }
 
-        if (m->Response()->GeneralError() || m->Response()->TxTimeout() || m->Response()->TxCRC())
+        if (m->Response().GeneralError() || m->Response().TxTimeout() || m->Response().TxCRC())
         {
             m->setStatus(Message::Status::RX_ERROR_VALID);
             LogNotifyEvent(sev::warning, m, "Msg", MessageEvents::RESPONSE_ERROR_VALID, m->getMessageHandle());
         }
-        else if (m->Response()->RxCRC())
+        else if (m->Response().RxCRC())
         {
             m->setStatus(Message::Status::RX_ERROR_INVALID);
             LogNotifyEvent(sev::error, m, "Msg", MessageEvents::RESPONSE_ERROR_CRC, m->getMessageHandle());
@@ -221,16 +221,16 @@ namespace iMS {
         else if (m->getStatus() == Message::Status::INTERRUPT)
         {
             m->setStatus(Message::Status::PROCESSED_INTERRUPT);
-            unsigned int param = (static_cast<unsigned int>(m->Response()->Fields().addr) << 16);
+            unsigned int param = (static_cast<unsigned int>(m->Response().Fields().addr) << 16);
             unsigned int param2 = 0;
 
-            if (m->Response()->Fields().len > 4) {
-                PushInterruptEvent(param, m->Response()->Payload<std::vector<std::uint8_t>>());
+            if (m->Response().Fields().len > 4) {
+                PushInterruptEvent(param, m->Response().Payload<std::vector<std::uint8_t>>());
             } else {
-                if (m->Response()->Fields().len >= 2)
-                    param |= (m->Response()->Payload<std::vector<std::uint16_t>>().at(0));
-                if (m->Response()->Fields().len >= 4) {
-                    param2 = (m->Response()->Payload<std::vector<std::uint16_t>>().at(1));
+                if (m->Response().Fields().len >= 2)
+                    param |= (m->Response().Payload<std::vector<std::uint16_t>>().at(0));
+                if (m->Response().Fields().len >= 4) {
+                    param2 = (m->Response().Payload<std::vector<std::uint16_t>>().at(1));
                     PushEvent<std::pair<int, int>>(MessageEvents::INTERRUPT_RECEIVED, std::make_pair<int, int>(param, param2));
                 } else {
                     PushEvent<int>(MessageEvents::INTERRUPT_RECEIVED, param);
@@ -296,19 +296,19 @@ namespace iMS {
         if (m->isComplete()) return;
 
         while (!m_glblRx.empty() || m->HasData()) {
-            if (m->Response()->Done()) {
+            if (m->Response().Done()) {
                 m->setStatus(Message::Status::RX_ERROR_INVALID);
                 LogAndNotify(sev::error, m, "Msg Invalid");
                 break;
             }
 
             char c = HandleMessageParse(m);
-            if (m->Response()->UnexpectedChar()) {
+            if (m->Response().UnexpectedChar()) {
                 HandleUnexpectedChar(m, c);
                 break;
             }
 
-            if (m->Response()->Done()) {
+            if (m->Response().Done()) {
                 HandleResponseDone(m);
                 break;
             }
@@ -388,7 +388,7 @@ namespace iMS {
 	{
         auto&& msg = m_msgRegistry.findMessage(h);
         if (nullptr != msg) {
-            return *msg->Response();
+            return msg->Response();
         }
         return DeviceReport();
 	}
@@ -487,7 +487,7 @@ namespace iMS {
                     
                     if (msg->isComplete() || msg == nullptr) {
                         if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING && msg != nullptr) {
-                            payload = msg->Response()->Payload<std::vector<uint8_t>>(); // collect locally
+                            payload = msg->Response().Payload<std::vector<uint8_t>>(); // collect locally
                         }
                         if (!payload.empty()) completedPayloads.push_back(std::move(payload));
                         it = inflight.erase(it);
