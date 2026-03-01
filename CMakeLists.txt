@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.15)
 
-if(WIN32)
-    set(IMS_TARGET_NAME "imsLibrary")
-else()
-    set(IMS_TARGET_NAME "ims")
+option(IMSLIB_SUPPRESS_LIBRARY_BUILD "Do not create library" OFF)
+
+if (NOT IMSLIB_SUPPRESS_LIBRARY_BUILD)
+    if(WIN32)
+        set(IMS_TARGET_NAME "imsLibrary")
+    else()
+        set(IMS_TARGET_NAME "ims")
+    endif()
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -92,13 +96,16 @@ else()
     set (api_db_resource ${api_resource_dir}/imshw.rc)
 endif()
 
-add_library(${IMS_TARGET_NAME} ${IMSLIB_LIB_TYPE} "")
+if (NOT IMSLIB_SUPPRESS_LIBRARY_BUILD)
+    add_library(${IMS_TARGET_NAME} ${IMSLIB_LIB_TYPE} "")
+endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set_target_properties(${IMS_TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
 endif()
 set_target_properties(${IMS_TARGET_NAME} PROPERTIES PUBLIC_HEADER "${ims_public_api_header_files}")
 set_target_properties(${IMS_TARGET_NAME} PROPERTIES DEBUG_POSTFIX "d")
+
 
 target_include_directories(${IMS_TARGET_NAME} AFTER 
     PRIVATE
