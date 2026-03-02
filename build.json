@@ -1,7 +1,9 @@
 {
   "Name": "ims-lib",
   "DependsOn": [],
-  "OutputDir": "dist",
+  "OutputDir": "stage",
+  "ExportDir": "lib/cpp",
+  "SignFiles": ["*.dll"],
   "Tasks": [
     {
       "Name": "Releasex86",
