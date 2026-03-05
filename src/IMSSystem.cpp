@@ -97,11 +97,11 @@ namespace iMS
 			CS_ETH cs_eth;
 			m_settings.emplace(cs_eth.Ident(), DeviceInterfaceSettings(true, 32, 13));
 #endif
-			BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("IMSSystem Constructor");
+//			BOOST_LOG_SEV(lg::get(), sev::trace) << "IMSSystem Constructor" << std::endl;;
 
 		}
 		~Impl() {
-			BOOST_LOG_SEV(lg::get(), sev::trace) << std::string("IMSSystem Destructor");
+//			BOOST_LOG_SEV(lg::get(), sev::trace) << "IMSSystem Destructor" << std::endl;
 		};
 
 		IMSSystem * m_parent;
@@ -110,7 +110,7 @@ namespace iMS
 		std::string m_connString;
 		std::shared_ptr<IConnectionManager> m_conn;
 
-		bool AddDevice(std::uint16_t magicID);
+		bool AddDevice(std::uint16_t magicID, std::string type = "");
 
 		class DeviceInterfaceSettings
 		{
@@ -393,7 +393,7 @@ namespace iMS
 		return 0;
  	}
 
-	bool IMSSystem::Impl::AddDevice(std::uint16_t magicID)
+	bool IMSSystem::Impl::AddDevice(std::uint16_t magicID, std::string type)
 	{
 		sqlite3 *imshw = nullptr;
 		int rc;
@@ -406,6 +406,12 @@ namespace iMS
 
 		std::string getType("SELECT Type, * FROM hwlist WHERE Magic = ");
 		getType += std::to_string(magicID);
+        if (type != "") {
+            getType += " AND Type = \"";
+            getType += type;
+            getType += "\"";
+        }
+
 		rc = sqlite3_exec(imshw, getType.c_str(), hwlist_callback, (void *)m_parent, nullptr);
 		if (rc != SQLITE_OK) {
 			sqlite3_close(imshw);
@@ -447,7 +453,7 @@ namespace iMS
 						FWVersion(fpga_build),
 						ImageTable()));
 
-					if (!p_Impl->AddDevice(ctrlr_magic)) {
+					if (!p_Impl->AddDevice(ctrlr_magic, "Controller")) {
 						BOOST_LOG_SEV(lg::get(), sev::error) << "Unable to access database" << std::endl;
 						delete iorpt;
 						return false;
@@ -484,16 +490,16 @@ namespace iMS
 					std::vector<std::uint16_t> fpga_build = Resp.Payload<std::vector<std::uint16_t>>();
 					fpga_build.resize(4);
 
-					// If magics are the same, we have a single device with integrated synth/controller. Details already populated above.
-					if (synth_magic != ctrlr_magic) {
-						this->Synth(IMSSynthesiser(std::string(""),
-							std::string(""),
-							IMSSynthesiser::Capabilities(),
-							FWVersion(fpga_build),
-							FileSystemTable(),
-							nullptr));
-						ret = p_Impl->AddDevice(synth_magic);
-					}
+                    // Add version number
+                    this->Synth(IMSSynthesiser(std::string(""),
+                        std::string(""),
+                        IMSSynthesiser::Capabilities(),
+                        FWVersion(fpga_build),
+                        FileSystemTable(),
+                        nullptr));
+
+                    // Populate capabilities and other fields
+                    ret = p_Impl->AddDevice(synth_magic, "Synthesiser");
 					if (!ret)
 					{
 						BOOST_LOG_SEV(lg::get(), sev::error) << "Unable to access database" << std::endl;
