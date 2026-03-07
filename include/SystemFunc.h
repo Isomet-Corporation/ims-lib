@@ -504,19 +504,23 @@ namespace iMS
 	/// \since 1.1
 	struct LIBSPEC StartupConfiguration
 	{
-		/// Setting for RF Amplitude Control Wiper 1
-		Percent RFAmplitudeWiper1{ 0.0 };
-		/// Setting for RF Amplitude Control Wiper 2
-		Percent RFAmplitudeWiper2{ 0.0 };
+		/// Setting for RF Amplitude Control Channel 1
+		Percent RFAmplitudeCh1{ 0.0 };
+		/// Setting for RF Amplitude Control Channel 2
+		Percent RFAmplitudeCh2{ 0.0 };
+		/// Setting for RF Amplitude Control Channel 1
+		Percent RFAmplitudeCh3{ 0.0 };
+		/// Setting for RF Amplitude Control Channel 2
+		Percent RFAmplitudeCh4{ 0.0 };
 		/// Setting for DDS Powere Level
 		Percent DDSPower{ 0.0 };
 		/// Select which of the four control sources should be applied to the RF signal amplitude modulation
-		SignalPath::AmplitudeControl AmplitudeControlSource{ SignalPath::AmplitudeControl::WIPER_1 };
+		SignalPath::AmplitudeControl AmplitudeControlSource{ SignalPath::AmplitudeControl::INDEPENDENT };
 		/// Switch the RF power amplifier gate signal on/off at startup
 		bool RFGate{ false };
-		/// Individually enable the bias power for channels 1 and 2 at startup
+		/// Individually enable the bias power for channels 1 and 2 at startup (only for amplifiers with channel bias control, otherwise just use RF Gate)
 		bool RFBias12{ false };
-		/// Individually enable the bias power for channels 3 and 4 at startup
+		/// Individually enable the bias power for channels 3 and 4 at startup (only for amplifiers with channel bias control, otherwise just use RF Gate)
 		bool RFBias34{ false };
 		/// Select whether to enable the external equipment optoswitch at startup
 		bool ExtEquipmentEnable{ false };

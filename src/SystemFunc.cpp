@@ -688,15 +688,18 @@ namespace iMS
 
 		// Add configuration struct data fields
 		std::uint16_t cfg_word;
+        double pwr_scaled, ampl_scaled;
 
-		double pwr_scaled = 255.0 - (cfg.DDSPower * 255.0) / 100.0;
-		cfg_word = static_cast<std::uint16_t>(std::floor(pwr_scaled)) & 0xFF;
-		double ampl_scaled = (cfg.RFAmplitudeWiper1 * 255.0) / 100.0;
+        ampl_scaled = (cfg.RFAmplitudeCh1 * 255.0) / 100.0;
+		cfg_word = static_cast<std::uint16_t>(std::floor(ampl_scaled)) & 0xFF;
+        ampl_scaled = (cfg.RFAmplitudeCh2 * 255.0) / 100.0;
 		cfg_word |= (static_cast<std::uint16_t>(std::floor(ampl_scaled)) << 8) & 0xFF00 ;
 		cfg_data.push_back(cfg_word);
 
-		ampl_scaled = (cfg.RFAmplitudeWiper2 * 255.0) / 100.0;
+        ampl_scaled = (cfg.RFAmplitudeCh3 * 255.0) / 100.0;
 		cfg_word = static_cast<std::uint16_t>(std::floor(ampl_scaled)) & 0xFF;
+        ampl_scaled = (cfg.RFAmplitudeCh4 * 255.0) / 100.0;
+		cfg_word |= (static_cast<std::uint16_t>(std::floor(ampl_scaled)) << 8) & 0xFF00 ;
 		cfg_data.push_back(cfg_word);
 
 		cfg_word = static_cast<uint16_t>(cfg.ExtClockFrequency.operator double()) / 20;
@@ -704,12 +707,12 @@ namespace iMS
 		cfg_word |= (((uint16_t)cfg.PLLMode & 0x3) << 14);
 		cfg_data.push_back(cfg_word);
 
+		pwr_scaled = 255.0 - (cfg.DDSPower * 255.0) / 100.0;
+		cfg_word = static_cast<std::uint16_t>(std::floor(pwr_scaled)) & 0xFF;
 		if (cfg.PhaseAccClear) {
-			cfg_data.push_back(1);
+			cfg_word |= 0x100;
 		}
-		else {
-			cfg_data.push_back(0);
-		}
+		cfg_data.push_back(cfg_word);
 
 		cfg_word = (cfg.RFGate) ? ACR_RFGate_ON : ACR_RFGate_OFF;
 		cfg_word |= (cfg.ExtEquipmentEnable) ? ACR_EXTEn_ON : ACR_EXTEn_OFF;
@@ -728,6 +731,7 @@ namespace iMS
 
 		cfg_word = static_cast<std::uint16_t>(cfg.LocalToneIndex);
 		cfg_word |= ((cfg.LTBUseAmplitudeCompensation == SignalPath::Compensation::ACTIVE) ? 0x800 : 0);
+		cfg_word |= ((cfg.LTBUsePhaseCompensation == SignalPath::Compensation::ACTIVE) ? 0x1000 : 0);
 		switch (cfg.LTBControlSource) {
 			case SignalPath::ToneBufferControl::HOST: cfg_word |= 0x100; break;
 			case SignalPath::ToneBufferControl::EXTERNAL: cfg_word |= 0x300; break;
