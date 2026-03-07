@@ -74,6 +74,14 @@ if ($Clean) {
     }
 }
 
+# -------------------------------------------------------
+# Sync version
+# -------------------------------------------------------
+$PythonCmd = "python"
+$HEADER_FILE = ".\include\LibVersion.h"
+
+& $PythonCmd sync_version.py $HEADER_FILE
+
 # ----------------------------
 # Conan install
 # ----------------------------
