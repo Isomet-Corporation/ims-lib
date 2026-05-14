@@ -1803,6 +1803,41 @@ namespace iMS
         }).value_or(false); 
 	}
 
+    bool SignalPath::SetRFDutyCycle(bool enable, ::std::chrono::nanoseconds delay, ::std::chrono::nanoseconds width)
+    {
+        return with_locked_value(p_Impl->m_ims, [&](std::shared_ptr<IMSSystem> ims) -> bool
+        { 
+            if (!ims->Synth().IsValid()) return false;
+
+            auto conn = ims->Connection();
+
+            HostReport* iorpt;
+            std::vector<std::uint16_t> data;
+
+            long long del = delay.count() / 10;
+            if ((del > 65535) || (del < 0)) return false;
+
+            long long wid = width.count() / 10;
+            if ((wid > 65535) || (wid < 0)) return false;
+
+            data.push_back(static_cast<std::uint16_t>(enable ? 1 : 0));
+            data.push_back(static_cast<std::uint16_t>(wid));
+            data.push_back(static_cast<std::uint16_t>(del));
+
+            iorpt = new HostReport(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, SYNTH_REG_DutyCycleEn);
+            iorpt->Payload < std::vector < std::uint16_t > >(data);
+
+            if (NullMessage == conn->SendMsg(*iorpt))
+            {
+                delete iorpt;
+                return false;
+            }
+            delete iorpt;
+
+            return true;
+        }).value_or(false);         
+    }
+
 	bool SignalPath::UpdateLocalToneBuffer(const SignalPath::ToneBufferControl& tbc, const unsigned int index, 
 		const SignalPath::Compensation AmplitudeComp, const SignalPath::Compensation PhaseComp)
 	{

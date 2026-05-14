@@ -158,6 +158,9 @@ namespace iMS {
 	const std::uint16_t SYNTH_REG_VCOMonCh1Ampl = 127;
 	const std::uint16_t SYNTH_REG_VCOMonCh2Ampl = 128;
     const std::uint16_t SYNTH_REG_VCOSaveStartup = 129;
+    const std::uint16_t SYNTH_REG_DutyCycleEn = 130;
+    const std::uint16_t SYNTH_REG_DutyCycleWidth = 131;
+    const std::uint16_t SYNTH_REG_DutyCycleDelay = 132;
 
 	const std::uint16_t ACR_RFGate_bitmask = 0x0001;
 	const std::uint16_t ACR_EXTEn_bitmask = 0x0002;

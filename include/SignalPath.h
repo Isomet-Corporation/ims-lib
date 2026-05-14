@@ -466,7 +466,17 @@ namespace iMS
 	/// \since 1.8.8
 		bool SetChannelDelay(::std::chrono::nanoseconds first  = ::std::chrono::nanoseconds::zero(),
 					 	     ::std::chrono::nanoseconds second = ::std::chrono::nanoseconds::zero());
-		//@}
+
+    /// \brief Enable Duty Cycled RF Output
+    /// \param enable true to turn on duty cycling, false for continuous RF
+    /// \param delay Programmable delay between issuing the RF Update and the RF modulation source turn-on time, in 10's of nanoseconds
+    /// \param width Programmable width of the RF modulation window, in 10's of nanoseconds
+    /// \return true if the command was issued successfully
+    /// \since 2.0.9
+        bool SetRFDutyCycle(bool enable, 
+            ::std::chrono::nanoseconds delay = ::std::chrono::nanoseconds::zero(), 
+            ::std::chrono::nanoseconds width = ::std::chrono::nanoseconds::zero());
+    //@}
 
 	/// \name Calibration Functions
     //@{
