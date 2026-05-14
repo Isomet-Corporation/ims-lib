@@ -92,7 +92,7 @@ $ConanCmd = @(
     "-s arch=$Arch",
     "-s compiler.cppstd=17",
     "--build=missing",
-    "-of $BuildDir"
+    "-of ."
 )
 
 if ($CompilerVersion) { $ConanCmd += "-s compiler.version=$CompilerVersion" }
