@@ -1814,11 +1814,13 @@ namespace iMS
             HostReport* iorpt;
             std::vector<std::uint16_t> data;
 
-            long long del = delay.count() / 10;
+            long long del = delay.count() / 8;  // Sync clock frequency is 125MHz
             if ((del > 65535) || (del < 0)) return false;
 
-            long long wid = width.count() / 10;
+            long long wid = width.count() / 8;
             if ((wid > 65535) || (wid < 0)) return false;
+
+            if (del > 2) del -= 2;  // Compensate for latency in FPGA
 
             data.push_back(static_cast<std::uint16_t>(enable ? 1 : 0));
             data.push_back(static_cast<std::uint16_t>(wid));
