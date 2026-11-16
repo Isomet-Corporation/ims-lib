@@ -76,12 +76,35 @@ namespace iMS {
 		return DeviceIsOpen;
 	}
 
+	void CM_Common::SignalClosed()
+	{
+		{
+			std::lock_guard<std::mutex> lck{ m_txmutex };
+			DeviceIsOpen = false;
+		}
+		m_txcond.notify_all();
+
+		// Passing through each mutex orders the store above before the waiter's next predicate check.
+		// The memory transfer thread holds its mutex for a whole transfer, which ends once it sees
+		// the connection closed.
+		{ std::lock_guard<std::mutex> lck{ m_rxmutex }; }
+		m_rxcond.notify_all();
+		{ std::lock_guard<std::mutex> lck{ m_tfrmutex }; }
+		m_tfrcond.notify_all();
+	}
+
 	MessageHandle CM_Common::SendMsg(HostReport const& Rpt)
 	{
 		if (DeviceIsOpen)
 		{
 			// Create a message, add report, assign it an ID, and place in queue.
 			std::shared_ptr<Message> m = std::make_shared<Message>(Rpt);
+
+            // Register it before queueing: on a fast link the response can arrive before this
+            // thread gets past the push, and a response must find the message it answers
+            auto hnd = m->getMessageHandle();
+            m_msgRegistry.addMessage(hnd, m);
+
             {
                 std::unique_lock <std::mutex> txlck{ m_txmutex };
 				m_queue.push(m);
@@ -90,9 +113,6 @@ namespace iMS {
 				// Notify Worker
 				m_txcond.notify_one();
 			}
-
-            auto hnd = m->getMessageHandle();
-            m_msgRegistry.addMessage(hnd, m);
 
 			return hnd;
 		}
@@ -109,6 +129,9 @@ namespace iMS {
             auto&& m = m_msgRegistry.findMessage(hnd);
 
             m->waitForCompletion();
+            // DeviceReport::Done() is also true for a response that failed its CRC, and most
+            // callers only test Done(), so don't hand them data that may be corrupt
+            if (m->getStatus() == Message::Status::RX_ERROR_INVALID) return DeviceReport();
             DeviceReport Resp = this->Response(hnd);
 
             return Resp;
@@ -148,60 +171,204 @@ namespace iMS {
         PushEvent(evType, param);
     }
 
-    void CM_Common::HandleInterrupts()
-    {
-        if (m_glblRx.empty()) return;
+    namespace {
+        constexpr std::size_t kReportHeaderLen = 7;
+        constexpr std::size_t kReportCrcLen = 2;
+        // An incomplete report at the front of the stream with nothing more arriving is a fragment
+        // (its other bytes were lost); give up on it after this long so the stream can resynchronise
+        constexpr std::chrono::milliseconds kRxFragmentTimeout{ 50 };
 
-        bool activeMsgFound = false;
-        bool interruptInProgress = false;
-        std::shared_ptr<Message> interruptMsg;
-
-        m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
-            if (!m->Response().Done() && !m->Response().Idle())
-                activeMsgFound = true;
-            if (m->getStatus() == Message::Status::INTERRUPT) {
-                interruptInProgress = true;
-                interruptMsg = m;
-            }
-        });
-
-        if (!activeMsgFound && m_glblRx.front() == (uint8_t)ReportTypes::INTERRUPT_REPORT_ID_CTRLR && !interruptInProgress) {
-            interruptMsg = std::make_shared<Message>(HostReport());
-            interruptMsg->setStatus(Message::Status::INTERRUPT);
-            m_msgRegistry.addMessage(interruptMsg->getMessageHandle(), interruptMsg);
-            interruptInProgress = true;
+        bool IsDeviceReportId(std::uint8_t b)
+        {
+            return b == static_cast<std::uint8_t>(ReportTypes::DEVICE_REPORT_ID_SYNTH) ||
+                b == static_cast<std::uint8_t>(ReportTypes::DEVICE_REPORT_ID_CTRLR) ||
+                b == static_cast<std::uint8_t>(ReportTypes::INTERRUPT_REPORT_ID_CTRLR);
         }
 
-        if (!interruptInProgress) return;
+        ReportTypes ResponseIdFor(ReportTypes request)
+        {
+            return request == ReportTypes::HOST_REPORT_ID_CTRLR ? ReportTypes::DEVICE_REPORT_ID_CTRLR : ReportTypes::DEVICE_REPORT_ID_SYNTH;
+        }
 
-        HandleMessage(interruptMsg);
+        // Device reports echo the target (in the report ID) and the action (low nibble of the header) of
+        // the request they answer, but not always its address. iCSA firmware v1.1.30 answers a CTRLR_REG
+        // write with the address after the last register written (a write to 0x33 with 0x34), and an
+        // error with the address of the response before it. Requiring the request's own address made
+        // such a response look like the answer to a later request (two writes to consecutive registers,
+        // as ImagePlayer::Play makes), failing the earlier one as lost and putting every response after
+        // it out of step.
+        bool Answers(const DeviceReport& resp, const ReportFields& req)
+        {
+            const ReportFields& f = resp.Fields();
+            if (f.ID != ResponseIdFor(req.ID) || (f.hdr & 0x0F) != (req.hdr & 0x0F)) return false;
+            if (f.addr == req.addr) return true;
+            if (resp.GeneralError() || resp.TxCRC()) return true;
+            const bool write = (req.hdr & static_cast<std::uint8_t>(HostReport::Dir::READ)) == 0;
+            return write && f.addr == static_cast<std::uint16_t>(req.addr + req.len / 2);
+        }
+
+        bool IsWaiting(const std::shared_ptr<Message>& m)
+        {
+            const auto s = m->getStatus();
+            return s == Message::Status::UNSENT || s == Message::Status::SENT || s == Message::Status::RX_PARTIAL;
+        }
     }
 
-    char CM_Common::HandleMessageParse(std::shared_ptr<Message> m)
+    void CM_Common::DiscardRxByte()
     {
-        char c;
-//        std::stringstream ss;
-        if (m->HasData()) {
-            c = m->Parse();
-            return c;
+        const std::uint8_t c = m_glblRx.front();
+        m_glblRx.pop_front();
+        // One event and log line per run of discarded bytes, for the first of them
+        if (!m_discardingRx) {
+            m_discardingRx = true;
+            PushEvent<int>(MessageEvents::UNEXPECTED_RX_CHAR, static_cast<int>(c));
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Unexpected Char 0x" << std::hex << std::setw(2) << std::setfill('0')
+                << static_cast<unsigned int>(c) << std::dec << " in receive stream, resynchronising";
+        }
+    }
+
+    // Cuts the received byte stream into device reports. Bytes that cannot start a report, and
+    // reports that fail their CRC, are skipped one byte at a time until a valid report lines up:
+    // a stray byte, or a run of missing bytes, then costs only the reports it actually damaged.
+    void CM_Common::ProcessReceivedReports()
+    {
+        while (!m_glblRx.empty()) {
+            if (!IsDeviceReportId(m_glblRx.front())) {
+                DiscardRxByte();
+                continue;
+            }
+
+            const bool stalled = std::chrono::steady_clock::now() - m_lastRxBytes > kRxFragmentTimeout;
+            if (m_glblRx.size() < kReportHeaderLen) {
+                if (stalled) { DiscardRxByte(); continue; }
+                return;
+            }
+            const std::size_t len = m_glblRx[3] | (m_glblRx[4] << 8);
+            if (len > IOReport::PAYLOAD_MAX_LENGTH) {
+                DiscardRxByte();
+                continue;
+            }
+            const std::size_t total = kReportHeaderLen + len + kReportCrcLen;
+            if (m_glblRx.size() < total) {
+                if (stalled) { DiscardRxByte(); continue; }
+                return;
+            }
+
+            DeviceReport rpt;
+            for (std::size_t i = 0; i < total; i++) rpt.Parse(m_glblRx[i]);
+
+            if (rpt.RxCRC()) {
+                // A response damaged in place still carries the header of the request it answers.
+                // Anything else is a misaligned frame: skip a byte and try again.
+                std::shared_ptr<Message> oldest;
+                m_msgRegistry.forEachPending([&](const std::shared_ptr<Message>& m) {
+                    if (!oldest && IsWaiting(m) && !m->HasData()) oldest = m;
+                });
+                if (oldest && Answers(rpt, oldest->RequestFields())) {
+                    m_glblRx.erase(m_glblRx.begin(), m_glblRx.begin() + total);
+                    m_discardingRx = false;
+                    oldest->AssignResponse(rpt);
+                    HandleResponseDone(oldest);
+                    continue;
+                }
+                DiscardRxByte();
+                continue;
+            }
+
+            m_glblRx.erase(m_glblRx.begin(), m_glblRx.begin() + total);
+            m_discardingRx = false;
+            DispatchReport(rpt);
+        }
+    }
+
+    void CM_Common::DispatchReport(const DeviceReport& rpt)
+    {
+        if (rpt.Fields().ID == ReportTypes::INTERRUPT_REPORT_ID_CTRLR) {
+            auto m = std::make_shared<Message>(HostReport());
+            m->setStatus(Message::Status::INTERRUPT);
+            m->AssignResponse(rpt);
+            m_msgRegistry.addMessage(m->getMessageHandle(), m);
+            HandleResponseDone(m);
+            return;
         }
 
-        while (!m_glblRx.empty() && !m->Response().UnexpectedChar() && !m->Response().Done()) {
-            c = m_glblRx.front();
-            m_glblRx.pop_front();
-            m->Parse(c);
-//            ss << std::hex << std::setfill('0') << std::setw(2) << (static_cast<unsigned int>(c)&0xFF) << " ";
+        std::vector<std::shared_ptr<Message>> waiting;
+        m_msgRegistry.forEachPending([&](const std::shared_ptr<Message>& m) {
+            if (IsWaiting(m) && !m->HasData()) waiting.push_back(m);
+        });
+
+        // The oldest request this answers. Requests sent before it whose responses never came
+        // were lost: fail them now rather than when they time out.
+        for (auto it = waiting.begin(); it != waiting.end(); ++it) {
+            if (!Answers(rpt, (*it)->RequestFields())) continue;
+            for (auto lost = waiting.begin(); lost != it; ++lost) {
+                if ((*lost)->getStatus() == Message::Status::UNSENT) continue;
+                (*lost)->setStatus(Message::Status::TIMEOUT_ON_RXCV);
+                LogNotifyEvent(sev::warning, *lost, "Msg response lost", MessageEvents::RESPONSE_TIMED_OUT, (*lost)->getMessageHandle());
+            }
+            (*it)->AssignResponse(rpt);
+            HandleResponseDone(*it);
+            return;
         }
-//        BOOST_LOG_SEV(lg::get(), sev::trace) << "PROC: " << ss.str();
 
-        if (m->getStatus() == Message::Status::SENT)
-            m->setStatus(Message::Status::RX_PARTIAL);
+        // A late answer to a request that already timed out must not be taken by a later one
+        bool late = false;
+        m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
+            if (!late && m->getStatus() == Message::Status::TIMEOUT_ON_RXCV && Answers(rpt, m->RequestFields())) late = true;
+        });
+        if (late) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Discarded a late response for a request that already timed out";
+            return;
+        }
 
-        return c;
+        // Some responses legitimately carry a different address (an image index ADD_ENTRY returns
+        // the new handle there): give it to the oldest waiting request for the same target and
+        // action, else the same target
+        const ReportFields& f = rpt.Fields();
+        std::shared_ptr<Message> owner;
+        for (auto& m : waiting) {
+            const auto& req = m->RequestFields();
+            if (f.ID == ResponseIdFor(req.ID) && (f.hdr & 0x0F) == (req.hdr & 0x0F)) { owner = m; break; }
+        }
+        if (!owner) {
+            for (auto& m : waiting) {
+                if (f.ID == ResponseIdFor(m->RequestFields().ID)) { owner = m; break; }
+            }
+        }
+        if (!owner) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Discarded a report (id " << static_cast<int>(f.ID) << ", addr " << f.addr
+                << ") that answers no waiting request";
+            return;
+        }
+        BOOST_LOG_SEV(lg::get(), sev::debug) << "Report (hdr 0x" << std::hex << static_cast<int>(f.hdr) << std::dec << ", addr "
+            << f.addr << ") given to message " << owner->getMessageHandle() << " (addr " << owner->RequestFields().addr << ")";
+        owner->AssignResponse(rpt);
+        HandleResponseDone(owner);
+    }
+
+    // For transports that hand each message its own received bytes (Message::AddBuffer)
+    void CM_Common::HandleBufferedMessage(const std::shared_ptr<Message>& m)
+    {
+        if (m->isComplete() || !m->HasData()) return;
+        const char c = m->Parse();
+        if (m->Response().UnexpectedChar()) {
+            HandleUnexpectedChar(m, c);
+        } else if (m->Response().Done()) {
+            HandleResponseDone(m);
+        }
     }
 
     void CM_Common::HandleResponseDone(std::shared_ptr<Message> m)
     {
+        // A CRC failure first: the header bits of a corrupt report mean nothing
+        if (m->Response().RxCRC())
+        {
+            m->setStatus(Message::Status::RX_ERROR_INVALID);
+            LogNotifyEvent(sev::error, m, "Msg", MessageEvents::RESPONSE_ERROR_CRC, m->getMessageHandle());
+            m_msgRegistry.notifyAll();
+            return;
+        }
+
         if (m->Response().HardwareAlarm())
         {
             PushEvent<int>(MessageEvents::INTERLOCK_ALARM_SET, m->getMessageHandle());
@@ -212,11 +379,6 @@ namespace iMS {
         {
             m->setStatus(Message::Status::RX_ERROR_VALID);
             LogNotifyEvent(sev::warning, m, "Msg", MessageEvents::RESPONSE_ERROR_VALID, m->getMessageHandle());
-        }
-        else if (m->Response().RxCRC())
-        {
-            m->setStatus(Message::Status::RX_ERROR_INVALID);
-            LogNotifyEvent(sev::error, m, "Msg", MessageEvents::RESPONSE_ERROR_CRC, m->getMessageHandle());
         }
         else if (m->getStatus() == Message::Status::INTERRUPT)
         {
@@ -249,7 +411,7 @@ namespace iMS {
         }
 
         m_msgRegistry.notifyAll();
-    }    
+    }
 
     bool CM_Common::HandleUnexpectedChar(std::shared_ptr<Message> m, char c)
     {
@@ -265,9 +427,8 @@ namespace iMS {
 
     void CM_Common::HandleTimeoutsAndCleanup()
     {
-        std::vector<MessageHandle> messagesToRemove;
-
-        m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m)
+        // Only messages still waiting can time out
+        m_msgRegistry.forEachPending([&](const std::shared_ptr<Message>& m)
         {
             if (m->getStatus() == Message::Status::SENT ||
                 m->getStatus() == Message::Status::RX_PARTIAL)
@@ -279,40 +440,19 @@ namespace iMS {
                                 MessageEvents::RESPONSE_TIMED_OUT, m->getMessageHandle());
                 }
             }
-    #ifndef DEBUG_PRESERVE_LIST
-            else if (m->TimeElapsed() > autoFreeTimeout && m->isComplete())
-            {
-                messagesToRemove.push_back(m->getMessageHandle());
-            }
-    #endif
         });
 
-        for (auto& msg : messagesToRemove)
-            m_msgRegistry.removeMessage(msg);
-    }
-
-    void CM_Common::HandleMessage(const std::shared_ptr<Message>& m)
-    {
-        if (m->isComplete()) return;
-
-        while (!m_glblRx.empty() || m->HasData()) {
-            if (m->Response().Done()) {
-                m->setStatus(Message::Status::RX_ERROR_INVALID);
-                LogAndNotify(sev::error, m, "Msg Invalid");
-                break;
-            }
-
-            char c = HandleMessageParse(m);
-            if (m->Response().UnexpectedChar()) {
-                HandleUnexpectedChar(m, c);
-                break;
-            }
-
-            if (m->Response().Done()) {
-                HandleResponseDone(m);
-                break;
-            }
+    #ifndef DEBUG_PRESERVE_LIST
+        // Freeing completed messages scans everything kept, so do it occasionally rather than
+        // on every pass; otherwise per-message cost grows with the traffic of the last autoFreeTimeout
+        const auto now = std::chrono::steady_clock::now();
+        if (now - m_lastCleanup > std::chrono::milliseconds(100)) {
+            m_lastCleanup = now;
+            m_msgRegistry.removeIf([&](const std::shared_ptr<Message>& m) {
+                return m->isComplete() && m->TimeElapsed() > autoFreeTimeout;
+            });
         }
+    #endif
     }
 
     template <typename P>
@@ -339,7 +479,7 @@ namespace iMS {
                     mMsgEvent.Trigger<int>(this, ev.type, arg);
                 else if constexpr (std::is_same_v<T, std::pair<int, int>>)
                     mMsgEvent.Trigger<int, int>(this, ev.type, arg.first, arg.second);
-                else if constexpr (std::is_same_v<T, std::vector<std::uint8_t>>)
+                else if constexpr (std::is_same_v<T, std::pair<int, std::vector<std::uint8_t>>>)
                     mMsgEvent.Trigger<int,std::vector<uint8_t>>(this, ev.type, arg.first, arg.second);
             }, ev.payload);
         }
@@ -370,12 +510,12 @@ namespace iMS {
                std::make_move_iterator(localCopy.begin()),
                std::make_move_iterator(localCopy.end()));
 
-            // Test for and parse interrupts in the global rx buffer
-            HandleInterrupts();
+            if (!localCopy.empty()) m_lastRxBytes = std::chrono::steady_clock::now();
 
-            // Look for first message in list that is waiting for characters
-            m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) { 
-                HandleMessage(m);
+            // Reports in the received byte stream, then messages given their own bytes by the transport
+            ProcessReceivedReports();
+            m_msgRegistry.forEachPending([&](const std::shared_ptr<Message>& m) {
+                HandleBufferedMessage(m);
             });
 
             HandleTimeoutsAndCleanup();            
@@ -470,6 +610,8 @@ namespace iMS {
         unsigned int dl_max_in_flight = DefaultPolicy::DMA_MAX_TRANSACTION_SIZE / std::max<unsigned int>(1,DefaultPolicy::DL_TRANSFER_SIZE); 
         unsigned int ul_max_in_flight = DefaultPolicy::DMA_MAX_TRANSACTION_SIZE / std::max<unsigned int>(1,DefaultPolicy::UL_TRANSFER_SIZE); 
         std::deque<MessageHandle> inflight;
+        // Set when a transaction completes without a good response (timeout, error or freed)
+        bool transferFailed = false;
 
         // Lambda to wait for any in-flight message to complete
         auto waitForCompletion = [&](std::deque<MessageHandle>& inflight, unsigned int max_in_flight, bool expecting_more) {
@@ -484,9 +626,11 @@ namespace iMS {
                     std::vector<uint8_t> payload;
 
                     std::shared_ptr<Message> msg = m_msgRegistry.findMessage(handle);
-                    
-                    if (msg->isComplete() || msg == nullptr) {
-                        if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING && msg != nullptr) {
+
+                    if (msg == nullptr || msg->isComplete()) {
+                        if (msg == nullptr || msg->getStatus() != Message::Status::RX_OK) {
+                            transferFailed = true;
+                        } else if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING) {
                             payload = msg->Response().Payload<std::vector<uint8_t>>(); // collect locally
                         }
                         if (!payload.empty()) completedPayloads.push_back(std::move(payload));
@@ -500,7 +644,8 @@ namespace iMS {
                 // auto t1 = std::chrono::steady_clock::now();
                 // auto hold = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
                 // BOOST_LOG_SEV(lg::get(), sev::trace) << "Memory Transfer held lock for " << hold << " us. AnyRemoved = " << anyRemoved << ". inflight.size() = " << inflight.size();
-                return anyRemoved || (expecting_more && inflight.size() < max_in_flight);
+                // A closed connection stops the parser, so in-flight messages would never complete
+                return anyRemoved || (expecting_more && inflight.size() < max_in_flight) || !DeviceIsOpen;
             });
 
             // Append upload payloads after releasing the lock
@@ -518,6 +663,7 @@ namespace iMS {
                 if (!DeviceIsOpen || (FastTransferStatus.load() == _FastTransferStatus::IDLE)) continue;
 
 				unsigned int bytesTransferred = 0;
+				transferFailed = false;
 
 				if (FastTransferStatus.load() == _FastTransferStatus::UPLOADING) fti->m_data.clear();
 
@@ -530,7 +676,7 @@ namespace iMS {
                 bool downloading = FastTransferStatus.load() == _FastTransferStatus::DOWNLOADING;
                 unsigned int max_in_flight = downloading ? dl_max_in_flight : ul_max_in_flight;
                 for (unsigned int i = 0; i < fti->m_transCount; i++) {
-                    if (FastTransferStatus.load() == _FastTransferStatus::IDLE)
+                    if (FastTransferStatus.load() == _FastTransferStatus::IDLE || !DeviceIsOpen)
                         break;
 
                     HostReport::Dir dir = downloading ? HostReport::Dir::WRITE : HostReport::Dir::READ;
@@ -583,8 +729,13 @@ namespace iMS {
                 }
 
                 // Drain remaining messages
-                while (!inflight.empty()) {
+                while (!inflight.empty() && DeviceIsOpen) {
                     waitForCompletion(inflight, max_in_flight, false);
+                }
+                // Disconnected part way through
+                if (!inflight.empty() || bytesTransferred < static_cast<unsigned int>(fti->m_len)) {
+                    transferFailed = true;
+                    inflight.clear();
                 }
 
 #if defined(DMA_PERFORMANCE_MEASUREMENT_MODE)
@@ -603,7 +754,12 @@ namespace iMS {
 				fti = nullptr;
 
 				FastTransferStatus.store(_FastTransferStatus::IDLE);
-				mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_COMPLETE, bytesTransferred);
+				if (transferFailed) {
+					BOOST_LOG_SEV(lg::get(), sev::error) << "Memory transfer failed: a transaction got no valid response";
+					mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_ERROR, bytesTransferred);
+				} else {
+					mMsgEvent.Trigger<int>(this, MessageEvents::MEMORY_TRANSFER_COMPLETE, bytesTransferred);
+				}
 			}
 		}
 

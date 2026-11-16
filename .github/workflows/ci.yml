@@ -1,0 +1,215 @@
+# Builds the library on Windows (MSVC) and Linux, and runs the unit tests plus the simulator
+# flavour of the HIL suite.
+# No hardware needed; runs on GitHub-hosted runners.
+#
+# A v* tag (e.g. v2.0.10 or v2.0.10-rc1) also creates a GitHub Release with the built libraries
+# and has imslib-python build wheels against the tag (see "Releases" in README.md).
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Same steps as build.ps1 (Conan for Boost and libxml2, Visual Studio generator), for both
+  # shipped architectures. Uses only GitHub-owned actions.
+  windows-msvc:
+    name: Windows (MSVC ${{ matrix.arch }})
+    runs-on: windows-latest
+    # A cold Conan cache may have to build Boost from source
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            platform: x64
+          - arch: x86
+            platform: Win32
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        run: python -m pip install "conan>=2,<3"
+
+      - name: Detect Conan profile
+        id: profile
+        run: |
+          conan profile detect --force
+          $profile = Join-Path (conan config home) "profiles/default"
+          Get-Content $profile
+          "hash=$((Get-FileHash $profile).Hash)" >> $env:GITHUB_OUTPUT
+
+      # Keyed on the detected profile so a runner image with a new MSVC starts a fresh cache
+      - uses: actions/cache@v6
+        with:
+          path: ~/.conan2/p
+          key: conan-${{ matrix.arch }}-${{ steps.profile.outputs.hash }}-${{ hashFiles('conanfile.py') }}
+
+      - name: Install dependencies
+        run: conan install . -s arch=${{ matrix.arch }} -s build_type=Release -s compiler.cppstd=17 --build=missing -of .
+
+      # Drop source and build trees of anything built from source so they are not cached
+      - name: Trim Conan cache
+        run: conan cache clean
+
+      - name: Configure
+        # Quoted: PowerShell splits an unquoted -D argument at the '.'
+        run: cmake -S . -B build -A ${{ matrix.platform }} "-DCMAKE_TOOLCHAIN_FILE=build/generators/conan_toolchain.cmake" -DIMSLIB_BUILD_TESTS=ON -DIMSLIB_BUILD_HIL=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure -j 4 --output-junit test-results.xml
+
+      # Shared runners are too noisy to gate on; this only checks the benchmarks still run and
+      # keeps a record of host-side overhead
+      - name: Benchmarks (simulator, informational)
+        run: >-
+          build/tests/hil/Release/ims_bench_sim.exe
+          --benchmark_filter='BM_(RegisterReadLatency|PipelinedReads|SerializeHostReport|ParseDeviceReport)'
+          --benchmark_out=build/bench-sim.json --benchmark_out_format=json
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-${{ matrix.arch }}-results
+          path: |
+            build/test-results.xml
+            build/bench-sim.json
+
+      # The library's own install rules: DLL in bin/, import library in lib/, public headers in include/
+      - name: Install
+        run: cmake --install build --config Release --prefix install
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: imslib-windows-${{ matrix.arch }}
+          path: install/
+          if-no-files-found: error
+
+  linux:
+    name: Linux (GCC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build libboost-regex-dev libboost-log-dev libxml2-dev xxd
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DIMSLIB_BUILD_TESTS=ON -DIMSLIB_BUILD_HIL=ON
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j 4 --output-junit test-results.xml
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: linux-results
+          path: build/test-results.xml
+
+      - name: Install
+        run: cmake --install build --prefix install
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: imslib-linux-x86_64
+          path: install/
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    if: github.ref_type == 'tag'
+    needs: [windows-msvc, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # v<version> is a release, v<version>-<label> a pre-release; anything else is a mistake
+      - name: Check the tag matches LibVersion.h
+        id: version
+        run: |
+          define() { sed -nE "s/^#define IMS_API_$1 +([0-9]+).*/\1/p" include/LibVersion.h; }
+          version="$(define MAJOR).$(define MINOR).$(define PATCH)"
+          re="^v${version//./[.]}([-_.+].+)?$"
+          if [[ ! "$TAG" =~ $re ]]; then
+            echo "::error::Tag $TAG does not match the library version $version in include/LibVersion.h"
+            exit 1
+          fi
+          echo "prerelease=$([[ -n "${BASH_REMATCH[1]}" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+
+      - name: Zip the libraries
+        working-directory: dist
+        run: for d in */; do (cd "$d" && zip -qr "../${d%/}-$TAG.zip" .); done
+
+      # Uploads again over an existing release, so the job can be re-run
+      - name: Create release
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip --clobber
+          else
+            gh release create "$TAG" dist/*.zip --verify-tag --title "$TAG" --generate-notes \
+              ${{ steps.version.outputs.prerelease == 'true' && '--prerelease' || '' }}
+          fi
+
+  # Pushes a tag ims-lib-<tag> to imslib-python, on a commit that moves its ims-lib submodule to this
+  # tag; that push starts imslib-python's wheel build. Uses a write deploy key on imslib-python, as
+  # GITHUB_TOKEN can neither reach another repository nor start workflows.
+  python-wheels:
+    name: Trigger imslib-python wheels
+    needs: release
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      # Kept configured with the key, for the push below
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/imslib-python
+          ref: master
+          ssh-key: ${{ secrets.IMSLIB_PYTHON_DEPLOY_KEY }}
+
+      - name: Push ims-lib-${{ github.ref_name }} to imslib-python
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/ims-lib-$TAG" > /dev/null; then
+            echo "::notice::imslib-python already has ims-lib-$TAG; re-run its workflow to rebuild"
+            exit 0
+          fi
+          # Point the submodule at the tagged commit without fetching it
+          git update-index --cacheinfo "160000,$GITHUB_SHA,ims-lib"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --allow-empty -m "Build wheels for ims-lib $TAG"
+          git tag "ims-lib-$TAG"
+          git push origin "refs/tags/ims-lib-$TAG"

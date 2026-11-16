@@ -51,7 +51,7 @@ namespace iMS {
 	class CM_FTDI::Impl
 	{
 	public:
-		Impl::Impl(){}
+		Impl(){}
 
 		// Only accept FTDI Device number with Serial Numbers prefixed with these strings
 		static const std::list<std::string> SerialNumberPrefix;
@@ -293,9 +293,7 @@ namespace iMS {
 			} while (1);
 
 			// Stop Threads
-			DeviceIsOpen = false;  // must set this to cancel threads
-            m_txcond.notify_all();
-            m_tfrcond.notify_one();
+			SignalClosed();  // must set this to cancel threads
 #if defined(_WIN32)
             SetEvent(pImpl->hShutdown);
 #elif defined(__linux__)

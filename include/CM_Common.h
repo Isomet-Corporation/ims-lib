@@ -160,6 +160,11 @@ namespace iMS {
 
         std::shared_ptr<IConnectionSettings> connSettings;
 
+        // Clears DeviceIsOpen and wakes the threads waiting on CM_Common's condition variables, for
+        // Disconnect(). Notifying without their mutexes could let a thread that has just found the
+        // connection open start waiting after the notification, and never be joined.
+        void SignalClosed();
+
     private:
     	template <typename T, typename T2 = int>
         struct triggerEvents
@@ -207,13 +212,19 @@ namespace iMS {
 		std::vector<triggerEvents<int, std::vector<std::uint8_t>>> m_Vevents;
         std::vector<PendingEvent> m_PendingEvents;
 
-        void HandleInterrupts();
-        void HandleMessage(const std::shared_ptr<Message>& m);
-        char HandleMessageParse(std::shared_ptr<Message> m);
         void HandleResponseDone(std::shared_ptr<Message> m);
         bool HandleUnexpectedChar(std::shared_ptr<Message> m, char c);
         void HandleTimeoutsAndCleanup();
         void TriggerPendingEvents();
+        // Receive path: frames reports out of m_glblRx (resynchronising past damaged bytes), then
+        // gives each to the request it answers
+        void ProcessReceivedReports();
+        void DispatchReport(const DeviceReport& rpt);
+        void DiscardRxByte();
+        void HandleBufferedMessage(const std::shared_ptr<Message>& m);
+        std::chrono::steady_clock::time_point m_lastRxBytes{};
+        bool m_discardingRx = false;
+        std::chrono::steady_clock::time_point m_lastCleanup{};
 	};
 
 

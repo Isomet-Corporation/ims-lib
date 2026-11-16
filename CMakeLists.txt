@@ -50,7 +50,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     ##
     ## Get BOOST
     ##
-    find_package(Boost REQUIRED)
+    find_package(Boost REQUIRED COMPONENTS regex log_setup log)
 endif()
 
 # add_subdirectory(modules/boost-cmake)
@@ -83,13 +83,14 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ims_api_h.cmake)
 
 # Generate resources
 if (NOT WIN32)
+    # Run through sh, as build.sh is not marked executable in git; -e stops at the first failing xxd
     execute_process(
-        COMMAND ./build.sh
+        COMMAND sh -e build.sh
         WORKING_DIRECTORY ${api_resource_dir}
         RESULT_VARIABLE XXD_ERR
     )
     if (XXD_ERR)
-        MESSAGE( STATUS "Resource generation error:" ${XXD_ERR})
+        message(FATAL_ERROR "Resource generation (res/build.sh) failed: ${XXD_ERR}. Is xxd installed?")
     endif()
     set (api_db_resource ${api_resource_dir}/imshw.h)
 else()
@@ -197,18 +198,42 @@ target_link_libraries(${IMS_TARGET_NAME}
             Boost::log_setup
             Boost::log
 #        -Wl,--no-whole-archive        
-        ${libxml2_LIBRARIES}
 )
 
+# Conan and CMake's FindLibXml2 both provide the LibXml2::LibXml2 target
+if(TARGET LibXml2::LibXml2)
+    target_link_libraries(${IMS_TARGET_NAME} PRIVATE LibXml2::LibXml2)
+else()
+    target_link_libraries(${IMS_TARGET_NAME} PRIVATE ${libxml2_LIBRARIES})
+endif()
+
 if(WIN32)
+# Visual Studio generators set the platform (Win32/x64); single-config generators (e.g. Ninja) do not
+if(CMAKE_GENERATOR_PLATFORM)
+    set(FTDI_PLATFORM ${CMAKE_GENERATOR_PLATFORM})
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(FTDI_PLATFORM x64)
+else()
+    set(FTDI_PLATFORM Win32)
+endif()
+
 add_library(ftd2xx STATIC IMPORTED)
 
 set_target_properties(ftd2xx PROPERTIES
     IMPORTED_LOCATION
-    ${api_lib_dir}/FTDI/Static/${CMAKE_GENERATOR_PLATFORM}/ftd2xx.lib
+    ${api_lib_dir}/FTDI/Static/${FTDI_PLATFORM}/ftd2xx.lib
 )
 
 target_link_libraries(${IMS_TARGET_NAME} PRIVATE ftd2xx)
+endif()
+
+## Tests
+option(IMSLIB_BUILD_TESTS "Build unit tests (simulated hardware)" OFF)
+option(IMSLIB_BUILD_HIL "Build hardware-in-the-loop tests and benchmarks" OFF)
+
+if(IMSLIB_BUILD_TESTS OR IMSLIB_BUILD_HIL)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
 
 ## Documentation

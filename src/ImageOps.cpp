@@ -429,6 +429,8 @@ namespace iMS
 			}
 		}
 		bool Busy() const { return m_busy.load(); };
+		// For a transfer that could not be started, so no event will arrive
+		void Abort() { m_busy.store(false); }
 		void Reset() {
 			m_busy.store(true);
 			m_tfr_size.store(0);
@@ -549,6 +551,13 @@ namespace iMS
 
 	ImageDownload::Impl::~Impl()
 	{
+		// Join the workers before anything they use is destroyed. They are declared first, so
+		// would otherwise be joined last, after the image buffers and event trigger are freed;
+		// the verify worker still runs after triggering VERIFY_SUCCESS.
+		downloadWorker.stop();
+		verifyWorker.stop();
+		rxWorker.stop();
+
 		// Unsubscribe listener
         with_locked(m_ims, [this](std::shared_ptr<IMSSystem> ims) {   
             auto conn = ims->Connection();
@@ -786,14 +795,16 @@ namespace iMS
 
 				DeviceReport ioresp = conn->SendMsgBlocking(*iorpt);
 
-				if (ioresp.Payload<std::uint16_t>() & 1)
+				if (ioresp.Payload<std::uint16_t>() & CTRLR_REG_FPIFormat_MSB_Supported)
 				{
 					// Device supports MSB Mode
 					m_msbFirst = 1;
 
 					delete iorpt;
 					iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_FPIFormat);
-					iorpt->Payload<std::uint16_t>(ioresp.Payload<std::uint16_t>() << 1);
+					// Bit 1 enables MSB-first mode. Bit 0 (supported) is read-only and always reads 1, so
+					// writing back the value read shifted left accumulated set bits with every download.
+					iorpt->Payload<std::uint16_t>(CTRLR_REG_FPIFormat_MSB_Enable);
 
 					// Set Controller to download mode
 					if (NullMessage == conn->SendMsg(*iorpt))
@@ -864,9 +875,10 @@ namespace iMS
 
 					dmah = new DMASupervisor();
 					conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+					conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_ERROR, dmah);
 
 					// Start memory download
-					conn->MemoryDownload(*m_imgdata, ImageMemoryAddress, ImageMemoryIndex, uuid);
+					if (!conn->MemoryDownload(*m_imgdata, ImageMemoryAddress, ImageMemoryIndex, uuid)) dmah->Abort();
 
 					while (dmah->Busy()) {
 						std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -874,6 +886,7 @@ namespace iMS
 					//std::cout << "Memory Download complete" << std::endl;
 
 					conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+					conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_ERROR, dmah);
 
 					int tfr_size = dmah->GetTransferredSize();
 					delete dmah;
@@ -939,6 +952,7 @@ namespace iMS
 				int img_index = 0;
 				int length = m_Image.Size();
 				dl_final = NullMessage;
+				MessageHandle last_sent = NullMessage;
 
 				std::vector<std::uint8_t> img_data;
 				Image::const_iterator it = m_Image.cbegin();
@@ -1000,20 +1014,26 @@ namespace iMS
 
 					iorpt = new HostReport(HostReport::Actions::CTRLR_IMAGE, HostReport::Dir::WRITE, img_addr);
 					iorpt->Payload<std::vector<std::uint8_t>>(img_data);
-					MessageHandle h = conn->SendMsg(*iorpt);
-					delete iorpt;
 
-					// Add message handle to download list so we can check the responses
+					// Send and add the handle to the download list under its mutex, so the response
+					// worker cannot look for the handle before it is recorded
 					std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-					dl_list.push_back(h);
+					last_sent = conn->SendMsg(*iorpt);
+					dl_list.push_back(last_sent);
 					dllck.unlock();
+					delete iorpt;
 
 					img_data.clear();
 				}
 
+				// The worker reports the end when it sees dl_final; if the last response has already
+				// been handled, nothing would, so report it here
 				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-				if (!dl_list.empty()) dl_final = dl_list.back();
+				dl_final = last_sent;
+				const bool alreadyHandled = last_sent != NullMessage &&
+					std::find(dl_list.begin(), dl_list.end(), last_sent) == dl_list.end() && conn->Response(last_sent).Done();
 				dllck.unlock();
+				if (alreadyHandled) m_Event->Trigger<int>((void *)this, ImageDownloadEvents::DOWNLOAD_FINISHED, 0);
 
 				// Program Image Length into NumPts register
 				iorpt = new HostReport(HostReport::Actions::CTRLR_REG, HostReport::Dir::WRITE, CTRLR_REG_NumPts);
@@ -1110,40 +1130,42 @@ namespace iMS
 					if (it->UUID() == m_Image.GetUUID()) h = std::distance(ims->Ctlr().ImgTable().cbegin(), it);
 				}
 				if (h < 0) {
-					// Failed. Abort.  TODO: Added error event
+					// Not in the image table, so there is nothing to read back
+                    BOOST_LOG_SEV(lg::get(), sev::error) << "Verify FAILED: image not in the image table";
+					m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_FAIL, 0);
 					continue;
 				}
 				ImageTableEntry ite = *(std::next(ims->Ctlr().ImgTable().cbegin(), h));
 
 				dmah = new DMASupervisor();
 				conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+				conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_ERROR, dmah);
 
 				// Start memory upload
-				conn->MemoryUpload(*m_vfydata, ite.Address(), ite.Size(), h, ite.UUID());
+				if (!conn->MemoryUpload(*m_vfydata, ite.Address(), ite.Size(), h, ite.UUID())) dmah->Abort();
 
 				while (dmah->Busy()) {
 					std::this_thread::sleep_for(std::chrono::milliseconds(5));
 				}
 
 				conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+				conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_ERROR, dmah);
 
-				//int tfr_size = dmah->GetTransferredSize();
+				// Only set by a completed transfer
+				const bool uploaded = dmah->GetTransferredSize() > 0;
 				delete dmah;
-				
-				if (m_vfydata->size() < m_imgdata->size()) {
-					m_imgdata->resize(m_vfydata->size());
-				}
-				else {
-					m_vfydata->resize(m_imgdata->size());
-				}
-				int tfr_len = (int)m_imgdata->size();
 
-				if (*m_vfydata == *m_imgdata) {
+				// The read back is padded to the transfer unit; anything shorter than the image is a failure
+				const bool complete = uploaded && m_vfydata->size() >= m_imgdata->size();
+				if (complete) m_vfydata->resize(m_imgdata->size());
+				int tfr_len = (int)std::min(m_imgdata->size(), m_vfydata->size());
+
+				if (complete && *m_vfydata == *m_imgdata) {
                     BOOST_LOG_SEV(lg::get(), sev::info) << "Verify passed";
                     m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_SUCCESS, 0);
                 }
 				else {
-					int first_error = 0;
+					int first_error = tfr_len;
 					for (int i = 0; i < tfr_len; i++) {
 						if (m_vfydata->at(i) != m_imgdata->at(i)) {
 							first_error = i;
@@ -1151,7 +1173,8 @@ namespace iMS
 						}
 					}
                     BOOST_LOG_SEV(lg::get(), sev::info) << "Verify FAILED at " << first_error;
-					m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_FAIL, first_error); break;
+					// Keep the worker running: a later StartVerify() must still be served
+					m_Event->Trigger<int>((void *)this, ImageDownloadEvents::VERIFY_FAIL, first_error);
 				}
 
 				if (m_imgdata->size()) m_imgdata->clear();
@@ -1258,7 +1281,9 @@ namespace iMS
 
 		while (true) {
     		std::unique_lock<std::mutex> lck{ mtx };
-            cond.wait(lck);
+            // Wait on a predicate: a notification sent before this wait (stop() during start-up,
+            // or a response queued while the lists were being processed) would otherwise be lost
+            cond.wait(lck, [&] { return !running || !rxok_list.empty() || !rxerr_list.empty(); });
 
             // Allow thread to terminate 
 			if (!running) break;
@@ -2459,11 +2484,15 @@ namespace iMS
 		}
 
 		conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+		conn->MessageEventSubscribe(MessageEvents::MEMORY_TRANSFER_ERROR, dmah);
 	}
 
-	SequenceDownload::Impl::~Impl() 
+	SequenceDownload::Impl::~Impl()
 	{
-        with_locked(m_ims, [&](std::shared_ptr<IMSSystem> ims) {         
+		// Join the worker before the sequence buffer and event trigger it uses are destroyed
+		downloadWorker.stop();
+
+        with_locked(m_ims, [&](std::shared_ptr<IMSSystem> ims) {
             // Unsubscribe listener
             auto conn = ims->Connection();
             if (ims->Ctlr().Model() != "iMSP" || ims->Ctlr().GetVersion().revision > 46) {
@@ -2481,6 +2510,7 @@ namespace iMS
             }
 
             conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_COMPLETE, dmah);
+            conn->MessageEventUnsubscribe(MessageEvents::MEMORY_TRANSFER_ERROR, dmah);
         });
 
 		delete dmah;

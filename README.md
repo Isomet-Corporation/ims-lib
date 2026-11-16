@@ -311,6 +311,39 @@ The structure supports multi-architecture staging for deployment packaging.
 
 ---
 
+# Releases
+
+Pushing a tag `v<version>` (a release) or `v<version>-<label>` (a pre-release, e.g. `v2.0.10-rc1`) runs `.github/workflows/ci.yml`, which:
+
+1. Checks the tag against `IMS_API_MAJOR/MINOR/PATCH` in `include/LibVersion.h`, so bump the version before tagging.
+2. Creates a GitHub Release with the Windows (x86_64, x86) and Linux libraries as zips.
+3. Pushes a tag `ims-lib-<tag>` to [imslib-python](https://github.com/refeyn/imslib-python), on a commit that moves its `ims-lib` submodule to this tag. That starts its wheel build, which publishes the wheels as an imslib-python GitHub Release.
+
+Step 3 needs two deploy keys, since `GITHUB_TOKEN` cannot reach another repository:
+
+| Used for | Public half | Private half (Actions secret) |
+|---|---|---|
+| This repository's CI pushes the trigger tag to imslib-python | imslib-python deploy key, write access | `IMSLIB_PYTHON_DEPLOY_KEY` in ims-lib |
+| imslib-python's CI fetches this repository as its submodule | ims-lib deploy key, read-only | `IMS_LIB_DEPLOY_KEY` in imslib-python |
+
+The trigger commit is made on imslib-python's `master`.
+
+---
+
+# Testing
+
+Unit tests run against a simulated iMS system, so no hardware is needed:
+
+```bash
+cmake -S . -B build/tests -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DIMSLIB_BUILD_TESTS=ON -DIMSLIB_BUILD_HIL=ON
+cmake --build build/tests
+ctest --test-dir build/tests --output-on-failure
+```
+
+Hardware-in-the-loop tests and benchmarks (`ims_hil_tests`, `ims_bench`) run against a connected system. See [tests/README.md](tests/README.md) for the simulator, the HIL rig setup and benchmark baselines.
+
+---
+
 # Example Integration: iMS Hardware Server
 
 The iMS Hardware Server integrates this repository as a Git submodule and compiles it directly into the application.

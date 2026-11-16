@@ -74,6 +74,11 @@ namespace iMS
 		// Return the Received Report to allow user to access data
 		DeviceReport Response() const;
 
+		// Fields of the report sent, for matching responses to requests
+		const ReportFields& RequestFields() const;
+		// Give this message a response that was parsed into another one
+		void AssignResponse(const DeviceReport& resp);
+
 	private:
 		static const char * StatusEnumStrings[] ;
 
@@ -84,7 +89,8 @@ namespace iMS
 		HostReport m_rpt;
 		DeviceReport m_resp;
 		MessageHandle m_id;
-		static MessageHandle mIDCount;
+		// Messages are created on several threads (callers, memory transfer, event handlers)
+		static std::atomic<MessageHandle> mIDCount;
 		std::atomic<Status> m_status{Status::UNSENT};
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_sent;
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_recd;
