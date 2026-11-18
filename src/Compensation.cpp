@@ -1078,9 +1078,23 @@ namespace iMS
 		};
 		VerifyResult* vfyResult;
 
+		// Download progress, all guarded by dl_list_mutex.
+		//   dl_list    : messages sent but not yet answered (or failed)
+		//   dl_sending : download thread is still sending messages
+		//   dl_done    : the completion event for the current download has been raised
+		//   dl_errors  : number of messages that failed in the current download
 		std::list <MessageHandle> dl_list;
-		MessageHandle dl_final;
+		bool dl_sending{ false };
+		bool dl_done{ true };
+		int dl_errors{ 0 };
 		mutable std::mutex dl_list_mutex;
+		// Signalled whenever dl_list becomes empty
+		std::condition_variable dl_list_cv;
+
+		// Call with dl_list_mutex held. Returns true exactly once per download, when all messages
+		// have been sent and all responses (or errors) accounted for. errors receives the error count.
+		bool TakeDownloadCompletion(int& errors);
+		void RaiseDownloadCompletion(int errors);
 
         bool downloadRequested{ false };
         void DownloadWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx);
@@ -1124,8 +1138,22 @@ namespace iMS
 
 		verifier.BulkVerifierEventSubscribe(BulkVerifierEvents::VERIFY_SUCCESS, vfyResult);
 		verifier.BulkVerifierEventSubscribe(BulkVerifierEvents::VERIFY_FAIL, vfyResult);
+	}
 
-        dl_final = NullMessage;
+	bool CompensationTableDownload::Impl::TakeDownloadCompletion(int& errors)
+	{
+		if (dl_done || dl_sending || !dl_list.empty()) return false;
+		dl_done = true;
+		errors = dl_errors;
+		return true;
+	}
+
+	void CompensationTableDownload::Impl::RaiseDownloadCompletion(int errors)
+	{
+		if (errors == 0)
+			m_Event.Trigger<int>((void *)this, CompensationEvents::DOWNLOAD_FINISHED, 0);
+		else
+			m_Event.Trigger<int>((void *)this, CompensationEvents::DOWNLOAD_FAILED, errors);
 	}
 
 	CompensationTableDownload::Impl::~Impl() {
@@ -1225,7 +1253,6 @@ namespace iMS
                     continue;
                 }
 
-                p_Impl->dl_list.clear();
                 p_Impl->downloadRequested = true;
 
                 if (p_Impl->m_channel.IsAll()) {
@@ -1401,8 +1428,15 @@ namespace iMS
 			int lut_index = 0;
 			int length = static_cast<int>(m_Table->Size());
 			int buf_bytes = 512;
+			bool aborted = false;
 
-			dl_final = NullMessage;
+			{
+				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+				dl_list.clear();
+				dl_sending = true;
+				dl_done = false;
+				dl_errors = 0;
+			}
 
 			std::vector<std::uint8_t> lut_data;
 			CompensationTable::const_iterator it = m_Table->cbegin();
@@ -1412,15 +1446,19 @@ namespace iMS
 
 				if (buf_bytes <= 0)
 				{
-					// Clear Buffer every kB to prevent Hardware overrun
-					do {
-						{
-							std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-							if (dl_list.empty()) break;
-							dllck.unlock();
-						}
-						std::this_thread::sleep_for(std::chrono::milliseconds(50));
-					} while (1);
+					// Wait for every outstanding message to complete before sending the next burst, to
+					// prevent hardware overrun. Each message is guaranteed to complete (response, error
+					// or timeout) while the connection is open, so give up only if it closes.
+					std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+					while (!dl_list.empty() && running && conn->Open())
+					{
+						dl_list_cv.wait_for(dllck, std::chrono::milliseconds(100));
+					}
+					if (!dl_list.empty())
+					{
+						aborted = true;
+						break;
+					}
 					buf_bytes = 512;
 				}
 
@@ -1451,20 +1489,41 @@ namespace iMS
 
 				iorpt = new HostReport(HostReport::Actions::LUT_ENTRY, HostReport::Dir::WRITE, lut_addr);
 				iorpt->Payload<std::vector<std::uint8_t>>(lut_data);
-				MessageHandle h = conn->SendMsg(*iorpt);
-				delete iorpt;
-
-				// Add message handle to download list so we can check the responses
-				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-				dl_list.push_back(h);
-				dllck.unlock();
-
 				lut_data.clear();
+
+				// Send and add the handle to the download list under one lock, so the rx thread
+				// cannot process the response before the handle is in the list.
+				{
+					std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+					MessageHandle h = conn->SendMsg(*iorpt);
+					if (h == NullMessage) {
+						// Connection closed: abandon the rest of the download
+						dl_errors++;
+						aborted = true;
+					}
+					else {
+						dl_list.push_back(h);
+					}
+				}
+				delete iorpt;
+				if (aborted) break;
 			}
-			
-			std::unique_lock<std::mutex> dllck{ dl_list_mutex };
-			if (!dl_list.empty()) dl_final = dl_list.back();
-			dllck.unlock();
+
+			// All sent. Raise the completion event here if every response has already been processed;
+			// otherwise the rx thread raises it when the last outstanding message completes.
+			int errors = 0;
+			bool complete;
+			{
+				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+				if (aborted) {
+					// Outstanding messages will never be answered; count them as failed
+					dl_errors += static_cast<int>(dl_list.size());
+					dl_list.clear();
+				}
+				dl_sending = false;
+				complete = TakeDownloadCompletion(errors);
+			}
+			if (complete) RaiseDownloadCompletion(errors);
 
 			// Release lock, wait for next download trigger
 			lck.unlock();
@@ -1558,67 +1617,54 @@ namespace iMS
 	void CompensationTableDownload::Impl::RxWorkerLoop(std::atomic<bool>& running, std::condition_variable& cond, std::mutex& mtx)
 	{
 		while (true) {
-    		std::unique_lock<std::mutex> lck{ mtx };
-            cond.wait(lck);
-
-			// Allow thread to terminate 
-			if (!running) break;
-
-			while (!rxok_list.empty())
+			std::deque<int> ok_list, err_list;
 			{
-				int param = rxok_list.front();
-				rxok_list.pop_front();
+				std::unique_lock<std::mutex> lck{ mtx };
+				cond.wait(lck, [this, &running]() {
+					return !running || !rxok_list.empty() || !rxerr_list.empty();
+				});
 
-				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
+				// Allow thread to terminate
+				if (!running) break;
 
-				for (std::list<MessageHandle>::iterator iter = dl_list.begin();
-					iter != dl_list.end();)
-				{
-					MessageHandle handle = static_cast<MessageHandle>(*iter);
-					if (handle != (param))
-					{
-						++iter;
-						continue;
-					}
-
-					// Remove from list
-					iter = dl_list.erase(iter);
-
-					// Download Finished?
-					if (handle == dl_final)
-					{
-						m_Event.Trigger<int>((void *)this, CompensationEvents::DOWNLOAD_FINISHED, 0);
-					}
-				}
-				dllck.unlock();
-
+				// Take the pending events and release the lock, so the connection's event thread
+				// is never blocked behind dl_list_mutex
+				ok_list.swap(rxok_list);
+				err_list.swap(rxerr_list);
 			}
 
-			while (!rxerr_list.empty())
+			std::vector<MessageHandle> failed;
+			int errors = 0;
+			bool complete;
 			{
-				int param = rxerr_list.front();
-				rxerr_list.pop_front();
-
 				std::unique_lock<std::mutex> dllck{ dl_list_mutex };
 
-				for (std::list<MessageHandle>::iterator iter = dl_list.begin();
-					iter != dl_list.end();)
+				for (int param : ok_list)
 				{
-					MessageHandle handle = static_cast<MessageHandle>(*iter);
-					if (handle != (param))
-					{
-						++iter;
-						continue;
-					}
-
-					// Remove from list
-					iter = dl_list.erase(iter);
-					m_Event.Trigger<int>((void *)this, CompensationEvents::DOWNLOAD_ERROR, handle);
+					auto iter = std::find(dl_list.begin(), dl_list.end(), static_cast<MessageHandle>(param));
+					if (iter != dl_list.end()) dl_list.erase(iter);
 				}
-				dllck.unlock();
 
+				for (int param : err_list)
+				{
+					auto iter = std::find(dl_list.begin(), dl_list.end(), static_cast<MessageHandle>(param));
+					if (iter != dl_list.end()) {
+						dl_list.erase(iter);
+						dl_errors++;
+						failed.push_back(static_cast<MessageHandle>(param));
+					}
+				}
+
+				if (dl_list.empty()) dl_list_cv.notify_all();
+				complete = TakeDownloadCompletion(errors);
 			}
 
+			// Raise events outside the lock, per-message errors before the completion event
+			for (MessageHandle handle : failed)
+			{
+				m_Event.Trigger<int>((void *)this, CompensationEvents::DOWNLOAD_ERROR, handle);
+			}
+			if (complete) RaiseDownloadCompletion(errors);
 		}
 	}
 

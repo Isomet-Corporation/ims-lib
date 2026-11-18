@@ -127,14 +127,20 @@ namespace iMS
 		enum Events {
 			/// Not used
 			RX_DDS_POWER,
-			/// Event raised when CompensationTableDownload has confirmed that the iMS Controller received all of the Compensation Table data
+			/// Event raised when CompensationTableDownload has confirmed that the iMS Controller received all of the Compensation Table data.
+			/// Every download ends with exactly one of DOWNLOAD_FINISHED or DOWNLOAD_FAILED.
 			DOWNLOAD_FINISHED,
-			/// Event raised each time the CompensationTableDownload class registers an error in the download process
+			/// Event raised each time the CompensationTableDownload class registers an error in the download process. \c param contains the handle of the failed message
 			DOWNLOAD_ERROR,
 			/// Event raised on completion of a download verify, if the download was successfully verified
 			VERIFY_SUCCESS,
 			/// Event raised on completion of a download verify, if the download failed. \c param contains the number of failures recorded
 			VERIFY_FAIL,
+			/// Event raised when a CompensationTableDownload has ended but one or more messages failed (each also reported by DOWNLOAD_ERROR),
+			/// or the download was abandoned because the connection closed. \c param contains the number of messages that failed.
+			/// Every download ends with exactly one of DOWNLOAD_FINISHED or DOWNLOAD_FAILED.
+			/// \since 2.0.10
+			DOWNLOAD_FAILED,
 			Count
 		};
 	};
