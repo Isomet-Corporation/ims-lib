@@ -36,6 +36,7 @@ namespace iMS
 	{
 		// Copy report into local object
 		this->m_rpt = Rpt;
+		this->m_reqFields = Rpt.Fields();
 
 		// Unique ID integer for each new instance
 		m_id = mIDCount++;
@@ -63,7 +64,7 @@ namespace iMS
 	};
 
 	// Initialise ID Counter
-	MessageHandle Message::mIDCount = 1;
+	std::atomic<MessageHandle> Message::mIDCount{ 1 };
 	
 	void Message::markSendTime()
 	{
@@ -195,6 +196,11 @@ namespace iMS
 		{
 			unparsed_buf.push_back(*it);
 		}
+	}
+
+	const ReportFields& Message::RequestFields() const
+	{
+		return m_reqFields;
 	}
 
 	bool Message::HasData() const

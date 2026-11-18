@@ -74,6 +74,10 @@ namespace iMS
 		// Return the Received Report to allow user to access data
 		DeviceReport Response() const;
 
+		// Header fields of the request (ID, hdr, len, addr), fixed at construction.  Used to check
+		// that a received response belongs to this message.
+		const ReportFields& RequestFields() const;
+
 	private:
 		static const char * StatusEnumStrings[] ;
 
@@ -82,9 +86,10 @@ namespace iMS
 
 		//Message(const Message&);  // Prevent copying
 		HostReport m_rpt;
+		ReportFields m_reqFields;
 		DeviceReport m_resp;
 		MessageHandle m_id;
-		static MessageHandle mIDCount;
+		static std::atomic<MessageHandle> mIDCount;
 		std::atomic<Status> m_status{Status::UNSENT};
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_sent;
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_recd;

@@ -25,6 +25,7 @@
 
 #include "Message.h"
 
+#include <map>
 #include <unordered_map>
 #include <shared_mutex>
 #include <memory>
@@ -104,6 +105,17 @@ namespace iMS {
 
             for (const auto& msg : snapshot)
                 fn(msg);
+        }
+
+        // Iterate in handle order from the first handle >= start, until fn returns false.
+        // fn is called with the registry lock held, so it must not call back into the registry.
+        void forEachMessageFrom(HandleType start, const std::function<bool(const MessagePtr&)>& fn) const
+        {
+            std::shared_lock lock(m_mutex);
+            for (auto it = m_messages.lower_bound(start); it != m_messages.end(); ++it)
+            {
+                if (!fn(it->second)) break;
+            }
         }
 
         // Optional: safe modification iteration.

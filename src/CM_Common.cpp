@@ -23,7 +23,10 @@
 
 #include "IConnectionManager.h"
 #include "CM_Common.h"
+#include "ReportManipulation.h"
 
+#include <algorithm>
+#include <sstream>
 #include <iostream>
 #include <iomanip>
 #include <cstdint>
@@ -99,19 +102,20 @@ namespace iMS {
 	{
 		if (DeviceIsOpen)
 		{
-			// Create a message, add report, assign it an ID, and place in queue.
-			std::shared_ptr<Message> m = std::make_shared<Message>(Rpt);
+			// Create a message, add report, assign it an ID, register it and place in queue.
+			// The message is created under the queue lock so that handle order matches transmit
+			// order (responses are matched in handle order), and registered before it is queued
+			// so that its response can never arrive before the message is known.
+			MessageHandle hnd;
             {
                 std::unique_lock <std::mutex> txlck{ m_txmutex };
+				std::shared_ptr<Message> m = std::make_shared<Message>(Rpt);
+				hnd = m->getMessageHandle();
+				m_msgRegistry.addMessage(hnd, m);
 				m_queue.push(m);
-				txlck.unlock();
-
-				// Notify Worker
-				m_txcond.notify_one();
 			}
-
-            auto hnd = m->getMessageHandle();
-            m_msgRegistry.addMessage(hnd, m);
+			// Notify Worker
+			m_txcond.notify_one();
 
 			return hnd;
 		}
@@ -167,56 +171,235 @@ namespace iMS {
         PushEvent(evType, param);
     }
 
-    void CM_Common::HandleInterrupts()
+    static std::string FrameHex(const std::vector<std::uint8_t>& frame)
     {
-        if (m_glblRx.empty()) return;
-
-        bool activeMsgFound = false;
-        bool interruptInProgress = false;
-        std::shared_ptr<Message> interruptMsg;
-
-        m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
-            if (!m->Response().Done() && !m->Response().Idle())
-                activeMsgFound = true;
-            if (m->getStatus() == Message::Status::INTERRUPT) {
-                interruptInProgress = true;
-                interruptMsg = m;
-            }
-        });
-
-        if (!activeMsgFound && m_glblRx.front() == (uint8_t)ReportTypes::INTERRUPT_REPORT_ID_CTRLR && !interruptInProgress) {
-            interruptMsg = std::make_shared<Message>(HostReport());
-            interruptMsg->setStatus(Message::Status::INTERRUPT);
-            m_msgRegistry.addMessage(interruptMsg->getMessageHandle(), interruptMsg);
-            interruptInProgress = true;
-        }
-
-        if (!interruptInProgress) return;
-
-        HandleMessage(interruptMsg);
+        std::ostringstream ss;
+        for (auto b : frame)
+            ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(b) << " ";
+        return ss.str();
     }
 
-    char CM_Common::HandleMessageParse(std::shared_ptr<Message> m)
+    // Response matching for connections that deliver all responses in one byte stream (Ethernet,
+    // FTDI, RS422).  The device answers every request exactly once and in order, but the protocol
+    // has no sequence number, so the stream is split into complete frames and each frame is given
+    // to the oldest outstanding message whose request it matches:
+    //  - a message that times out stays first in line (m_lateWaiting) so that its late response
+    //    is absorbed by it rather than by the next message;
+    //  - each frame is checked against the request (device type, action, and ADDR where the
+    //    firmware guarantees to echo it), so a response can't be credited to the wrong message;
+    //  - if a frame matches a newer message, the older ones' responses are taken to be lost.
+
+    // Extract the next complete frame from the shared receive stream.  Bytes that can't start a
+    // frame are discarded.  Returns false if no complete frame is buffered yet.
+    bool CM_Common::ExtractFrame(std::vector<std::uint8_t>& frame, bool& crcOk)
     {
-        char c;
-//        std::stringstream ss;
-        if (m->HasData()) {
-            c = m->Parse();
-            return c;
+        constexpr std::size_t HeaderLen = 7;   // ID, HDR, CONTEXT, LEN(2), ADDR(2)
+        constexpr std::size_t CrcLen = 2;
+        std::size_t dropped = 0;
+        int firstDropped = 0;
+        bool found = false;
+
+        while (!m_glblRx.empty()) {
+            const std::uint8_t id = m_glblRx.front();
+            if ((id != static_cast<std::uint8_t>(ReportTypes::DEVICE_REPORT_ID_SYNTH)) &&
+                (id != static_cast<std::uint8_t>(ReportTypes::DEVICE_REPORT_ID_CTRLR)) &&
+                (id != static_cast<std::uint8_t>(ReportTypes::INTERRUPT_REPORT_ID_CTRLR)))
+            {
+                if (!dropped) firstDropped = static_cast<int>(id);
+                ++dropped;
+                m_glblRx.pop_front();
+                continue;
+            }
+
+            if (m_glblRx.size() < HeaderLen) break;
+            const std::size_t len = static_cast<std::size_t>(m_glblRx[3]) | (static_cast<std::size_t>(m_glblRx[4]) << 8);
+            const std::size_t total = HeaderLen + len + CrcLen;
+            if (m_glblRx.size() < total) break;
+
+            frame.assign(m_glblRx.begin(), m_glblRx.begin() + total);
+            m_glblRx.erase(m_glblRx.begin(), m_glblRx.begin() + total);
+
+            std::queue<std::uint8_t> crc_queue;
+            for (std::size_t i = 0; i < total - CrcLen; i++) crc_queue.push(frame[i]);
+            CRCGenerator crcgen;
+            crcgen.updateCRC(crc_queue);
+            crcOk = (crcgen.CRC() == static_cast<std::uint16_t>(frame[total - 2] | (frame[total - 1] << 8)));
+            found = true;
+            break;
         }
 
-        while (!m_glblRx.empty() && !m->Response().UnexpectedChar() && !m->Response().Done()) {
-            c = m_glblRx.front();
-            m_glblRx.pop_front();
-            m->Parse(c);
-//            ss << std::hex << std::setfill('0') << std::setw(2) << (static_cast<unsigned int>(c)&0xFF) << " ";
+        if (dropped) {
+            PushEvent<int>(MessageEvents::UNEXPECTED_RX_CHAR, firstDropped);
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Discarded " << dropped << " unexpected byte(s) in receive stream (first 0x"
+                << std::hex << std::setfill('0') << std::setw(2) << firstDropped << ")";
         }
-//        BOOST_LOG_SEV(lg::get(), sev::trace) << "PROC: " << ss.str();
+        return found;
+    }
 
-        if (m->getStatus() == Message::Status::SENT)
-            m->setStatus(Message::Status::RX_PARTIAL);
+    // True if a response frame (valid CRC) can be the response to the request 'req'
+    bool CM_Common::ResponseMatches(const ReportFields& req, const std::vector<std::uint8_t>& frame)
+    {
+        const std::uint8_t id = frame[0];
+        const std::uint8_t hdr = frame[1];
+        const std::uint16_t addr = static_cast<std::uint16_t>(frame[5] | (frame[6] << 8));
 
-        return c;
+        bool synth;
+        if (req.ID == ReportTypes::HOST_REPORT_ID_SYNTH) {
+            if (id != static_cast<std::uint8_t>(ReportTypes::DEVICE_REPORT_ID_SYNTH)) return false;
+            synth = true;
+        }
+        else if (req.ID == ReportTypes::HOST_REPORT_ID_CTRLR) {
+            if (id != static_cast<std::uint8_t>(ReportTypes::DEVICE_REPORT_ID_CTRLR)) return false;
+            synth = false;
+        }
+        else return false;
+
+        // Error responses (DATA_OK clear, or no-header-found timeout) don't guarantee the action
+        // or address fields, so only the device type is checked
+        const bool ok = ((hdr & 0x70) == 0x40);
+        if (!ok) return true;
+
+        // The low nibble of HDR carries the action
+        const std::uint8_t action = req.hdr & 0x0F;
+        if ((hdr & 0x0F) != action) return false;
+
+        // ADDR is echoed by every OK synth response, and by OK controller register responses
+        const bool addrEchoed = synth ||
+            (action == (static_cast<std::uint8_t>(HostReport::Actions::CTRLR_REG) & 0x0F));
+        if (addrEchoed && (addr != req.addr)) return false;
+
+        return true;
+    }
+
+    // Outstanding messages in handle (= transmit) order: those waiting for a late response, those
+    // sent and awaiting a response, and the first unsent one (its response can arrive before the
+    // sender thread marks it sent).  At most MatchLookahead messages are returned.
+    std::vector<std::shared_ptr<Message>> CM_Common::OutstandingMessages()
+    {
+        std::vector<std::shared_ptr<Message>> outstanding;
+        for (auto& lw : m_lateWaiting) outstanding.push_back(lw.second);
+
+        // Hold the queue lock so SendMsg can't allocate a handle the cursor then moves past
+        // before the message is registered.
+        std::unique_lock<std::mutex> txlck{ m_txmutex };
+        MessageHandle cursor = m_rxCursor;
+        bool advancing = true;
+        m_msgRegistry.forEachMessageFrom(m_rxCursor, [&](const std::shared_ptr<Message>& m) {
+            const Message::Status s = m->getStatus();
+            if ((s == Message::Status::SENT) || (s == Message::Status::RX_PARTIAL)) {
+                advancing = false;
+                outstanding.push_back(m);
+            }
+            else if (s == Message::Status::UNSENT) {
+                outstanding.push_back(m);
+                return false;  // everything after this is unsent too
+            }
+            else if (advancing) {
+                // Complete, or an interrupt: can never be outstanding again
+                cursor = m->getMessageHandle() + 1;
+            }
+            return outstanding.size() < MatchLookahead;
+        });
+        m_rxCursor = cursor;
+        txlck.unlock();
+
+        std::sort(outstanding.begin(), outstanding.end(),
+            [](const std::shared_ptr<Message>& a, const std::shared_ptr<Message>& b) {
+                return a->getMessageHandle() < b->getMessageHandle();
+            });
+        if (outstanding.size() > MatchLookahead) outstanding.resize(MatchLookahead);
+        return outstanding;
+    }
+
+    void CM_Common::MarkResponseLost(const std::shared_ptr<Message>& m)
+    {
+        auto it = m_lateWaiting.find(m->getMessageHandle());
+        if (it != m_lateWaiting.end()) {
+            m_lateWaiting.erase(it);
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg (" << m->getMessageHandle()
+                << "): no late response; a newer message's response has arrived";
+            return;
+        }
+        if (m->isComplete()) return;
+
+        m->setStatus(Message::Status::TIMEOUT_ON_RXCV);
+        LogNotifyEvent(sev::warning, m, "Msg Response Lost", MessageEvents::RESPONSE_TIMED_OUT, m->getMessageHandle());
+    }
+
+    void CM_Common::RouteFrame(const std::vector<std::uint8_t>& frame, bool crcOk)
+    {
+        // Interrupts are unsolicited: each gets its own message
+        if (frame[0] == static_cast<std::uint8_t>(ReportTypes::INTERRUPT_REPORT_ID_CTRLR)) {
+            auto m = std::make_shared<Message>(HostReport());
+            m->setStatus(Message::Status::INTERRUPT);
+            m->AddBuffer(frame);
+            m_msgRegistry.addMessage(m->getMessageHandle(), m);
+            HandleMessage(m);
+            return;
+        }
+
+        auto outstanding = OutstandingMessages();
+        if (outstanding.empty()) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Unsolicited response discarded: " << FrameHex(frame);
+            return;
+        }
+
+        std::size_t idx = outstanding.size();
+        if (!crcOk) {
+            // Header can't be trusted: as before, the oldest outstanding message takes it
+            idx = 0;
+        }
+        else {
+            for (std::size_t i = 0; i < outstanding.size(); i++) {
+                if (ResponseMatches(outstanding[i]->RequestFields(), frame)) {
+                    idx = i;
+                    break;
+                }
+            }
+        }
+
+        if (idx == outstanding.size()) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Response matches no outstanding message, discarded: " << FrameHex(frame);
+            return;
+        }
+
+        // Responses arrive in request order, so older outstanding messages won't get one
+        for (std::size_t i = 0; i < idx; i++) MarkResponseLost(outstanding[i]);
+
+        const auto& m = outstanding[idx];
+        auto late = m_lateWaiting.find(m->getMessageHandle());
+        if (late != m_lateWaiting.end()) {
+            m_lateWaiting.erase(late);
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg Late Response (" << m->getMessageHandle() << "): discarded, "
+                << m->TimeElapsed().count() << "ms after send";
+            BOOST_LOG_SEV(lg::get(), sev::trace) << "D->H: " << FrameHex(frame);
+            return;
+        }
+
+        m->AddBuffer(frame);
+        HandleMessage(m);
+    }
+
+    void CM_Common::ProcessRxStream()
+    {
+        std::vector<std::uint8_t> frame;
+        bool crcOk = false;
+        auto drain = [&]() {
+            while (ExtractFrame(frame, crcOk)) RouteFrame(frame, crcOk);
+        };
+
+        drain();
+
+        // An incomplete frame that has had no new bytes for longer than the RX timeout is taken to
+        // be corrupt.  Drop a byte at a time, recovering any complete frames found further on.
+        if (!m_glblRx.empty() && ((HRClock::now() - m_lastRxTime) > rxTimeout)) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Receive stream stalled on an incomplete frame ("
+                << m_glblRx.size() << " bytes); resynchronising";
+            while (!m_glblRx.empty()) {
+                m_glblRx.pop_front();
+                drain();
+            }
+        }
     }
 
     void CM_Common::HandleResponseDone(std::shared_ptr<Message> m)
@@ -296,10 +479,13 @@ namespace iMS {
                     m->setStatus(Message::Status::TIMEOUT_ON_RXCV);
                     LogNotifyEvent(sev::warning, m, "Msg RX Timeout",
                                 MessageEvents::RESPONSE_TIMED_OUT, m->getMessageHandle());
+                    // Keep its place in line in case the response is late
+                    m_lateWaiting[m->getMessageHandle()] = m;
                 }
             }
     #ifndef DEBUG_PRESERVE_LIST
-            else if (m->TimeElapsed() > autoFreeTimeout && m->isComplete())
+            else if (m->TimeElapsed() > autoFreeTimeout && m->isComplete() &&
+                     (m_lateWaiting.find(m->getMessageHandle()) == m_lateWaiting.end()))
             {
                 messagesToRemove.push_back(m->getMessageHandle());
             }
@@ -308,29 +494,34 @@ namespace iMS {
 
         for (auto& msg : messagesToRemove)
             m_msgRegistry.removeMessage(msg);
+
+        // Stop waiting for late responses that haven't arrived
+        for (auto it = m_lateWaiting.begin(); it != m_lateWaiting.end();)
+        {
+            if (it->second->TimeElapsed() > (rxTimeout + lateResponseTimeout)) {
+                BOOST_LOG_SEV(lg::get(), sev::debug) << "Msg (" << it->first << "): stopped waiting for late response";
+                it = m_lateWaiting.erase(it);
+            }
+            else ++it;
+        }
     }
 
+    // Parse the bytes committed to a message: a frame routed from the receive stream, or a buffer
+    // delivered directly by connection types that identify each message's data themselves
     void CM_Common::HandleMessage(const std::shared_ptr<Message>& m)
     {
-        if (m->isComplete()) return;
+        if (m->isComplete() || !m->HasData()) return;
 
-        while (!m_glblRx.empty() || m->HasData()) {
-            if (m->Response().Done()) {
-                m->setStatus(Message::Status::RX_ERROR_INVALID);
-                LogAndNotify(sev::error, m, "Msg Invalid");
-                break;
-            }
-
-            char c = HandleMessageParse(m);
-            if (m->Response().UnexpectedChar()) {
-                HandleUnexpectedChar(m, c);
-                break;
-            }
-
-            if (m->Response().Done()) {
-                HandleResponseDone(m);
-                break;
-            }
+        char c = m->Parse();
+        const DeviceReport resp = m->Response();
+        if (resp.UnexpectedChar()) {
+            HandleUnexpectedChar(m, c);
+        }
+        else if (resp.Done()) {
+            HandleResponseDone(m);
+        }
+        else if (m->getStatus() == Message::Status::SENT) {
+            m->setStatus(Message::Status::RX_PARTIAL);
         }
     }
 
@@ -367,6 +558,12 @@ namespace iMS {
 
 	void CM_Common::MessageListManager()
 	{
+		// Fresh receive state for each connection
+		m_glblRx.clear();
+		m_lateWaiting.clear();
+		m_rxCursor = 0;
+		m_lastRxTime = HRClock::now();
+
 		while (DeviceIsOpen)
 		{
 
@@ -385,15 +582,17 @@ namespace iMS {
             }
 
 			// Do some message management
+            if (!localCopy.empty()) m_lastRxTime = HRClock::now();
             m_glblRx.insert(m_glblRx.end(),
                std::make_move_iterator(localCopy.begin()),
                std::make_move_iterator(localCopy.end()));
 
-            // Test for and parse interrupts in the global rx buffer
-            HandleInterrupts();
+            // Split the shared receive stream into frames and route each to its message
+            ProcessRxStream();
 
-            // Look for first message in list that is waiting for characters
-            m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) { 
+            // Parse data delivered directly to messages (USB transfers, interrupts received on
+            // a separate channel)
+            m_msgRegistry.forEachMessage([&](const std::shared_ptr<Message>& m) {
                 HandleMessage(m);
             });
 

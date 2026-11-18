@@ -29,6 +29,7 @@
 #include "PrivateUtil.h"  // for logging
 
 #include <list>
+#include <map>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -215,9 +216,29 @@ namespace iMS {
 		std::vector<triggerEvents<int, std::vector<std::uint8_t>>> m_Vevents;
         std::vector<PendingEvent> m_PendingEvents;
 
-        void HandleInterrupts();
+        // Response matching for connections that deliver one shared byte stream (m_glblRx).
+        //  Complete frames are extracted from the stream and routed to the oldest outstanding
+        //  message whose request they match (see RouteFrame).
+        bool ExtractFrame(std::vector<std::uint8_t>& frame, bool& crcOk);
+        void RouteFrame(const std::vector<std::uint8_t>& frame, bool crcOk);
+        static bool ResponseMatches(const ReportFields& req, const std::vector<std::uint8_t>& frame);
+        void MarkResponseLost(const std::shared_ptr<Message>& m);
+        void ProcessRxStream();
+        std::vector<std::shared_ptr<Message>> OutstandingMessages();
+
+        // Messages that timed out but whose response may still arrive.  They stay first in line
+        //  so that a late response is absorbed by its own message instead of the next one.
+        std::map<MessageHandle, std::shared_ptr<Message>> m_lateWaiting;
+        // How long a timed-out message waits for a late response before it gives up its place
+        const std::chrono::milliseconds lateResponseTimeout{ 5000 };
+        // How many outstanding messages to search for a match when a response doesn't match the oldest
+        static constexpr std::size_t MatchLookahead = 16;
+        HRClock::time_point m_lastRxTime{ HRClock::now() };
+        // Every message with a lower handle is complete (or an interrupt), so the search for
+        //  outstanding messages can start here rather than at the start of the registry
+        MessageHandle m_rxCursor{ 0 };
+
         void HandleMessage(const std::shared_ptr<Message>& m);
-        char HandleMessageParse(std::shared_ptr<Message> m);
         void HandleResponseDone(std::shared_ptr<Message> m);
         bool HandleUnexpectedChar(std::shared_ptr<Message> m, char c);
         void HandleTimeoutsAndCleanup();
