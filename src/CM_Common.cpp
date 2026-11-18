@@ -76,6 +76,25 @@ namespace iMS {
 		return DeviceIsOpen;
 	}
 
+	void CM_Common::SetMessageSerialisation(bool enable)
+	{
+		m_serialiseMessages.store(enable);
+	}
+
+	// Called by the MessageSender thread immediately after a message has been handed to the
+	// transport.  When serialisation is enabled, block until that message has completed
+	// (response received, error, or RX timeout) so that the next request is not transmitted
+	// while this one is still outstanding.  This guarantees each request occupies its own
+	// TCP segment, as some iMS firmware processes only one request frame per received segment.
+	void CM_Common::AwaitCompletionIfSerialised(const std::shared_ptr<Message>& m)
+	{
+		if (!m_serialiseMessages.load()) return;
+
+		// Wake periodically so the sender thread can exit promptly on disconnect.
+		// The RX timeout in HandleTimeoutsAndCleanup() bounds how long this can take.
+		while (DeviceIsOpen && !m->waitForCompletion(std::chrono::milliseconds(50))) {}
+	}
+
 	MessageHandle CM_Common::SendMsg(HostReport const& Rpt)
 	{
 		if (DeviceIsOpen)

@@ -575,6 +575,12 @@ namespace iMS
 		p_Impl->m_conn->SetTimeouts(send_timeout_ms, rx_timeout_ms, free_timeout_ms, discover_timeout_ms);
 	}
 
+	void IMSSystem::SetMessageSerialisation(bool enable)
+	{
+        if (p_Impl->m_conn.get() == nullptr) return;
+		p_Impl->m_conn->SetMessageSerialisation(enable);
+	}
+
 	bool IMSSystem::Open() const
 	{
         if (p_Impl->m_conn.get() == nullptr) return false;

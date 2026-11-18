@@ -435,6 +435,18 @@ namespace iMS
     /// <param name="discover_timeout_ms">The round trip wait time for iMS systems to respond to with an announce packet to a discovery broadcast (Ethernet)</param>
     /// \since 1.8.10
         void SetTimeouts(int send_timeout_ms = 500, int rx_timeout_ms = 5000, int free_timeout_ms = 30000, int discover_timeout_ms = 2500);
+    /// \brief Enables or disables message serialisation on the iMS Connection
+    ///
+    /// When enabled, the Connection Manager waits for each message to complete (response received,
+    /// error, or receive timeout) before transmitting the next one, so that only one request is in
+    /// flight at any time.  This prevents requests being coalesced into a single network packet,
+    /// which some iMS firmware versions do not process correctly over Ethernet.
+    ///
+    /// Enabled by default for Ethernet connections.  May also be set per connection module with the
+    /// \c serialise_messages element in the connection settings file.  Ignored by other connection types.
+    /// \param[in] enable true to keep only one message in flight; false to allow pipelining
+    /// \since 2.0.10
+        void SetMessageSerialisation(bool enable);
 
 	/// \brief Tests Connection Status
 	///

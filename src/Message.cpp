@@ -92,6 +92,10 @@ namespace iMS
 		m_status.store(s, std::memory_order_release);
         if (!c && isComplete()) {
             markRecdTime();
+            // Briefly take the wait mutex so that a waiter which has just evaluated the
+            // predicate (and found it false) is guaranteed to be blocked in wait() before
+            // we notify.  Without this, the notification can be lost.
+            { std::unique_lock<std::shared_mutex> lk(m_waitMutex); }
             m_cv.notify_all();
         }
 	}

@@ -75,7 +75,15 @@ namespace iMS {
 		const DeviceReport Response(const MessageHandle) const;
 		const bool& Open() const;
 
+		void SetMessageSerialisation(bool enable);
+
 	protected:
+		// Message serialisation (one request in flight at a time).  Off by default; connection
+		//	types that need it enable it in their constructor and call AwaitCompletionIfSerialised()
+		//	from their MessageSender after each transmission.
+		std::atomic<bool> m_serialiseMessages{ false };
+		void AwaitCompletionIfSerialised(const std::shared_ptr<Message>& m);
+
         struct DefaultPolicy {
             DefaultPolicy(uint32_t _addr, int _index) : addr(_addr), index(_index) {}
 

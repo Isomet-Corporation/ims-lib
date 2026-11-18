@@ -243,6 +243,9 @@ struct ConnectionControl
 	int FreeTimeout;
 	int DiscoveryTimeout;
 	bool IncludeInScan;
+	// Optional override of the module's message serialisation default (one request in flight).
+	// Unset means "use the connection module's built-in default" (on for CM_ETH).
+	boost::optional<bool> SerialiseMessages;
 };
 
 struct ConnectionControlMap
@@ -281,6 +284,7 @@ void ConnectionControlMap::Load(const std::string& filename)
 				controlSettings.FreeTimeout = v.second.get("free_timeout", 10000);
 				controlSettings.DiscoveryTimeout = v.second.get("discover_timeout", 500);
 				controlSettings.IncludeInScan = v.second.get("scan", true);
+				controlSettings.SerialiseMessages = v.second.get_optional<bool>("serialise_messages");
 
 				mControlMap.emplace(module_name, controlSettings);
 
@@ -309,6 +313,8 @@ void ConnectionControlMap::Save(const std::string& filename)
 		module_tree.put("free_timeout", v.second.FreeTimeout);
 		module_tree.put("discover_timeout", v.second.DiscoveryTimeout);
 		module_tree.put("scan", v.second.IncludeInScan);
+		if (v.second.SerialiseMessages)
+			module_tree.put("serialise_messages", *v.second.SerialiseMessages);
 
 		tree.add_child("connection.modules.module", module_tree);
 	}
@@ -448,6 +454,8 @@ namespace iMS
             int discovery_timeout = settings.DiscoveryTimeout;
             if (discovery_timeout > max_discover_timeout_ms) discovery_timeout = (int)max_discover_timeout_ms;
 			(*iter)->SetTimeouts(settings.SendTimeout, settings.RxTimeout, settings.FreeTimeout, discovery_timeout);
+			if (settings.SerialiseMessages)
+				(*iter)->SetMessageSerialisation(*settings.SerialiseMessages);
 			pImpl->config_map->emplace((*iter)->Ident(), ConnectionConfig(settings.IncludeInScan));
             pImpl->settings_map->emplace((*iter)->Ident(), nullptr);
 			pImpl->ModuleNames.push_back((*iter)->Ident());

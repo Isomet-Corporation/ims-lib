@@ -523,6 +523,11 @@ static std::string logErrorString(int err = INT_MAX) {
 		rxTimeout = std::chrono::milliseconds(500);
 		autoFreeTimeout = std::chrono::milliseconds(10000);
         connSettings = nullptr;
+
+        // iMS firmware may process only one request frame per received TCP segment.  If several
+        // pipelined requests are coalesced into one segment, the surplus requests are not
+        // processed until further traffic arrives, causing RX timeouts.  Keep one request in flight.
+        m_serialiseMessages.store(true);
 	}
 
 	CM_ENET::~CM_ENET()
@@ -1041,6 +1046,8 @@ static std::string logErrorString(int err = INT_MAX) {
                 }
             }
 #endif
+            // If serialisation is enabled, hold off the next request until this one completes
+            AwaitCompletionIfSerialised(m);
 		}
 	}
 

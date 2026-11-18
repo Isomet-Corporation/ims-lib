@@ -62,6 +62,11 @@ namespace iMS
 		// Set Connection Timeouts
 		virtual void SetTimeouts(int send_timeout_ms, int rx_timeout_ms, int free_timeout_ms, int discover_timeout_ms) = 0;
 
+		// When enabled, the sender waits for each message to complete (response, error or
+		//     timeout) before transmitting the next, so only one request is ever in flight.
+		//     Only honoured by connection types that require it (currently CM_ETH).
+		virtual void SetMessageSerialisation(bool enable) = 0;
+
 		// Send an I/O Report
 		virtual MessageHandle SendMsg(HostReport const& Rpt) = 0;
 		virtual DeviceReport SendMsgBlocking(HostReport const& Rpt) = 0;
