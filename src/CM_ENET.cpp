@@ -681,8 +681,9 @@ static std::string logErrorString(int err = INT_MAX) {
 				return;
 			}
 
+			const long ConnectTimeoutSec = 4;
 			TIMEVAL Timeout;
-			Timeout.tv_sec = 4;
+			Timeout.tv_sec = ConnectTimeoutSec;
 			Timeout.tv_usec = 0;
 
 
@@ -745,12 +746,20 @@ static std::string logErrorString(int err = INT_MAX) {
 					fd_set Read;
 					FD_ZERO(&Read);
 					FD_SET(InterruptSock, &Read);
+					// select() may have updated Timeout to the time remaining (Linux), so reset it
+					Timeout.tv_sec = ConnectTimeoutSec;
+					Timeout.tv_usec = 0;
 					select(InterruptSock+1, &Read, NULL, NULL, &Timeout);
 					if (FD_ISSET(InterruptSock, &Read))
 					{
 						pImpl->intrSock = accept(InterruptSock, NULL, NULL);
+#ifdef WIN32
 						if (INVALID_SOCKET == pImpl->intrSock) {
+#else
+						if (static_cast<int>(pImpl->intrSock) < 0) {
+#endif
 							BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: accept() failed! Continuing without interrupts " << logErrorString() << std::endl;
+							pImpl->intrSock = INVALID_SOCKET;
 						} else {
 #ifdef __linux__
 							// v1.8.5 (Linux)
@@ -762,7 +771,8 @@ static std::string logErrorString(int err = INT_MAX) {
 					}
 					else {
 						pImpl->intrSock = INVALID_SOCKET;
-							BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: accept() timed out! Continuing without interrupts " << logErrorString() << std::endl;
+						BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: device did not connect to the interrupt port within "
+							<< ConnectTimeoutSec << " s (accept timed out). Continuing without interrupts" << std::endl;
 					}
 #ifdef WIN32
 					// No longer need server socket
@@ -873,6 +883,20 @@ static std::string logErrorString(int err = INT_MAX) {
 			BOOST_LOG_SEV(lg::get(), sev::info) << "Closing sockets" << std::endl;
 			//shutdown(pImpl->msgSock, SD_BOTH);
 			//shutdown(pImpl->intrSock, SD_BOTH);
+
+			// Close the interrupt connection abortively (RST rather than FIN) so the host keeps no
+			// TIME_WAIT state for it.  The device opens this connection to our fixed port 28245, and
+			// some firmware reuses the same source port and initial sequence number after a power
+			// cycle; a SYN that matches a host TIME_WAIT entry is silently dropped, so the next
+			// session would run without interrupts.
+			if (pImpl->intrSock != INVALID_SOCKET) {
+				struct linger lin;
+				lin.l_onoff = 1;
+				lin.l_linger = 0;
+				if (setsockopt(pImpl->intrSock, SOL_SOCKET, SO_LINGER, (const char*)&lin, sizeof(lin)) != 0) {
+					BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: setsockopt (SO_LINGER) on interrupt socket failed: " << logErrorString() << std::endl;
+				}
+			}
 #ifdef WIN32
 			if (closesocket(pImpl->msgSock) != 0) {
 				BOOST_LOG_SEV(lg::get(), sev::warning) << "Client: Cannot close \"SendingSocket\" socket.  Err: " <<  logErrorString() << std::endl;
@@ -1220,6 +1244,13 @@ static std::string logErrorString(int err = INT_MAX) {
 
 	void CM_ENET::InterruptReceiver()
 	{
+		// No interrupt connection (the device didn't connect back): nothing to receive.  Without this
+		// check, select() on the invalid socket fails immediately and the loop spins.
+		if (pImpl->intrSock == INVALID_SOCKET) {
+			BOOST_LOG_SEV(lg::get(), sev::debug) << "Interrupt receiver not started: no interrupt connection" << std::endl;
+			return;
+		}
+
 		bool errorLogged = false;
 		while (DeviceIsOpen == true)
 		{
