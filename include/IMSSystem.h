@@ -442,8 +442,11 @@ namespace iMS
     /// flight at any time.  This prevents requests being coalesced into a single network packet,
     /// which some iMS firmware versions do not process correctly over Ethernet.
     ///
-    /// Enabled by default for Ethernet connections.  May also be set per connection module with the
-    /// \c serialise_messages element in the connection settings file.  Ignored by other connection types.
+    /// By default, Ethernet connections enable it only for iMSP controllers with firmware earlier
+    /// than 2.5.112, which need it; the choice is made each time a scanned system is connected.
+    /// Calling this function, or setting the \c serialise_messages element for the connection module
+    /// in the connection settings file, overrides that choice for every system on the connection.
+    /// Ignored by other connection types.
     /// \param[in] enable true to keep only one message in flight; false to allow pipelining
     /// \since 2.0.10
         void SetMessageSerialisation(bool enable);

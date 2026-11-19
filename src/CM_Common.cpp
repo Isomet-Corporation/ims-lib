@@ -81,6 +81,7 @@ namespace iMS {
 
 	void CM_Common::SetMessageSerialisation(bool enable)
 	{
+		m_serialiseOverride.store(enable ? 1 : 0);
 		m_serialiseMessages.store(enable);
 	}
 

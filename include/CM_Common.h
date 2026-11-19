@@ -80,9 +80,12 @@ namespace iMS {
 
 	protected:
 		// Message serialisation (one request in flight at a time).  Off by default; connection
-		//	types that need it enable it in their constructor and call AwaitCompletionIfSerialised()
-		//	from their MessageSender after each transmission.
+		//	types that need it enable it (CM_ETH decides per device on Connect) and call
+		//	AwaitCompletionIfSerialised() from their MessageSender after each transmission.
 		std::atomic<bool> m_serialiseMessages{ false };
+		// Explicit setting from SetMessageSerialisation(): -1 = none (use the connection type's
+		//	automatic choice), 0 = off, 1 = on.  Takes precedence over the automatic choice.
+		std::atomic<int> m_serialiseOverride{ -1 };
 		void AwaitCompletionIfSerialised(const std::shared_ptr<Message>& m);
 
         struct DefaultPolicy {
