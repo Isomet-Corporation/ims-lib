@@ -429,6 +429,9 @@ namespace iMS
 
         if (p_Impl->m_conn.get() == nullptr) return false;
 
+		// Choose the message protocol before any other traffic (v1 unless enabled and supported)
+		p_Impl->m_conn->NegotiateProtocol();
+
 		std::uint16_t ctrlr_magic=0xFFFF, synth_magic=0xFFFF;
 		{
 			// Read Controller Magic Number
@@ -561,6 +564,8 @@ namespace iMS
 	{
         if (p_Impl->m_conn.get() == nullptr) return;
 		p_Impl->m_conn->Connect(p_Impl->m_connString);
+		// Every connection starts on v1; choose the protocol for this one
+		if (p_Impl->m_conn->Open()) p_Impl->m_conn->NegotiateProtocol();
 	}
 
 	void IMSSystem::Disconnect() 

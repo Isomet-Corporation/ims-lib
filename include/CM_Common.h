@@ -26,6 +26,7 @@
 
 #include "IConnectionManager.h"
 #include "MessageRegistry.h"
+#include "ProtocolV2.h"
 #include "PrivateUtil.h"  // for logging
 
 #include <list>
@@ -78,7 +79,17 @@ namespace iMS {
 
 		void SetMessageSerialisation(bool enable);
 
+		void SetProtocolPreference(ProtocolPreference pref);
+		void NegotiateProtocol();
+
 	protected:
+		// Protocol v2 needs responses to arrive in the shared receive stream (m_rxCharQueue).
+		//	Connection types that deliver responses to messages directly return false.
+		virtual bool SupportsProtocolV2() const { return true; }
+		// Switch the current connection to protocol v2 with the device's advertised limits
+		void EnableProtocolV2(const ProtocolV2::ProtocolInfo& info);
+		bool ProtocolV2Active() const { return m_protoV2.load(); }
+
 		// Message serialisation (one request in flight at a time).  Off by default; connection
 		//	types that need it enable it (CM_ETH decides per device on Connect) and call
 		//	AwaitCompletionIfSerialised() from their MessageSender after each transmission.
@@ -240,6 +251,37 @@ namespace iMS {
         // Every message with a lower handle is complete (or an interrupt), so the search for
         //  outstanding messages can start here rather than at the start of the registry
         MessageHandle m_rxCursor{ 0 };
+
+        // --- Protocol v2 (09-26-015-SPEC-001) ---
+        std::atomic<int> m_protocolPref{ static_cast<int>(ProtocolPreference::V1) };
+        std::atomic<bool> m_protoV2{ false };
+        // Written before m_protoV2 is set, read only while it is set
+        ProtocolV2::ProtocolInfo m_protoInfo;
+        // Largest COBS-encoded frame accepted from the device (bytes between delimiters)
+        std::size_t m_v2MaxEncoded{ 0 };
+        // MAX_INFLIGHT advertised by the device (sender thread reads it)
+        std::atomic<int> m_v2Window{ 0 };
+
+        // Sequence numbers in use: outstanding, or waiting for a late response.  SendMsg allocates
+        //  under m_txmutex; the parser thread looks up and releases.
+        mutable std::mutex m_seqmutex;
+        std::map<std::uint16_t, std::shared_ptr<Message>> m_seqMap;
+        std::uint16_t m_nextSeq{ 0 };
+        bool AllocateSeq(const std::shared_ptr<Message>& m, std::uint16_t& seq);
+        std::shared_ptr<Message> FindSeq(std::uint16_t seq);
+        void ReleaseSeq(std::uint16_t seq);
+        void ReleaseCompletedSeqs();
+
+        // Requests in flight, for the MAX_INFLIGHT window (sender thread)
+        std::mutex m_inflightmutex;
+        std::deque<std::shared_ptr<Message>> m_inflight;
+        void AwaitInflightWindow(const std::shared_ptr<Message>& m);
+
+        int m_lastIntrSeq{ -1 };
+        void ResetProtocolState();
+        void ProcessRxStreamV2();
+        void RouteFrameV2(const ProtocolV2::Header& hdr, const std::vector<std::uint8_t>& payload);
+        ProtocolV2::ProtocolInfo ReadProtocolInfo(HostReport::Actions action, bool& answered);
 
         void HandleMessage(const std::shared_ptr<Message>& m);
         void HandleResponseDone(std::shared_ptr<Message> m);

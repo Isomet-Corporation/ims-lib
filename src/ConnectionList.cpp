@@ -246,6 +246,9 @@ struct ConnectionControl
 	// Optional override of the module's message serialisation default (one request in flight).
 	// Unset means "use the connection module's built-in default" (on for CM_ETH).
 	boost::optional<bool> SerialiseMessages;
+	// Optional message protocol preference: "v1" (default) or "auto" (use v2 where the device
+	// advertises it).  Unset means v1.
+	boost::optional<std::string> Protocol;
 };
 
 struct ConnectionControlMap
@@ -285,6 +288,7 @@ void ConnectionControlMap::Load(const std::string& filename)
 				controlSettings.DiscoveryTimeout = v.second.get("discover_timeout", 500);
 				controlSettings.IncludeInScan = v.second.get("scan", true);
 				controlSettings.SerialiseMessages = v.second.get_optional<bool>("serialise_messages");
+				controlSettings.Protocol = v.second.get_optional<std::string>("protocol");
 
 				mControlMap.emplace(module_name, controlSettings);
 
@@ -315,6 +319,8 @@ void ConnectionControlMap::Save(const std::string& filename)
 		module_tree.put("scan", v.second.IncludeInScan);
 		if (v.second.SerialiseMessages)
 			module_tree.put("serialise_messages", *v.second.SerialiseMessages);
+		if (v.second.Protocol)
+			module_tree.put("protocol", *v.second.Protocol);
 
 		tree.add_child("connection.modules.module", module_tree);
 	}
@@ -456,6 +462,15 @@ namespace iMS
 			(*iter)->SetTimeouts(settings.SendTimeout, settings.RxTimeout, settings.FreeTimeout, discovery_timeout);
 			if (settings.SerialiseMessages)
 				(*iter)->SetMessageSerialisation(*settings.SerialiseMessages);
+			if (settings.Protocol) {
+				if (*settings.Protocol == "auto")
+					(*iter)->SetProtocolPreference(IConnectionManager::ProtocolPreference::AUTO);
+				else if (*settings.Protocol == "v1")
+					(*iter)->SetProtocolPreference(IConnectionManager::ProtocolPreference::V1);
+				else
+					BOOST_LOG_SEV(lg::get(), sev::warning) << "Connection module " << (*iter)->Ident()
+						<< ": unknown protocol setting \"" << *settings.Protocol << "\" (expected v1 or auto); using v1";
+			}
 			pImpl->config_map->emplace((*iter)->Ident(), ConnectionConfig(settings.IncludeInScan));
             pImpl->settings_map->emplace((*iter)->Ident(), nullptr);
 			pImpl->ModuleNames.push_back((*iter)->Ident());

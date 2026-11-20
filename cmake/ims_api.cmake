@@ -27,6 +27,7 @@ set(ims_api_source_files
     ${api_source_dir}/HostReport.cpp
     ${api_source_dir}/IOReport.cpp
     ${api_source_dir}/Message.cpp
+    ${api_source_dir}/ProtocolV2.cpp
     ${api_source_dir}/ReportManipulation.cpp
     ${api_source_dir}/BulkVerifier.cpp
     ${api_source_dir}/Containers.cpp

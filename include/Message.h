@@ -60,8 +60,17 @@ namespace iMS
         bool waitForCompletion(std::chrono::milliseconds timeout);
         void waitForCompletion();
 
-		// Mirror Host & Device Report methods
+		// Mirror Host & Device Report methods.  SerialStream() returns the bytes to transmit: the
+		// wire frame set by SetWireStream() if any (protocol v2), otherwise the v1 serialised report.
 		const std::vector<std::uint8_t>& SerialStream();
+		void SetWireStream(std::vector<std::uint8_t> wire);
+
+		// Protocol v2 sequence number, or -1 for a v1 message
+		void setSeq(int seq);
+		int getSeq() const;
+
+		// The request payload (as given by the caller, not truncated)
+		std::vector<std::uint8_t> RequestPayload() const;
 		void Parse(const std::uint8_t rxchar);
 		char Parse();
 		void ResetParser();
@@ -94,6 +103,8 @@ namespace iMS
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_sent;
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_tm_recd;
 		std::deque<std::uint8_t> unparsed_buf;
+		std::vector<std::uint8_t> m_wire;
+		std::atomic<int> m_seq{ -1 };
 
         // Synchronisation
         mutable std::shared_mutex m_waitMutex;

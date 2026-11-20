@@ -154,7 +154,29 @@ namespace iMS
 
 	const std::vector<std::uint8_t>& Message::SerialStream()
 	{
+		if (!m_wire.empty()) return m_wire;
 		return m_rpt.SerialStream();
+	}
+
+	// Must be called before the message is queued for transmission
+	void Message::SetWireStream(std::vector<std::uint8_t> wire)
+	{
+		m_wire = std::move(wire);
+	}
+
+	void Message::setSeq(int seq)
+	{
+		m_seq.store(seq);
+	}
+
+	int Message::getSeq() const
+	{
+		return m_seq.load();
+	}
+
+	std::vector<std::uint8_t> Message::RequestPayload() const
+	{
+		return m_rpt.Payload<std::vector<std::uint8_t>>();
 	}
 
 	void Message::Parse(const std::uint8_t rxchar)

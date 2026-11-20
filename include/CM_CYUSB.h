@@ -84,6 +84,10 @@ namespace iMS
 		void ResponseReceiver();
 		void MemoryTransfer();
 		void InterruptReceiver();
+
+		// Responses are delivered to each message from its own USB transfer, not through the
+		// shared receive stream that protocol v2 framing needs
+		bool SupportsProtocolV2() const override { return false; }
 	};
 
 }

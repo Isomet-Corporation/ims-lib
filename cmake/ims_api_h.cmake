@@ -44,6 +44,7 @@ set(ims_private_api_header_files
     ${api_include_dir}/HostReport.h
     ${api_include_dir}/IOReport.h
     ${api_include_dir}/Message.h
+    ${api_include_dir}/ProtocolV2.h
     ${api_include_dir}/ReportManipulation.h
     ${api_include_dir}/BulkVerifier.h
     ${api_include_dir}/EEPROM.h

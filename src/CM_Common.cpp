@@ -26,6 +26,7 @@
 #include "ReportManipulation.h"
 
 #include <algorithm>
+#include <random>
 #include <sstream>
 #include <iostream>
 #include <iomanip>
@@ -92,11 +93,166 @@ namespace iMS {
 	// TCP segment, as some iMS firmware processes only one request frame per received segment.
 	void CM_Common::AwaitCompletionIfSerialised(const std::shared_ptr<Message>& m)
 	{
-		if (!m_serialiseMessages.load()) return;
+		if (!m_serialiseMessages.load()) {
+			// Protocol v2: keep within the device's advertised number of requests in flight
+			AwaitInflightWindow(m);
+			return;
+		}
 
 		// Wake periodically so the sender thread can exit promptly on disconnect.
 		// The RX timeout in HandleTimeoutsAndCleanup() bounds how long this can take.
 		while (DeviceIsOpen && !m->waitForCompletion(std::chrono::milliseconds(50))) {}
+	}
+
+	// Called by the sender thread after transmitting m.  Blocks while the number of requests in
+	// flight is at the device's MAX_INFLIGHT, so at most that many are ever outstanding.
+	void CM_Common::AwaitInflightWindow(const std::shared_ptr<Message>& m)
+	{
+		if (!m_protoV2.load()) return;
+		const int window = m_v2Window.load();
+		if (window <= 0) return;
+
+		std::unique_lock<std::mutex> lk{ m_inflightmutex };
+		m_inflight.push_back(m);
+		auto prune = [&]() {
+			m_inflight.erase(std::remove_if(m_inflight.begin(), m_inflight.end(),
+				[](const std::shared_ptr<Message>& x) { return x->isComplete(); }), m_inflight.end());
+		};
+		prune();
+		while (DeviceIsOpen && (m_inflight.size() >= static_cast<std::size_t>(window))) {
+			auto oldest = m_inflight.front();
+			lk.unlock();
+			oldest->waitForCompletion(std::chrono::milliseconds(50));
+			lk.lock();
+			prune();
+		}
+	}
+
+	// --- Protocol selection -----------------------------------------------------------------
+
+	void CM_Common::SetProtocolPreference(ProtocolPreference pref)
+	{
+		m_protocolPref.store(static_cast<int>(pref));
+	}
+
+	// Read the protocol info block with a v1 register read.  'answered' is true if the device
+	// sent any response (a v1 device answers with zeros).
+	ProtocolV2::ProtocolInfo CM_Common::ReadProtocolInfo(HostReport::Actions action, bool& answered)
+	{
+		HostReport rpt(action, HostReport::Dir::READ, ProtocolV2::InfoBaseProvisional);
+		ReportFields f = rpt.Fields();
+		f.len = static_cast<std::uint16_t>(ProtocolV2::InfoWords * 2);
+		rpt.Fields(f);
+		const DeviceReport r = SendMsgBlocking(rpt);
+
+		answered = r.Done();
+		if (!r.Done() || r.RxCRC() || r.GeneralError() || r.TxTimeout() || r.TxCRC())
+			return ProtocolV2::ProtocolInfo();
+		return ProtocolV2::ProtocolInfo::Parse(r.Payload<std::vector<std::uint16_t>>());
+	}
+
+	// Choose the protocol for this connection (09-26-015-SPEC-001 section 7.1).  Every
+	// connection starts on v1; the probe itself uses v1 register reads.
+	void CM_Common::NegotiateProtocol()
+	{
+		m_protoV2.store(false);
+		m_v2Window.store(0);
+
+		if (static_cast<ProtocolPreference>(m_protocolPref.load()) != ProtocolPreference::AUTO) {
+			BOOST_LOG_SEV(lg::get(), sev::debug) << "Message protocol: v1 (set by preference)";
+			return;
+		}
+		if (!DeviceIsOpen) return;
+		if (!SupportsProtocolV2()) {
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Message protocol: v1 (" << Ident() << " connections support v1 only)";
+			return;
+		}
+
+		// A controller decides for the whole link: it relays synthesiser frames itself.  Only if no
+		// controller answers is a directly connected synthesiser probed.
+		bool answered = false;
+		std::string who = "controller";
+		ProtocolV2::ProtocolInfo info = ReadProtocolInfo(HostReport::Actions::CTRLR_REG, answered);
+		if (!answered) {
+			who = "synthesiser";
+			info = ReadProtocolInfo(HostReport::Actions::SYNTH_REG, answered);
+		}
+
+		if (info.SupportsV2()) {
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Message protocol: v2 (" << who << ": " << info.Describe() << ")";
+			EnableProtocolV2(info);
+		}
+		else {
+			BOOST_LOG_SEV(lg::get(), sev::info) << "Message protocol: v1 (" << who
+				<< (answered ? " does not advertise v2" : " did not answer the protocol probe") << ")";
+		}
+	}
+
+	void CM_Common::EnableProtocolV2(const ProtocolV2::ProtocolInfo& info)
+	{
+		m_protoInfo = info;
+		m_v2MaxEncoded = ProtocolV2::MaxEncodedLen(std::max(info.maxPayload, info.relayMaxPayload));
+		m_v2Window.store(info.maxInflight);
+		{
+			// Start at a random SEQ so a stale reply from an earlier session can't match
+			std::scoped_lock lk{ m_seqmutex };
+			std::random_device rd;
+			m_nextSeq = static_cast<std::uint16_t>(rd() & 0xFFFF);
+		}
+		m_protoV2.store(true);
+	}
+
+	// Fresh protocol state for a new connection: v1 until negotiated
+	void CM_Common::ResetProtocolState()
+	{
+		m_protoV2.store(false);
+		m_v2Window.store(0);
+		{
+			std::scoped_lock lk{ m_seqmutex };
+			m_seqMap.clear();
+		}
+		{
+			std::scoped_lock lk{ m_inflightmutex };
+			m_inflight.clear();
+		}
+		m_lastIntrSeq = -1;
+	}
+
+	bool CM_Common::AllocateSeq(const std::shared_ptr<Message>& m, std::uint16_t& seq)
+	{
+		std::scoped_lock lk{ m_seqmutex };
+		if (m_seqMap.size() > 0xFFFF) return false;
+		while (m_seqMap.count(m_nextSeq)) ++m_nextSeq;
+		seq = m_nextSeq++;
+		m_seqMap[seq] = m;
+		return true;
+	}
+
+	std::shared_ptr<Message> CM_Common::FindSeq(std::uint16_t seq)
+	{
+		std::scoped_lock lk{ m_seqmutex };
+		auto it = m_seqMap.find(seq);
+		return (it == m_seqMap.end()) ? nullptr : it->second;
+	}
+
+	void CM_Common::ReleaseSeq(std::uint16_t seq)
+	{
+		std::scoped_lock lk{ m_seqmutex };
+		m_seqMap.erase(seq);
+	}
+
+	// A SEQ stays reserved while its message is outstanding or waiting for a late response, so
+	// it can never be reused for a request whose reply could be confused with it
+	void CM_Common::ReleaseCompletedSeqs()
+	{
+		std::scoped_lock lk{ m_seqmutex };
+		for (auto it = m_seqMap.begin(); it != m_seqMap.end();) {
+			const auto& m = it->second;
+			if (m->isComplete() && (m_lateWaiting.find(m->getMessageHandle()) == m_lateWaiting.end()))
+				it = m_seqMap.erase(it);
+			else
+				++it;
+		}
 	}
 
 	MessageHandle CM_Common::SendMsg(HostReport const& Rpt)
@@ -112,6 +268,25 @@ namespace iMS {
                 std::unique_lock <std::mutex> txlck{ m_txmutex };
 				std::shared_ptr<Message> m = std::make_shared<Message>(Rpt);
 				hnd = m->getMessageHandle();
+
+				if (m_protoV2.load()) {
+					// Protocol v2: give the message a SEQ and encode it for the wire
+					std::uint16_t seq;
+					if (!AllocateSeq(m, seq)) {
+						BOOST_LOG_SEV(lg::get(), sev::error) << "Msg (" << hnd << "): no free sequence number";
+						m->setStatus(Message::Status::SEND_ERROR);
+						m_msgRegistry.addMessage(hnd, m);
+						return hnd;
+					}
+					const std::vector<std::uint8_t> payload = m->RequestPayload();
+					if (payload.size() > m_protoInfo.maxPayload) {
+						BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg (" << hnd << "): payload of " << payload.size()
+							<< " bytes exceeds the device maximum of " << m_protoInfo.maxPayload;
+					}
+					m->setSeq(seq);
+					m->SetWireStream(ProtocolV2::EncodeRequest(m->RequestFields(), payload, seq));
+				}
+
 				m_msgRegistry.addMessage(hnd, m);
 				m_queue.push(m);
 			}
@@ -385,8 +560,10 @@ namespace iMS {
     {
         std::vector<std::uint8_t> frame;
         bool crcOk = false;
+        const bool v2 = m_protoV2.load();
         auto drain = [&]() {
-            while (ExtractFrame(frame, crcOk)) RouteFrame(frame, crcOk);
+            if (v2) ProcessRxStreamV2();
+            else while (ExtractFrame(frame, crcOk)) RouteFrame(frame, crcOk);
         };
 
         drain();
@@ -394,6 +571,11 @@ namespace iMS {
         // An incomplete frame that has had no new bytes for longer than the RX timeout is taken to
         // be corrupt.  Drop a byte at a time, recovering any complete frames found further on.
         if (!m_glblRx.empty() && ((HRClock::now() - m_lastRxTime) > rxTimeout)) {
+            if (v2 && std::all_of(m_glblRx.begin(), m_glblRx.end(), [](std::uint8_t b) { return b == ProtocolV2::Delimiter; })) {
+                // Only frame delimiters waiting: nothing is lost
+                m_glblRx.clear();
+                return;
+            }
             BOOST_LOG_SEV(lg::get(), sev::warning) << "Receive stream stalled on an incomplete frame ("
                 << m_glblRx.size() << " bytes); resynchronising";
             while (!m_glblRx.empty()) {
@@ -401,6 +583,164 @@ namespace iMS {
                 drain();
             }
         }
+    }
+
+    // Protocol v2 receive stream: frames are delimited by 0x00 (09-26-015-SPEC-001 section 3).
+    // Every 0x00 is a frame boundary: a frame's closing delimiter is left in place to open the next
+    // one, so after corruption at most the damaged frame is lost.  v1 interrupt frames (ID 0x49) may
+    // still arrive if interrupts were enabled with a v1 request; a chunk that is not a valid v2 frame
+    // but starts with 0x49 is tried as a v1 frame (which may itself contain 0x00 bytes).
+    void CM_Common::ProcessRxStreamV2()
+    {
+        constexpr std::uint8_t IntrId = static_cast<std::uint8_t>(ReportTypes::INTERRUPT_REPORT_ID_CTRLR);
+        std::size_t dropped = 0;
+        int firstDropped = 0;
+        std::vector<std::uint8_t> v1frame;
+        bool crcOk = false;
+
+        auto drop = [&](std::size_t n) {
+            if (!dropped && n) firstDropped = static_cast<int>(m_glblRx.front());
+            dropped += n;
+            m_glblRx.erase(m_glblRx.begin(), m_glblRx.begin() + n);
+        };
+
+        while (!m_glblRx.empty()) {
+            const std::uint8_t b = m_glblRx.front();
+
+            if (b == IntrId) {
+                if (!ExtractFrame(v1frame, crcOk)) break;   // incomplete: wait for more bytes
+                if (crcOk) {
+                    RouteFrame(v1frame, true);
+                }
+                else {
+                    // Not a v1 frame after all: put back all but its first byte and carry on
+                    m_glblRx.insert(m_glblRx.begin(), v1frame.begin() + 1, v1frame.end());
+                    if (!dropped) firstDropped = IntrId;
+                    ++dropped;
+                }
+                continue;
+            }
+
+            if (b != ProtocolV2::Delimiter) {
+                drop(1);   // between frames: not the start of anything
+                continue;
+            }
+
+            if ((m_glblRx.size() >= 2) && (m_glblRx[1] == ProtocolV2::Delimiter)) {
+                m_glblRx.pop_front();   // empty frame
+                continue;
+            }
+
+            auto close = std::find(m_glblRx.begin() + 1, m_glblRx.end(), ProtocolV2::Delimiter);
+            if (close == m_glblRx.end()) {
+                if ((m_glblRx.size() - 1) > m_v2MaxEncoded) {
+                    BOOST_LOG_SEV(lg::get(), sev::warning) << "v2 frame exceeds " << m_v2MaxEncoded
+                        << " encoded bytes without a delimiter; discarding";
+                    drop(1);   // the rest is dropped up to the next delimiter
+                    continue;
+                }
+                break;  // incomplete: wait for more bytes
+            }
+
+            const std::size_t chunkEnd = static_cast<std::size_t>(close - m_glblRx.begin());
+            const std::vector<std::uint8_t> enc(m_glblRx.begin() + 1, close);
+
+            ProtocolV2::Header hdr;
+            std::vector<std::uint8_t> payload;
+            const auto result = ProtocolV2::DecodeFrame(enc.data(), enc.size(), hdr, payload);
+            if (result == ProtocolV2::DecodeResult::OK) {
+                m_glblRx.erase(m_glblRx.begin(), m_glblRx.begin() + chunkEnd);   // keep the closing delimiter
+                RouteFrameV2(hdr, payload);
+                continue;
+            }
+            if (enc.front() == IntrId) {
+                m_glblRx.pop_front();   // try it as a v1 interrupt frame
+                continue;
+            }
+
+            std::ostringstream ss;
+            ss << "v2 frame discarded (" << ProtocolV2::DecodeResultName(result) << ")";
+            if (result == ProtocolV2::DecodeResult::BAD_LEN) ss << ", SEQ " << hdr.seq;
+            BOOST_LOG_SEV(lg::get(), sev::warning) << ss.str() << ": " << FrameHex(enc);
+            m_glblRx.erase(m_glblRx.begin(), m_glblRx.begin() + chunkEnd);
+        }
+
+        if (dropped) {
+            PushEvent<int>(MessageEvents::UNEXPECTED_RX_CHAR, firstDropped);
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Discarded " << dropped << " byte(s) between v2 frames (first 0x"
+                << std::hex << std::setfill('0') << std::setw(2) << firstDropped << ")";
+        }
+    }
+
+    // Route a decoded v2 frame.  A response is matched by SEQ alone; the echoed CMD and target are
+    // checked for consistency.  The frame is handed to the message as an equivalent v1 frame so
+    // that DeviceReport and its callers are unchanged.
+    void CM_Common::RouteFrameV2(const ProtocolV2::Header& hdr, const std::vector<std::uint8_t>& payload)
+    {
+        using namespace ProtocolV2;
+
+        if (hdr.kind() == Kind::INTERRUPT) {
+            if ((m_lastIntrSeq >= 0) && (hdr.seq != ((m_lastIntrSeq + 1) & 0xFFFF))) {
+                BOOST_LOG_SEV(lg::get(), sev::warning) << "Interrupt SEQ " << hdr.seq << " follows " << m_lastIntrSeq
+                    << ": " << ((hdr.seq - m_lastIntrSeq - 1) & 0xFFFF) << " interrupt(s) lost";
+            }
+            m_lastIntrSeq = hdr.seq;
+            RouteFrame(ToV1DeviceFrame(hdr, payload), true);
+            return;
+        }
+
+        if (hdr.kind() != Kind::RESPONSE) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "v2 frame of unexpected kind " << static_cast<int>(hdr.kind())
+                << " discarded (SEQ " << hdr.seq << ")";
+            return;
+        }
+
+        auto m = FindSeq(hdr.seq);
+        if (!m) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "v2 response with unknown SEQ " << hdr.seq << " discarded (CMD 0x"
+                << std::hex << static_cast<int>(hdr.cmd) << std::dec << ", status " << StatusName(hdr.status) << ")";
+            return;
+        }
+
+        auto late = m_lateWaiting.find(m->getMessageHandle());
+        if (late != m_lateWaiting.end()) {
+            m_lateWaiting.erase(late);
+            ReleaseSeq(hdr.seq);
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg Late Response (" << m->getMessageHandle() << ", SEQ " << hdr.seq
+                << "): discarded, " << m->TimeElapsed().count() << "ms after send";
+            return;
+        }
+
+        if (m->isComplete()) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg (" << m->getMessageHandle() << ", SEQ " << hdr.seq
+                << "): response to a completed message discarded";
+            return;
+        }
+
+        // Bytes 0-3 are fixed in every protocol version, so SEQ is trustworthy even if PVER isn't;
+        // the rest of the header is only checked for v2
+        if (hdr.pver == Version) {
+            const ReportFields& rf = m->RequestFields();
+            if ((hdr.cmd != CommandFromV1(rf)) || (hdr.target() != TargetFromV1(rf))) {
+                BOOST_LOG_SEV(lg::get(), sev::error) << "Msg (" << m->getMessageHandle() << ", SEQ " << hdr.seq
+                    << "): response CMD 0x" << std::hex << static_cast<int>(hdr.cmd) << " target " << static_cast<int>(hdr.target())
+                    << " does not match the request (CMD 0x" << static_cast<int>(CommandFromV1(rf)) << std::dec << "); discarded";
+                return;
+            }
+        }
+        else {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg (" << m->getMessageHandle() << ", SEQ " << hdr.seq
+                << "): response in protocol version " << static_cast<int>(hdr.pver);
+        }
+
+        if (hdr.status != static_cast<std::uint8_t>(Status::OK)) {
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg (" << m->getMessageHandle() << ", SEQ " << hdr.seq
+                << "): device status " << StatusName(hdr.status);
+        }
+
+        ReleaseSeq(hdr.seq);
+        m->AddBuffer(ToV1DeviceFrame(hdr, payload));
+        HandleMessage(m);
     }
 
     void CM_Common::HandleResponseDone(std::shared_ptr<Message> m)
@@ -505,6 +845,9 @@ namespace iMS {
             }
             else ++it;
         }
+
+        // Protocol v2: free the sequence numbers of messages that can no longer get a response
+        ReleaseCompletedSeqs();
     }
 
     // Parse the bytes committed to a message: a frame routed from the receive stream, or a buffer
@@ -601,6 +944,11 @@ namespace iMS {
 
             TriggerPendingEvents();
 		}
+
+		// The connection has closed: the next one starts on v1 until negotiated.  Done here rather
+		// than when the next connection's thread starts, because a connection type may send
+		// requests as soon as it is open, before this thread runs.
+		ResetProtocolState();
 	}
 
 	const DeviceReport CM_Common::Response(const MessageHandle h) const

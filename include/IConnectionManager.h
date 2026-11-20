@@ -68,6 +68,16 @@ namespace iMS
 		//     chooses per device).  An explicit setting overrides the automatic choice.
 		virtual void SetMessageSerialisation(bool enable) = 0;
 
+		// Message protocol selection (09-26-015-SPEC-001).  V1 (the default) always uses the v1
+		//     protocol.  AUTO probes the device's protocol info block when a system is initialised
+		//     and uses v2 if the device and the connection type support it.
+		enum class ProtocolPreference { V1, AUTO };
+		virtual void SetProtocolPreference(ProtocolPreference pref) = 0;
+
+		// Choose the protocol for the current connection according to the preference.  Called
+		//     by IMSSystem::Initialise() before any other traffic; uses v1 requests only.
+		virtual void NegotiateProtocol() = 0;
+
 		// Send an I/O Report
 		virtual MessageHandle SendMsg(HostReport const& Rpt) = 0;
 		virtual DeviceReport SendMsgBlocking(HostReport const& Rpt) = 0;
