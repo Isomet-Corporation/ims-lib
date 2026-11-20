@@ -1,0 +1,72 @@
+name: Unit tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        run: |
+          pip install "conan>=2.0,<3"
+          conan profile detect --force
+
+      - name: Install xxd (Linux resource generation)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xxd
+
+      # Boost and libxml2 can take a long time to build from source, so keep the Conan cache
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.py') }}
+          restore-keys: conan-${{ runner.os }}-
+
+      - name: Conan install
+        shell: bash
+        run: |
+          conan install . -s build_type=Release -s compiler.cppstd=17 --build=missing -of .
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            cmake -S . -B build-tests -A x64 \
+              -DCMAKE_TOOLCHAIN_FILE=build/generators/conan_toolchain.cmake \
+              -DIMSLIB_BUILD_TESTS=ON
+          else
+            cmake -S . -B build-tests \
+              -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DIMSLIB_BUILD_TESTS=ON
+          fi
+
+      - name: Build tests
+        run: cmake --build build-tests --config Release --target ims_unit_tests --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build-tests -C Release --output-on-failure --output-junit test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: build-tests/test-results.xml
+          if-no-files-found: ignore
