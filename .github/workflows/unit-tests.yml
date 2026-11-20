@@ -7,12 +7,17 @@ on:
 
 jobs:
   test:
-    name: ${{ matrix.os }}
+    name: ${{ matrix.os }}${{ matrix.coverage && ' (coverage)' || '' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+          # Instrumented build: code coverage report for the library code the tests exercise
+          - os: ubuntu-latest
+            coverage: true
 
     steps:
       - uses: actions/checkout@v7
@@ -25,6 +30,10 @@ jobs:
         run: |
           pip install "conan>=2.0,<3"
           conan profile detect --force
+
+      - name: Install gcovr
+        if: matrix.coverage
+        run: pip install "gcovr>=7"
 
       - name: Install xxd (Linux resource generation)
         if: runner.os == 'Linux'
@@ -54,7 +63,8 @@ jobs:
             cmake -S . -B build-tests \
               -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake \
               -DCMAKE_BUILD_TYPE=Release \
-              -DIMSLIB_BUILD_TESTS=ON
+              -DIMSLIB_BUILD_TESTS=ON \
+              -DIMSLIB_COVERAGE=${{ matrix.coverage && 'ON' || 'OFF' }}
           fi
 
       - name: Build tests
@@ -63,10 +73,34 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build-tests -C Release --output-on-failure --output-junit test-results.xml
 
+      - name: Coverage report
+        if: matrix.coverage
+        run: |
+          mkdir -p coverage/html
+          gcovr --root . --object-directory build-tests --filter 'src/' \
+            --exclude-throw-branches --exclude-unreachable-branches \
+            --html-details coverage/html/index.html \
+            --json coverage/coverage.json \
+            --cobertura coverage/cobertura.xml \
+            --txt coverage/summary.txt
+          python3 tests/coverage_summary.py coverage/coverage.json coverage/matching.md
+          cat coverage/matching.md >> "$GITHUB_STEP_SUMMARY"
+          echo '### All library sources' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat coverage/summary.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: matrix.coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage/
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{ matrix.os }}
+          name: test-results-${{ matrix.os }}${{ matrix.coverage && '-coverage' || '' }}
           path: build-tests/test-results.xml
           if-no-files-found: ignore
