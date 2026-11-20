@@ -809,3 +809,34 @@ TEST_F(RxMatching, DISABLED_RecoversStraightAfterMoreLostRepliesThanMatchWindow)
 	for (int i = 0; i < 8; i++) after.push_back(Read());
 	for (auto& s : after) ExpectGood(s);
 }
+
+// A reply that arrives when no request is outstanding (for example a late duplicate after
+// everything has completed) is discarded, and the next request gets its own reply
+TEST_F(RxMatching, ReplyWithNothingOutstandingIsDiscarded)
+{
+	Sent done = ReadAndWait();
+	ExpectGood(done);
+	const Bytes copy = conn.SentFrames().back();
+
+	conn.InjectRx(CM_TEST::OkResponse(copy, Value16(0xDEAD)));
+	std::this_thread::sleep_for(50ms);
+
+	ExpectGood(ReadAndWait());
+	EXPECT_EQ(ValueOf(done.handle), ValueFor(done.addr));
+}
+
+// An interrupt with more than 4 data bytes in the reply stream doesn't disturb the matching of
+// the replies around it.  (Its event isn't raised: see DISABLED_LongInterruptRaisesEvent.)
+TEST_F(RxMatching, LongInterruptInReplyStream)
+{
+	bool first = true;
+	conn.SetResponder([&](const Bytes& req) {
+		Bytes before = first ? CM_TEST::InterruptFrame(0x0005, { 1, 2, 3, 4, 5, 6, 7, 8 }) : Bytes{};
+		first = false;
+		return before + device(req);
+	});
+
+	std::vector<Sent> sent;
+	for (int i = 0; i < 4; i++) sent.push_back(Read());
+	for (auto& s : sent) ExpectGood(s);
+}
