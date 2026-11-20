@@ -16,6 +16,10 @@
 /   - Tests can also inject arbitrary device bytes at any time (split or merged
 /     frames, garbage, corrupted CRCs, interrupts).
 /
+/   - Protocol v2 (09-26-015-SPEC-001) can be switched on without the probe
+/     (UseProtocolV2).  The frame helpers answer in the protocol of the request
+/     they are given, so the same responder works for both protocols.
+/
 /   CM_TEST is built only into the unit tests, not into the shipped library.
 /----------------------------------------------------------------------------*/
 
@@ -23,6 +27,7 @@
 #define IMS_CM_TEST_H__
 
 #include "CM_Common.h"
+#include "ProtocolV2.h"
 
 #include <atomic>
 #include <chrono>
@@ -57,6 +62,15 @@ namespace iMS {
 		void Disconnect() override;
 		void SetTimeouts(int send_timeout_ms, int rx_timeout_ms, int free_timeout_ms, int discover_timeout_ms) override;
 
+		// ---- Protocol ----
+		// Switch this connection to protocol v2 with the given device limits, as if the probe had
+		//	found a v2 device.  Call after Connect(); a new connection starts on v1 again.
+		void UseProtocolV2(std::uint16_t maxInflight = 16, std::uint16_t maxPayload = 1024);
+		void UseProtocolV2(const ProtocolV2::ProtocolInfo& info);
+		using CM_Common::ProtocolV2Active;
+		// Pretend to be a connection type that can't carry v2 (as CM_CYUSB)
+		void SetSupportsProtocolV2(bool supported);
+
 		// ---- Simulated device ----
 		// Replace the device simulation.  Pass nullptr to restore the default register map.
 		void SetResponder(Responder r);
@@ -89,17 +103,40 @@ namespace iMS {
 		Message::Status WaitForStatus(MessageHandle h, std::chrono::milliseconds timeout);
 
 		// ---- Frame helpers ----
-		// Build a complete frame (header, payload, CRC) as the device would send it
+		// A request as the device sees it, in either protocol
+		struct Request {
+			bool valid{ false };
+			bool v2{ false };
+			std::uint8_t space{ 0 };     // v1: report ID; v2: 0x80 | target
+			std::uint8_t action{ 0 };    // v1: HDR action nibble; v2: CMD
+			bool read{ false };
+			std::uint32_t addr{ 0 };
+			std::uint16_t readLen{ 0 }; // bytes requested by a read
+			Bytes payload;               // data carried by a write
+			ProtocolV2::Header hdr;      // v2 only
+		};
+		static Request ParseRequest(const Bytes& request);
+		static bool IsV2Frame(const Bytes& frame) { return !frame.empty() && frame[0] == ProtocolV2::Delimiter; }
+
+		// Build a complete v1 frame (header, payload, CRC) as the device would send it
 		static Bytes MakeFrame(ReportTypes id, std::uint8_t hdr, std::uint8_t context, std::uint16_t addr, const Bytes& payload = {});
-		// An OK reply to a request frame, carrying the given payload
+		// An OK reply to a request frame, carrying the given payload, in the request's protocol
 		static Bytes OkResponse(const Bytes& request, const Bytes& payload = {});
-		// An error reply (DATA_OK clear, general error set) to a request frame
+		// An error reply to a request frame: v1 DATA_OK clear and general error set; v2 STATUS
+		//	GENERAL_ERROR
 		static Bytes ErrorResponse(const Bytes& request);
-		// An unsolicited controller interrupt
+		// A v2 reply to a v2 request with the given STATUS and FLAGS (the READ flag is copied
+		//	from the request).  Empty if the request isn't a valid v2 frame.
+		static Bytes V2Response(const Bytes& request, ProtocolV2::Status status, const Bytes& payload = {}, std::uint8_t flags = 0);
+		// The same reply with a damaged CRC (v1) or a damaged encoded byte (v2)
+		static Bytes Corrupt(const Bytes& frame);
+		// An unsolicited controller interrupt: v1 frame, and v2 frame with its own SEQ
 		static Bytes InterruptFrame(std::uint16_t addr, const Bytes& payload);
+		static Bytes InterruptFrameV2(std::uint16_t seq, std::uint16_t addr, const Bytes& payload);
 
 	protected:
 		void MessageSender() override;
+		bool SupportsProtocolV2() const override { return m_supportsV2; }
 		void ResponseReceiver() override;
 
 	private:
@@ -113,7 +150,9 @@ namespace iMS {
 		Responder m_responder;
 
 		std::mutex m_memMutex;
-		std::map<std::tuple<std::uint8_t, std::uint8_t, std::uint16_t>, Bytes> m_memory;
+		std::map<std::tuple<std::uint8_t, std::uint8_t, std::uint32_t>, Bytes> m_memory;
+
+		std::atomic<bool> m_supportsV2{ true };
 
 		std::atomic<bool> m_hold{ false };
 		std::atomic<int> m_failSends{ 0 };

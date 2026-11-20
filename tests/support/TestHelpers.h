@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <map>
 #include <mutex>
+#include <ostream>
 
 namespace iMS::test {
 
@@ -57,6 +58,11 @@ namespace iMS::test {
 		std::map<int, int> m_counts;
 	};
 
+	// The message protocol a test runs under
+	enum class Protocol { V1, V2 };
+	inline const char* Name(Protocol p) { return p == Protocol::V1 ? "V1" : "V2"; }
+	[[maybe_unused]] inline std::ostream& operator<<(std::ostream& os, Protocol p) { return os << Name(p); }
+
 	inline HostReport LutWrite(std::uint16_t addr, const Bytes& data = Bytes(8, 0x11))
 	{
 		HostReport r(HostReport::Actions::LUT_ENTRY, HostReport::Dir::WRITE, addr);
@@ -74,6 +80,15 @@ namespace iMS::test {
 	inline HostReport SynthRegRead(std::uint16_t addr)
 	{
 		HostReport r(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, addr);
+		ReportFields f = r.Fields();
+		f.len = 2;
+		r.Fields(f);
+		return r;
+	}
+
+	inline HostReport CtrlrRegRead(std::uint16_t addr)
+	{
+		HostReport r(HostReport::Actions::CTRLR_REG, HostReport::Dir::READ, addr);
 		ReportFields f = r.Fields();
 		f.len = 2;
 		r.Fields(f);
@@ -120,6 +135,12 @@ namespace iMS::test {
 		{
 			conn.Disconnect();
 			for (int e = 0; e < MessageEvents::Count; e++) conn.MessageEventUnsubscribe(e, &events);
+		}
+
+		// Run the rest of the test under the given protocol (v2 without the probe)
+		void UseProtocol(Protocol p)
+		{
+			if (p == Protocol::V2) conn.UseProtocolV2();
 		}
 
 		// The value in a completed message's reply

@@ -1,4 +1,4 @@
-// Request/response matching before, during and after communication errors (protocol v1).
+// Request/response matching before, during and after communication errors.
 //
 // Every test checks the same two things:
 //	1. No message ever completes with another message's reply.  Each read goes to its own address
@@ -10,6 +10,12 @@
 // outstanding request with the same report type, action and (where echoed) address.  When two
 // outstanding requests are identical, only their order can tell their replies apart; the
 // IdenticalRequests tests show what that means after an error.
+//
+// Protocol v2 (09-26-015-SPEC-001) puts a sequence number in every request and its reply.  The
+// fault suites and the randomised tests run under both protocols, and the v1 limitations have
+// v2 counterparts that pass (see "Fixed by protocol v2" below).  Tests of v1-only matching rules
+// (address checks, oldest-outstanding order) run under v1 only.  test_protocol_v2.cpp has the
+// v2-specific tests.
 #include "TestHelpers.h"
 
 #include <deque>
@@ -18,6 +24,7 @@
 #include <random>
 #include <set>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 using namespace iMS;
@@ -64,14 +71,16 @@ namespace {
 	// gtest prints parameters with this
 	[[maybe_unused]] std::ostream& operator<<(std::ostream& os, Fault f) { return os << Name(f); }
 
-	// The status the faulted message itself should end with when requests are sent one at a time
-	Message::Status ExpectedStatus(Fault f)
+	// The status the faulted message itself should end with when requests are sent one at a time.
+	//	v1 hands a reply with a bad CRC to the oldest outstanding request as an error; v2 can't
+	//	trust the SEQ in a damaged frame, so it discards the frame and the request times out.
+	Message::Status ExpectedStatus(Fault f, Protocol p = Protocol::V1)
 	{
 		switch (f) {
 		case Fault::NoReply:
 		case Fault::LateReply:
 		case Fault::Truncated:   return Message::Status::TIMEOUT_ON_RXCV;
-		case Fault::BadCrc:      return Message::Status::RX_ERROR_INVALID;
+		case Fault::BadCrc:      return (p == Protocol::V2) ? Message::Status::TIMEOUT_ON_RXCV : Message::Status::RX_ERROR_INVALID;
 		case Fault::DeviceError: return Message::Status::RX_ERROR_VALID;
 		case Fault::SendFailure: return Message::Status::SEND_ERROR;
 		default:                 return Message::Status::RX_OK;
@@ -87,7 +96,24 @@ namespace {
 	// Never used by any request, so a reply to it matches nothing
 	constexpr std::uint16_t UnusedAddr = 0xFFF0;
 
-	// A device that answers synth register reads, applying a planned fault to each request in turn
+	// A request nobody made, of the same kind as req: v1 with an unused address, v2 also with a
+	//	SEQ that isn't in use.  A reply to it must match nothing.
+	Bytes StrayRequest(const Bytes& req)
+	{
+		if (CM_TEST::IsV2Frame(req)) {
+			ProtocolV2::Header h = CM_TEST::ParseRequest(req).hdr;
+			h.seq = static_cast<std::uint16_t>(h.seq + 0x8000);
+			h.addr = UnusedAddr;
+			return ProtocolV2::BuildFrame(h, {});
+		}
+		Bytes stray = req;
+		stray[5] = UnusedAddr & 0xFF;
+		stray[6] = UnusedAddr >> 8;
+		return stray;
+	}
+
+	// A device that answers synth register reads, applying a planned fault to each request in turn.
+	//	It answers in the protocol of each request.
 	class ScriptedDevice
 	{
 	public:
@@ -110,9 +136,9 @@ namespace {
 				std::swap(held, m_held);
 			}
 
-			const std::uint16_t addr = static_cast<std::uint16_t>(req[5] | (req[6] << 8));
-			const bool read = (req[1] & 0x80) != 0;
-			const Bytes reply = read ? CM_TEST::OkResponse(req, Value16(ValueFor(addr))) : CM_TEST::OkResponse(req);
+			const CM_TEST::Request r = CM_TEST::ParseRequest(req);
+			const auto addr = static_cast<std::uint16_t>(r.addr);
+			const Bytes reply = r.read ? CM_TEST::OkResponse(req, Value16(ValueFor(addr))) : CM_TEST::OkResponse(req);
 
 			switch (f) {
 			case Fault::NoReply:
@@ -122,11 +148,8 @@ namespace {
 				m_held = reply;
 				return held;
 			}
-			case Fault::BadCrc: {
-				Bytes bad = reply;
-				bad.back() ^= 0xFF;
-				return held + bad;
-			}
+			case Fault::BadCrc:
+				return held + CM_TEST::Corrupt(reply);
 			case Fault::DeviceError:
 				return held + CM_TEST::ErrorResponse(req);
 			case Fault::NoiseBefore:
@@ -136,16 +159,18 @@ namespace {
 				std::this_thread::sleep_for(30ms);
 				return Bytes(reply.begin() + 5, reply.end());
 			case Fault::Truncated:
-				// A synth reply header announcing 255 data bytes that never arrive
+				// v1: a synth reply header announcing 255 data bytes that never arrive.
+				//	v2: the start of the reply frame, never closed.
+				if (r.v2) return held + Bytes(reply.begin(), reply.begin() + 6);
 				return held + Bytes{ 0x02, 0x47, 0x00, 0xFF, 0x00 };
 			case Fault::InterruptBefore:
+				if (r.v2) {
+					std::scoped_lock l(m_mtx);
+					return held + CM_TEST::InterruptFrameV2(m_intrSeq++, 0x0005, { 0x01, 0x00 }) + reply;
+				}
 				return held + CM_TEST::InterruptFrame(0x0005, { 0x01, 0x00 }) + reply;
-			case Fault::StrayBefore: {
-				Bytes stray = req;
-				stray[5] = UnusedAddr & 0xFF;
-				stray[6] = UnusedAddr >> 8;
-				return held + CM_TEST::OkResponse(stray, Value16(0xDEAD)) + reply;
-			}
+			case Fault::StrayBefore:
+				return held + CM_TEST::OkResponse(StrayRequest(req), Value16(0xDEAD)) + reply;
 			case Fault::DuplicateReply:
 				return held + reply + reply;
 			default:
@@ -158,6 +183,7 @@ namespace {
 		std::mutex m_mtx;
 		std::deque<Fault> m_plan;
 		Bytes m_held;
+		std::uint16_t m_intrSeq = 0;
 	};
 
 	class RxMatching : public CmTest
@@ -165,6 +191,8 @@ namespace {
 	protected:
 		ScriptedDevice device{ conn };
 		std::uint16_t nextAddr = 0x0100;
+		// Set by a derived fixture before SetUp() runs
+		Protocol protocol = Protocol::V1;
 
 		std::mutex failMutex;
 		std::set<std::uint16_t> failAddrs;
@@ -172,10 +200,11 @@ namespace {
 		void SetUp() override
 		{
 			CmTest::SetUp();
+			UseProtocol(protocol);
 			conn.SetResponder([this](const Bytes& req) { return device(req); });
 			conn.FailSendsWhere([this](const Bytes& req) {
 				std::scoped_lock l(failMutex);
-				return failAddrs.count(static_cast<std::uint16_t>(req[5] | (req[6] << 8))) > 0;
+				return failAddrs.count(static_cast<std::uint16_t>(CM_TEST::ParseRequest(req).addr)) > 0;
 			});
 		}
 
@@ -187,9 +216,12 @@ namespace {
 		//	doesn't echo the address.  So if one of these follows a request still waiting for its
 		//	reply, the earlier request takes it as its late reply, and the new request times out
 		//	(and is then the one waiting).  No data is misattributed either way.
+		//
+		//	Under v2 every reply carries its request's SEQ, so earlier faults make no difference.
 		Message::Status ExpectSequential(Fault f)
 		{
-			Message::Status s = ExpectedStatus(f);
+			Message::Status s = ExpectedStatus(f, protocol);
+			if (protocol == Protocol::V2) return s;
 			switch (f) {
 			case Fault::NoReply:
 			case Fault::Truncated:
@@ -258,21 +290,64 @@ namespace {
 
 }
 
+namespace {
+
+	// Fault tests run under both protocols
+	using ProtocolAndFault = std::tuple<Protocol, Fault>;
+
+	std::string ProtocolAndFaultName(const ::testing::TestParamInfo<ProtocolAndFault>& info)
+	{
+		return std::string(Name(std::get<0>(info.param))) + "_" + Name(std::get<1>(info.param));
+	}
+
+	const auto AllFaultValues = ::testing::Values(Fault::None, Fault::NoReply, Fault::LateReply, Fault::BadCrc,
+		Fault::DeviceError, Fault::NoiseBefore, Fault::SplitReply, Fault::Truncated, Fault::InterruptBefore,
+		Fault::StrayBefore, Fault::DuplicateReply, Fault::SendFailure);
+
+	class RxMatchingFault : public RxMatching, public ::testing::WithParamInterface<ProtocolAndFault>
+	{
+	protected:
+		void SetUp() override
+		{
+			protocol = std::get<0>(GetParam());
+			RxMatching::SetUp();
+		}
+		Fault fault() const { return std::get<1>(GetParam()); }
+	};
+
+	// Tests that run under either protocol
+	class RxMatchingEither : public RxMatching, public ::testing::WithParamInterface<Protocol>
+	{
+	protected:
+		void SetUp() override
+		{
+			protocol = GetParam();
+			RxMatching::SetUp();
+		}
+	};
+
+	std::string ProtocolName(const ::testing::TestParamInfo<Protocol>& info)
+	{
+		return Name(info.param);
+	}
+
+}
+
 // ---------------------------------------------------------------------------------------------
 // One fault in a sequence of requests sent one at a time: good before, the expected outcome for
 // the faulted request, good after.
 // ---------------------------------------------------------------------------------------------
 
-class RxMatchingSequential : public RxMatching, public ::testing::WithParamInterface<Fault> {};
+class RxMatchingSequential : public RxMatchingFault {};
 
 TEST_P(RxMatchingSequential, RecoversAfterFault)
 {
-	const Fault fault = GetParam();
+	const Fault fault = this->fault();
 
 	for (int i = 0; i < 3; i++) ExpectGood(ReadAndWait());
 
 	Sent faulted = ReadAndWait(fault);
-	EXPECT_EQ(conn.FindMessage(faulted.handle)->getStatus(), ExpectedStatus(fault));
+	EXPECT_EQ(conn.FindMessage(faulted.handle)->getStatus(), ExpectedStatus(fault, protocol));
 	ExpectNotMisattributed(faulted);
 
 	// The next request is the one most at risk: a late or stray reply could be taken for its own
@@ -282,10 +357,7 @@ TEST_P(RxMatchingSequential, RecoversAfterFault)
 }
 
 INSTANTIATE_TEST_SUITE_P(AllFaults, RxMatchingSequential,
-	::testing::Values(Fault::None, Fault::NoReply, Fault::LateReply, Fault::BadCrc, Fault::DeviceError,
-		Fault::NoiseBefore, Fault::SplitReply, Fault::Truncated, Fault::InterruptBefore,
-		Fault::StrayBefore, Fault::DuplicateReply, Fault::SendFailure),
-	[](const ::testing::TestParamInfo<Fault>& info) { return std::string(Name(info.param)); });
+	::testing::Combine(::testing::Values(Protocol::V1, Protocol::V2), AllFaultValues), ProtocolAndFaultName);
 
 // ---------------------------------------------------------------------------------------------
 // One fault in the middle of a burst of requests sent without waiting (several outstanding at
@@ -293,11 +365,11 @@ INSTANTIATE_TEST_SUITE_P(AllFaults, RxMatchingSequential,
 // burst afterwards is entirely good.
 // ---------------------------------------------------------------------------------------------
 
-class RxMatchingPipelined : public RxMatching, public ::testing::WithParamInterface<Fault> {};
+class RxMatchingPipelined : public RxMatchingFault {};
 
 TEST_P(RxMatchingPipelined, RecoversAfterFault)
 {
-	const Fault fault = GetParam();
+	const Fault fault = this->fault();
 	constexpr int BurstSize = 16;
 	constexpr int FaultAt = 8;
 
@@ -317,10 +389,7 @@ TEST_P(RxMatchingPipelined, RecoversAfterFault)
 }
 
 INSTANTIATE_TEST_SUITE_P(AllFaults, RxMatchingPipelined,
-	::testing::Values(Fault::None, Fault::NoReply, Fault::LateReply, Fault::BadCrc, Fault::DeviceError,
-		Fault::NoiseBefore, Fault::SplitReply, Fault::Truncated, Fault::InterruptBefore,
-		Fault::StrayBefore, Fault::DuplicateReply, Fault::SendFailure),
-	[](const ::testing::TestParamInfo<Fault>& info) { return std::string(Name(info.param)); });
+	::testing::Combine(::testing::Values(Protocol::V1, Protocol::V2), AllFaultValues), ProtocolAndFaultName);
 
 // ---------------------------------------------------------------------------------------------
 // Specific situations
@@ -362,7 +431,7 @@ TEST_F(RxMatching, ErrorReplyAfterTimeoutGoesToTimedOutRequest)
 }
 
 // Several errors in a row, then normal traffic
-TEST_F(RxMatching, RecoversAfterConsecutiveFaults)
+TEST_P(RxMatchingEither, RecoversAfterConsecutiveFaults)
 {
 	ExpectGood(ReadAndWait());
 
@@ -451,7 +520,7 @@ TEST_F(RxMatching, ControllerRepliesAfterWrongAddress)
 }
 
 // Randomised faults over a long sequence.  Fixed seed, so any failure is reproducible.
-TEST_F(RxMatching, RandomFaultsSequential)
+TEST_P(RxMatchingEither, RandomFaultsSequential)
 {
 	std::mt19937 rng(20261120);
 	const Fault faults[] = { Fault::NoReply, Fault::LateReply, Fault::BadCrc, Fault::DeviceError,
@@ -478,7 +547,7 @@ TEST_F(RxMatching, RandomFaultsSequential)
 // Randomised faults in bursts of outstanding requests.  Outcomes of individual faulted requests
 // depend on what else is in flight, so only the two invariants are checked: nothing is
 // misattributed, and a clean burst afterwards is entirely good.
-TEST_F(RxMatching, RandomFaultsPipelined)
+TEST_P(RxMatchingEither, RandomFaultsPipelined)
 {
 	std::mt19937 rng(1120);
 	const Fault faults[] = { Fault::NoReply, Fault::LateReply, Fault::BadCrc, Fault::DeviceError,
@@ -503,6 +572,8 @@ TEST_F(RxMatching, RandomFaultsPipelined)
 	for (int i = 0; i < 24; i++) clean.push_back(Read());
 	for (auto& s : clean) ExpectGood(s);
 }
+
+INSTANTIATE_TEST_SUITE_P(Protocols, RxMatchingEither, ::testing::Values(Protocol::V1, Protocol::V2), ProtocolName);
 
 // ---------------------------------------------------------------------------------------------
 // Identical requests: the same read sent twice can only be told apart by order
@@ -551,7 +622,7 @@ namespace {
 // reply to the request before it, so it is taken as that late reply, and every request in the
 // loop times out.  No data is misattributed, but the loop doesn't recover until a different
 // request is made, or polling pauses for longer than the late-reply window (about 5 s).
-// Protocol v2 sequence numbers remove the ambiguity.  See also the disabled test below.
+// Protocol v2 sequence numbers remove the ambiguity: see RxMatchingFixedByV2.
 TEST_F(RxMatching, IdenticalRequestsAfterLostReplyAllTimeOut)
 {
 	conn.SetResponder(PollingDevice{});
@@ -574,11 +645,18 @@ TEST_F(RxMatching, IdenticalRequestsAfterLostReplyAllTimeOut)
 	EXPECT_EQ(ValueOf(again), 0x2222);
 }
 
-// DESIRED BEHAVIOUR, not met by protocol v1 today: after one lost reply, a polling loop of
-// identical requests recovers at the next request, and each request gets its own reply.
-// Enable once the host can tell these replies apart (protocol v2 sequence numbers, or a v1
-// matching change).
-TEST_F(RxMatching, DISABLED_IdenticalRequestsRecoverAfterLostReply)
+// ---------------------------------------------------------------------------------------------
+// Fixed by protocol v2.  These tests describe the behaviour wanted.  They pass under v2 and FAIL
+// under v1, so the v1 instances are disabled (prefix DISABLED_V1); run them with
+// --gtest_also_run_disabled_tests to see the v1 failures.  Each has a v1 test above or below
+// recording what v1 does today.
+// ---------------------------------------------------------------------------------------------
+
+class RxMatchingFixedByV2 : public RxMatchingEither {};
+
+// After one lost reply, a polling loop of identical requests recovers at the next request, and
+// each request gets its own reply.  (v1: IdenticalRequestsAfterLostReplyAllTimeOut.)
+TEST_P(RxMatchingFixedByV2, IdenticalRequestsRecoverAfterLostReply)
 {
 	conn.SetResponder(PollingDevice{});
 
@@ -764,7 +842,8 @@ TEST_F(RxMatching, CompletedMessagesAreFreed)
 // that window holds only timed-out requests: every new reply is discarded as matching nothing,
 // so new requests time out too and take their place.  Nothing is misattributed, but traffic
 // only recovers after a pause long enough for the timed-out requests to stop waiting.
-// See DISABLED_RecoversStraightAfterMoreLostRepliesThanMatchWindow for the behaviour wanted.
+// See RxMatchingFixedByV2.RecoversStraightAfterMoreLostRepliesThanMatchWindow for the behaviour
+// wanted, which protocol v2 provides.
 TEST_F(RxMatching, MoreLostRepliesThanMatchWindowRecoversAfterPause)
 {
 	// A burst of pipelined requests whose first 18 replies are lost
@@ -792,9 +871,9 @@ TEST_F(RxMatching, MoreLostRepliesThanMatchWindowRecoversAfterPause)
 	for (auto& s : after) ExpectGood(s);
 }
 
-// DESIRED BEHAVIOUR, not met today: after 16 or more lost replies, the next requests are
-// matched to their own replies straight away.
-TEST_F(RxMatching, DISABLED_RecoversStraightAfterMoreLostRepliesThanMatchWindow)
+// After 16 or more lost replies, the next requests are matched to their own replies straight
+// away.  (v1: MoreLostRepliesThanMatchWindowRecoversAfterPause.)
+TEST_P(RxMatchingFixedByV2, RecoversStraightAfterMoreLostRepliesThanMatchWindow)
 {
 	// A burst of pipelined requests whose first 18 replies are lost
 	std::vector<Sent> burst;
@@ -809,6 +888,9 @@ TEST_F(RxMatching, DISABLED_RecoversStraightAfterMoreLostRepliesThanMatchWindow)
 	for (int i = 0; i < 8; i++) after.push_back(Read());
 	for (auto& s : after) ExpectGood(s);
 }
+
+INSTANTIATE_TEST_SUITE_P(V2, RxMatchingFixedByV2, ::testing::Values(Protocol::V2), ProtocolName);
+INSTANTIATE_TEST_SUITE_P(DISABLED_V1, RxMatchingFixedByV2, ::testing::Values(Protocol::V1), ProtocolName);
 
 // A reply that arrives when no request is outstanding (for example a late duplicate after
 // everything has completed) is discarded, and the next request gets its own reply

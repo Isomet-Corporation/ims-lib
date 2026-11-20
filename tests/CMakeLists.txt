@@ -60,6 +60,7 @@ add_executable(ims_unit_tests
     test_reports.cpp
     test_cm_common.cpp
     test_rx_matching.cpp
+    test_protocol_v2.cpp
 )
 
 # On Windows the hardware database and default settings are Win32 resources, looked up in the

@@ -384,7 +384,9 @@ namespace ProtocolV2 {
 			else {
 				switch (static_cast<Status>(hdr.status)) {
 				case Status::OK: h |= 0x40; break;               // data OK
-				case Status::TARGET_TIMEOUT: h |= 0x10; break;   // no-header timeout
+				// No-header timeout.  DATA_OK stays set as in v1 replies: with it clear, the error
+				//	type bits would also read as a CRC error.
+				case Status::TARGET_TIMEOUT: h |= 0x50; break;
 				case Status::TARGET_CRC: break;                  // data error, CRC type
 				default: h |= 0x20; break;                       // data error, general
 				}
