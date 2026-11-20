@@ -591,3 +591,221 @@ TEST_F(RxMatching, DISABLED_IdenticalRequestsRecoverAfterLostReply)
 		EXPECT_EQ(ValueOf(h), 0x1000 + k) << "request " << k;
 	}
 }
+
+// ---------------------------------------------------------------------------------------------
+// Replies that must not be matched, device error kinds, alarms and interrupts
+// ---------------------------------------------------------------------------------------------
+
+// Replies of the wrong report type, the wrong action, or (where the address is echoed) the wrong
+// address are ignored; the request still gets its own reply afterwards
+TEST_F(RxMatching, RepliesOfWrongTypeActionOrAddressAreIgnored)
+{
+	conn.SetResponder([](const Bytes&) { return Bytes{}; });
+
+	// Synth register read
+	auto synth = conn.SendMsg(SynthRegRead(0x40));
+	ASSERT_TRUE(conn.WaitForSent(1, 1s));
+	const Bytes synthReq = conn.SentFrames()[0];
+
+	conn.InjectRx(CM_TEST::MakeFrame(ReportTypes::DEVICE_REPORT_ID_CTRLR, 0x47, 0, 0x40, Value16(0xDEAD)));  // controller reply
+	conn.InjectRx(CM_TEST::MakeFrame(ReportTypes::DEVICE_REPORT_ID_SYNTH, 0x46, 0, 0x40, Value16(0xDEAD)));  // wrong action
+	conn.InjectRx(CM_TEST::MakeFrame(ReportTypes::DEVICE_REPORT_ID_SYNTH, 0x47, 0, 0x41, Value16(0xDEAD)));  // wrong address
+	std::this_thread::sleep_for(50ms);
+	EXPECT_EQ(conn.FindMessage(synth)->getStatus(), Message::Status::SENT);
+
+	conn.InjectRx(CM_TEST::OkResponse(synthReq, Value16(0x1234)));
+	ASSERT_EQ(conn.WaitForStatus(synth, 1s), Message::Status::RX_OK);
+	EXPECT_EQ(ValueOf(synth), 0x1234);
+
+	// Controller register write: a synth reply is ignored
+	auto reg = conn.SendMsg(CtrlrWrite(HostReport::Actions::CTRLR_REG, 0x10));
+	ASSERT_TRUE(conn.WaitForSent(2, 1s));
+	const Bytes regReq = conn.SentFrames()[1];
+	conn.InjectRx(CM_TEST::MakeFrame(ReportTypes::DEVICE_REPORT_ID_SYNTH, 0x41, 0, 0x10));
+	std::this_thread::sleep_for(50ms);
+	EXPECT_EQ(conn.FindMessage(reg)->getStatus(), Message::Status::SENT);
+	conn.InjectRx(CM_TEST::OkResponse(regReq));
+	EXPECT_EQ(conn.WaitForStatus(reg, 1s), Message::Status::RX_OK);
+
+	// Controller settings: the reply doesn't echo the address, so any address is accepted
+	auto settings = conn.SendMsg(CtrlrWrite(HostReport::Actions::CTRLR_SETTINGS, 0x10));
+	ASSERT_TRUE(conn.WaitForSent(3, 1s));
+	const Bytes settingsReply = CM_TEST::OkResponse(conn.SentFrames()[2]);
+	conn.InjectRx(CM_TEST::MakeFrame(ReportTypes::DEVICE_REPORT_ID_CTRLR, settingsReply[1], 0, 0x77));
+	EXPECT_EQ(conn.WaitForStatus(settings, 1s), Message::Status::RX_OK);
+}
+
+// The device's error replies (general error, its own CRC check failed, no header found in time)
+// are reported against the right request, and the next requests are good
+class RxMatchingDeviceErrors : public RxMatching, public ::testing::WithParamInterface<std::uint8_t> {};
+
+TEST_P(RxMatchingDeviceErrors, ReportedAndRecovered)
+{
+	const std::uint8_t errorBits = GetParam();
+
+	ExpectGood(ReadAndWait());
+
+	conn.SetResponder([errorBits](const Bytes& req) {
+		// Error replies don't echo the address
+		return CM_TEST::MakeFrame(ReportTypes::DEVICE_REPORT_ID_SYNTH, static_cast<std::uint8_t>(errorBits | (req[1] & 0x0F)), req[2], 0);
+	});
+	auto h = conn.SendMsg(SynthRegRead(nextAddr++));
+	EXPECT_EQ(conn.WaitForStatus(h, 1s), Message::Status::RX_ERROR_VALID);
+	EXPECT_TRUE(events.WaitFor(MessageEvents::RESPONSE_ERROR_VALID, 1));
+
+	conn.SetResponder([this](const Bytes& req) { return device(req); });
+	ExpectGood(ReadAndWait());
+	ExpectGood(ReadAndWait());
+}
+
+INSTANTIATE_TEST_SUITE_P(ErrorKinds, RxMatchingDeviceErrors,
+	::testing::Values(std::uint8_t{ 0x20 }, std::uint8_t{ 0x00 }, std::uint8_t{ 0x50 }),
+	[](const ::testing::TestParamInfo<std::uint8_t>& info) {
+		switch (info.param) {
+		case 0x20: return std::string("GeneralError");
+		case 0x00: return std::string("DeviceCrcError");
+		default:   return std::string("NoHeaderTimeout");
+		}
+	});
+
+// A reply carrying the interlock alarm flag is still matched to its request, with its data, and
+// raises the alarm event
+TEST_F(RxMatching, InterlockAlarmFlagOnReply)
+{
+	ExpectGood(ReadAndWait());
+
+	conn.SetResponder([](const Bytes& req) {
+		const std::uint16_t addr = static_cast<std::uint16_t>(req[5] | (req[6] << 8));
+		return CM_TEST::MakeFrame(ReportTypes::DEVICE_REPORT_ID_SYNTH,
+			static_cast<std::uint8_t>(0x80 | 0x40 | (req[1] & 0x0F)), req[2], addr, Value16(ValueFor(addr)));
+	});
+	ExpectGood(ReadAndWait());
+	EXPECT_TRUE(events.WaitFor(MessageEvents::INTERLOCK_ALARM_SET, 1));
+
+	conn.SetResponder([this](const Bytes& req) { return device(req); });
+	ExpectGood(ReadAndWait());
+}
+
+// Interrupts with 0, 2 and 4 data bytes, in the reply stream between replies, raise their
+// events without disturbing the matching of the replies around them
+TEST_F(RxMatching, InterruptsInReplyStream)
+{
+	const std::vector<Bytes> interrupts = { {}, { 0x01, 0x00 }, { 0x01, 0x00, 0x02, 0x00 } };
+	std::size_t next = 0;
+	std::mutex mtx;
+	conn.SetResponder([&](const Bytes& req) {
+		std::scoped_lock l(mtx);
+		Bytes before = (next < interrupts.size()) ? CM_TEST::InterruptFrame(0x0005, interrupts[next++]) : Bytes{};
+		return before + device(req);
+	});
+
+	std::vector<Sent> sent;
+	for (int i = 0; i < 6; i++) sent.push_back(Read());
+	for (auto& s : sent) ExpectGood(s);
+	EXPECT_TRUE(events.WaitFor(MessageEvents::INTERRUPT_RECEIVED, 3));
+}
+
+// Interrupts on their own channel (as CM_ENET receives them) don't disturb the matching of
+// replies outstanding at the same time.  Junk in front of an interrupt is skipped; a buffer of
+// nothing but junk is reported as unexpected characters.
+TEST_F(RxMatching, InterruptChannelDoesNotDisturbReplies)
+{
+	conn.HoldTransmit(true);
+	std::vector<Sent> sent;
+	for (int i = 0; i < 8; i++) sent.push_back(Read());
+
+	conn.InjectInterruptChannel(CM_TEST::InterruptFrame(0x0005, { 0x01, 0x00 }));
+	conn.InjectInterruptChannel(Bytes{ 0xAA, 0xBB } + CM_TEST::InterruptFrame(0x0006, { 0x02, 0x00 }));
+	conn.InjectInterruptChannel(Bytes{ 0xAA, 0xBB });
+	conn.HoldTransmit(false);
+
+	for (auto& s : sent) ExpectGood(s);
+	EXPECT_TRUE(events.WaitFor(MessageEvents::INTERRUPT_RECEIVED, 2));
+	EXPECT_TRUE(events.WaitFor(MessageEvents::UNEXPECTED_RX_CHAR, 1));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Limits: the late-reply window, freeing completed messages, and the match window
+// ---------------------------------------------------------------------------------------------
+
+// A request whose reply was lost waits about 5 s (after its own timeout) for a late reply, then
+// gives up its place.  After that, an identical request is matched normally: the polling loop in
+// IdenticalRequestsAfterLostReplyAllTimeOut recovers once it pauses for this long.
+TEST_F(RxMatching, LateReplyWaitEndsAfterWindow)
+{
+	conn.SetResponder(PollingDevice{});
+
+	auto lost = conn.SendMsg(SynthRegRead(0x40));
+	EXPECT_EQ(conn.WaitForStatus(lost, 2s), Message::Status::TIMEOUT_ON_RXCV);
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(RxTimeoutMs + 5000 + 300));
+
+	auto next = conn.SendMsg(SynthRegRead(0x40));
+	ASSERT_EQ(conn.WaitForStatus(next, 2s), Message::Status::RX_OK);
+	EXPECT_EQ(ValueOf(next), 0x1001);
+}
+
+// Completed messages are freed after the auto-free time; matching carries on normally
+TEST_F(RxMatching, CompletedMessagesAreFreed)
+{
+	conn.SetTimeouts(500, RxTimeoutMs, 300, 0);
+
+	Sent old = ReadAndWait();
+	ExpectGood(old);
+	std::this_thread::sleep_for(700ms);
+	EXPECT_EQ(conn.FindMessage(old.handle), nullptr);
+
+	for (int i = 0; i < 3; i++) ExpectGood(ReadAndWait());
+}
+
+// CURRENT BEHAVIOUR (known defect).  The host looks for a reply's request among the 16 oldest
+// outstanding requests, and requests that timed out keep their place at the front for about 5 s
+// in case their reply is late.  If 16 or more replies are lost while requests are pipelined,
+// that window holds only timed-out requests: every new reply is discarded as matching nothing,
+// so new requests time out too and take their place.  Nothing is misattributed, but traffic
+// only recovers after a pause long enough for the timed-out requests to stop waiting.
+// See DISABLED_RecoversStraightAfterMoreLostRepliesThanMatchWindow for the behaviour wanted.
+TEST_F(RxMatching, MoreLostRepliesThanMatchWindowRecoversAfterPause)
+{
+	// A burst of pipelined requests whose first 18 replies are lost
+	std::vector<Sent> burst;
+	for (int i = 0; i < 22; i++) burst.push_back(Read(i < 18 ? Fault::NoReply : Fault::None));
+	for (auto& s : burst) {
+		EXPECT_EQ(conn.WaitForStatus(s.handle, 2s), Message::Status::TIMEOUT_ON_RXCV)
+			<< "v1 behaviour changed, review this test";
+		ExpectNotMisattributed(s);
+	}
+
+	// Requests made straight afterwards also time out
+	std::vector<Sent> during;
+	for (int i = 0; i < 4; i++) during.push_back(Read());
+	for (auto& s : during) {
+		EXPECT_EQ(conn.WaitForStatus(s.handle, 2s), Message::Status::TIMEOUT_ON_RXCV)
+			<< "v1 behaviour changed, review this test";
+		ExpectNotMisattributed(s);
+	}
+
+	// After a pause longer than the late-reply wait, traffic is good again
+	std::this_thread::sleep_for(std::chrono::milliseconds(RxTimeoutMs + 5000 + 300));
+	std::vector<Sent> after;
+	for (int i = 0; i < 8; i++) after.push_back(Read());
+	for (auto& s : after) ExpectGood(s);
+}
+
+// DESIRED BEHAVIOUR, not met today: after 16 or more lost replies, the next requests are
+// matched to their own replies straight away.
+TEST_F(RxMatching, DISABLED_RecoversStraightAfterMoreLostRepliesThanMatchWindow)
+{
+	// A burst of pipelined requests whose first 18 replies are lost
+	std::vector<Sent> burst;
+	for (int i = 0; i < 22; i++) burst.push_back(Read(i < 18 ? Fault::NoReply : Fault::None));
+	for (std::size_t i = 0; i < burst.size(); i++) {
+		conn.WaitForStatus(burst[i].handle, 2s);
+		ExpectNotMisattributed(burst[i]);
+		if (i >= 18) ExpectGood(burst[i]);
+	}
+
+	std::vector<Sent> after;
+	for (int i = 0; i < 8; i++) after.push_back(Read());
+	for (auto& s : after) ExpectGood(s);
+}

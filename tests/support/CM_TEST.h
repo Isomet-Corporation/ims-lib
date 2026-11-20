@@ -62,6 +62,9 @@ namespace iMS {
 		void SetResponder(Responder r);
 		// Deliver bytes to the host as if they had come from the device
 		void InjectRx(const Bytes& bytes);
+		// Deliver an interrupt on its own channel, as CM_ENET does with its interrupt socket,
+		//	rather than in the shared reply stream
+		void InjectInterruptChannel(const Bytes& bytes);
 		// Pause transmission: messages stay queued (UNSENT) until released
 		void HoldTransmit(bool hold);
 		// Fail the next n transmissions with SEND_ERROR

@@ -99,6 +99,15 @@ namespace iMS {
 		m_rxcond.notify_one();
 	}
 
+	void CM_TEST::InjectInterruptChannel(const Bytes& bytes)
+	{
+		auto m = std::make_shared<Message>(HostReport());
+		m->setStatus(Message::Status::INTERRUPT);
+		m->AddBuffer(bytes);   // before the message is registered, so the parser can't see it yet
+		m_msgRegistry.addMessage(m->getMessageHandle(), m);
+		m_rxcond.notify_one();
+	}
+
 	void CM_TEST::HoldTransmit(bool hold)
 	{
 		m_hold = hold;
@@ -246,12 +255,13 @@ namespace iMS {
 
 			m->setStatus(Message::Status::SENT);
 
-			Responder responder;
+			// Called in place, not copied, so a responder that keeps state (a counter, a held
+			//	reply) sees every request.  The lock also stops SetResponder swapping it mid-call.
+			Bytes reply;
 			{
 				std::scoped_lock lk(m_responderMutex);
-				responder = m_responder;
+				reply = m_responder ? m_responder(request) : DefaultDevice(request);
 			}
-			const Bytes reply = responder ? responder(request) : DefaultDevice(request);
 
 			// Recorded after the responder has run, so a test that waits for a frame to be
 			//	sent also sees any state its responder set up for that frame

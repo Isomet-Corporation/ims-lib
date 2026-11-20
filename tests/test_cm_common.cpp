@@ -179,3 +179,13 @@ TEST_F(CmTest, SerialisedSenderWaitsForEachResponse)
 	ASSERT_TRUE(conn.WaitForSent(2, 1s));
 	EXPECT_EQ(conn.WaitForStatus(b, 2s), Message::Status::TIMEOUT_ON_RXCV);
 }
+
+// KNOWN BUG, disabled until fixed.  An interrupt with more than 4 data bytes is queued as an
+// (int, data) event, but CM_Common::TriggerPendingEvents only dispatches a payload of type
+// std::vector<std::uint8_t>, not std::pair<int, std::vector<std::uint8_t>>, so the event is
+// never raised.
+TEST_F(CmTest, DISABLED_LongInterruptRaisesEvent)
+{
+	conn.InjectRx(CM_TEST::InterruptFrame(0x0003, { 1, 2, 3, 4, 5, 6 }));
+	EXPECT_TRUE(events.WaitFor(MessageEvents::INTERRUPT_RECEIVED, 1));
+}

@@ -20,14 +20,11 @@ namespace iMS::test {
 	class EventCounter : public IEventHandler
 	{
 	public:
-		void EventAction(void*, const int message, const int) override
-		{
-			{
-				std::scoped_lock l(m_mtx);
-				m_counts[message]++;
-			}
-			m_cv.notify_all();
-		}
+		// Events come with one int, two ints, or an int and data; count them all
+		void EventAction(void*, const int message, const int) override { Record(message); }
+		void EventAction(void*, const int message, const int, const int) override { Record(message); }
+		void EventAction(void*, const int message, const int, const std::vector<std::uint8_t>) override { Record(message); }
+		using IEventHandler::EventAction;
 		int Count(int message)
 		{
 			std::scoped_lock l(m_mtx);
@@ -46,6 +43,15 @@ namespace iMS::test {
 			m_counts.clear();
 		}
 	private:
+		void Record(int message)
+		{
+			{
+				std::scoped_lock l(m_mtx);
+				m_counts[message]++;
+			}
+			m_cv.notify_all();
+		}
+
 		std::mutex m_mtx;
 		std::condition_variable m_cv;
 		std::map<int, int> m_counts;
