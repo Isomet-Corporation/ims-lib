@@ -66,6 +66,8 @@ namespace iMS {
 		void HoldTransmit(bool hold);
 		// Fail the next n transmissions with SEND_ERROR
 		void FailNextSends(int n);
+		// Fail every transmission whose request bytes the predicate accepts (nullptr: none)
+		void FailSendsWhere(std::function<bool(const Bytes& request)> predicate);
 
 		// The default responder: an OK reply to every request.  Writes are stored per
 		//	(report ID, action, address); reads return the stored bytes, zero-filled to the
@@ -112,6 +114,8 @@ namespace iMS {
 
 		std::atomic<bool> m_hold{ false };
 		std::atomic<int> m_failSends{ 0 };
+		std::mutex m_failMutex;
+		std::function<bool(const Bytes&)> m_failWhere;
 	};
 
 }

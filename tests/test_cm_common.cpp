@@ -1,96 +1,12 @@
 // CM_Common behaviour exercised through the CM_TEST simulated connection
-#include <gtest/gtest.h>
+#include "TestHelpers.h"
 
-#include "CM_TEST.h"
-#include "HostReport.h"
-#include "IEventHandler.h"
-#include "MessageEvent.h"
-
-#include <condition_variable>
-#include <map>
 #include <mutex>
 #include <thread>
 
 using namespace iMS;
+using namespace iMS::test;
 using namespace std::chrono_literals;
-
-namespace {
-
-	class EventCounter : public IEventHandler
-	{
-	public:
-		void EventAction(void*, const int message, const int) override
-		{
-			{
-				std::scoped_lock l(m_mtx);
-				m_counts[message]++;
-			}
-			m_cv.notify_all();
-		}
-		int Count(int message)
-		{
-			std::scoped_lock l(m_mtx);
-			return m_counts[message];
-		}
-		// CM_Common sets a message's status first and fires its events afterwards, at the end of
-		//	its processing loop, so a test must wait for the event rather than check at once
-		bool WaitFor(int message, int count, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000))
-		{
-			std::unique_lock l(m_mtx);
-			return m_cv.wait_for(l, timeout, [&] { return m_counts[message] >= count; });
-		}
-	private:
-		std::mutex m_mtx;
-		std::condition_variable m_cv;
-		std::map<int, int> m_counts;
-	};
-
-	HostReport LutWrite(std::uint16_t addr, const Bytes& data = Bytes(8, 0x11))
-	{
-		HostReport r(HostReport::Actions::LUT_ENTRY, HostReport::Dir::WRITE, addr);
-		r.Payload<Bytes>(data);
-		return r;
-	}
-
-	HostReport SynthRegWrite(std::uint16_t addr, std::uint16_t value)
-	{
-		HostReport r(HostReport::Actions::SYNTH_REG, HostReport::Dir::WRITE, addr);
-		r.Payload<Bytes>(Bytes{ static_cast<std::uint8_t>(value & 0xFF), static_cast<std::uint8_t>(value >> 8) });
-		return r;
-	}
-
-	HostReport SynthRegRead(std::uint16_t addr)
-	{
-		HostReport r(HostReport::Actions::SYNTH_REG, HostReport::Dir::READ, addr);
-		ReportFields f = r.Fields();
-		f.len = 2;
-		r.Fields(f);
-		return r;
-	}
-
-	// A connected CM_TEST with short timeouts and every message event counted
-	class CmTest : public ::testing::Test
-	{
-	protected:
-		CM_TEST conn;
-		EventCounter events;
-
-		void SetUp() override
-		{
-			conn.SetTimeouts(500, 200, 10000, 0);
-			for (int e = 0; e < MessageEvents::Count; e++) conn.MessageEventSubscribe(e, &events);
-			conn.Connect("");
-			ASSERT_TRUE(conn.Open());
-		}
-
-		void TearDown() override
-		{
-			conn.Disconnect();
-			for (int e = 0; e < MessageEvents::Count; e++) conn.MessageEventUnsubscribe(e, &events);
-		}
-	};
-
-}
 
 TEST(CmTestLifecycle, SendWhileClosedReturnsNullMessage)
 {

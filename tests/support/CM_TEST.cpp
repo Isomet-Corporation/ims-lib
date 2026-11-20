@@ -110,6 +110,12 @@ namespace iMS {
 		m_failSends = n;
 	}
 
+	void CM_TEST::FailSendsWhere(std::function<bool(const Bytes& request)> predicate)
+	{
+		std::scoped_lock lk(m_failMutex);
+		m_failWhere = std::move(predicate);
+	}
+
 	Bytes CM_TEST::DefaultDevice(const Bytes& request)
 	{
 		if (request.size() < 9) return {};
@@ -223,8 +229,16 @@ namespace iMS {
 
 			const Bytes request = m->SerialStream();
 
+			bool fail = false;
 			if (m_failSends > 0) {
 				m_failSends--;
+				fail = true;
+			}
+			else {
+				std::scoped_lock lk(m_failMutex);
+				fail = m_failWhere && m_failWhere(request);
+			}
+			if (fail) {
 				m->setStatus(Message::Status::SEND_ERROR);
 				mMsgEvent.Trigger<int>(this, MessageEvents::SEND_ERROR, m->getMessageHandle());
 				continue;
