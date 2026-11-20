@@ -242,6 +242,27 @@ Conan is usually installed using the Python Pip package manager but can be insta
 
 ---
 
+# Unit Tests
+
+The unit tests use GoogleTest and run under CTest. They are off by default; turn them on with `-DIMSLIB_BUILD_TESTS=ON`. They don't need any hardware.
+
+After `conan install` (the build scripts above run it for you), on Windows:
+
+```powershell
+cmake -S . -B build-tests -A x64 -DCMAKE_TOOLCHAIN_FILE=build/generators/conan_toolchain.cmake -DIMSLIB_BUILD_TESTS=ON
+cmake --build build-tests --config Release --target ims_unit_tests
+ctest --test-dir build-tests -C Release --output-on-failure
+```
+
+On Linux, use `build/Release/generators/conan_toolchain.cmake` as the toolchain file and add `-DCMAKE_BUILD_TYPE=Release`.
+
+- GoogleTest comes from an installed copy if CMake can find one. Otherwise it is downloaded at configure time. To use a local copy instead (for example, offline), add `-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=<path to googletest source>`.
+- The tests link a static copy of the library sources (`ims_testable`), so they can test internal classes. The shipped library doesn't change.
+- `tests/support/CM_TEST` is a connection module derived from `CM_Common` that talks to a simulated device instead of hardware. It records every frame sent, answers through a responder callback (by default a simple register map that echoes writes back on reads), and lets a test inject any device bytes: split or merged frames, garbage, bad CRCs, interrupts. It can also hold transmission or fail sends.
+- The GitHub Actions workflow `.github/workflows/unit-tests.yml` runs the suite on Windows and Linux for every push and pull request.
+
+---
+
 # Documentation Build (Optional)
 
 Documentation generation requires Doxygen and LaTeX.

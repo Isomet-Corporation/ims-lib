@@ -64,7 +64,8 @@ namespace iMS
 
 		// When enabled, the sender waits for each message to complete (response, error or
 		//     timeout) before transmitting the next, so only one request is ever in flight.
-		//     Only honoured by connection types that require it (currently CM_ETH).
+		//     Only honoured by connection types that require it (currently CM_ETH, which otherwise
+		//     chooses per device).  An explicit setting overrides the automatic choice.
 		virtual void SetMessageSerialisation(bool enable) = 0;
 
 		// Send an I/O Report

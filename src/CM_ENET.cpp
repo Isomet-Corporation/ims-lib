@@ -61,6 +61,9 @@
 #include "tftp_client.h"
 #include "PrivateUtil.h"
 
+#include <map>
+#include <tuple>
+
 #if defined _WIN32 && defined _DEBUG
 #include "crtdbg.h"
 #define DEBUG_NEW new( _NORMAL_BLOCK, __FILE__, __LINE__)
@@ -87,6 +90,18 @@ typedef struct _INTERFACE_INFO  {
 	} INTERFACE_INFO;
 
 #endif
+
+// iMSP controller firmware before 2.5.112 processes only one request frame per received TCP
+// segment.  If several pipelined requests are coalesced into one segment, the surplus requests
+// aren't processed until further traffic arrives, causing RX timeouts, so those devices need
+// one request in flight at a time.  Later firmware and other models handle any number of frames
+// per segment.
+static bool ControllerNeedsSerialisation(const IMSController& ctlr)
+{
+	if (ctlr.Model() != "iMSP") return false;
+	const FWVersion& v = ctlr.GetVersion();
+	return std::make_tuple(v.major, v.minor, v.revision) < std::make_tuple(2, 5, 112);
+}
 
 static std::string logErrorString(int err = INT_MAX) {
 	static char msgbuf[256];
@@ -218,6 +233,9 @@ static std::string logErrorString(int err = INT_MAX) {
 		std::shared_ptr<std::vector<uint8_t>> interruptData;
 
 		std::string conn_string;
+
+		// Whether each device found by a scan needs message serialisation, keyed by serial number
+		std::map<std::string, bool> serialiseBySerial;
 
         void SetOwner(std::shared_ptr<IConnectionManager> mgr) {m_parent = mgr;}
 	private:
@@ -498,6 +516,11 @@ static std::string logErrorString(int err = INT_MAX) {
 
 				thisiMS->Initialise();
 
+				// Now the controller is identified, record whether connections to it need serialising
+				if (thisiMS->Ctlr().IsValid()) {
+					serialiseBySerial[it->serialNo] = ControllerNeedsSerialisation(thisiMS->Ctlr());
+				}
+
 				if (thisiMS->Ctlr().IsValid() || thisiMS->Synth().IsValid()) {
 					int count = 0;
 					for (std::vector<std::shared_ptr<IMSSystem>>::const_iterator it2 = IMSList.cbegin(); it2 != IMSList.cend(); ++it2)
@@ -524,10 +547,7 @@ static std::string logErrorString(int err = INT_MAX) {
 		autoFreeTimeout = std::chrono::milliseconds(10000);
         connSettings = nullptr;
 
-        // iMS firmware may process only one request frame per received TCP segment.  If several
-        // pipelined requests are coalesced into one segment, the surplus requests are not
-        // processed until further traffic arrives, causing RX timeouts.  Keep one request in flight.
-        m_serialiseMessages.store(true);
+        // Message serialisation is decided per device in Connect()
 	}
 
 	CM_ENET::~CM_ENET()
@@ -557,6 +577,20 @@ static std::string logErrorString(int err = INT_MAX) {
 		{
 			// If connecting without first scanning system, do a scan here to populate interface detail list
 			if (pImpl->intf_detail->empty()) pImpl->ListConnectedDevices();
+
+			// Serialise messages if this device needs it (see ControllerNeedsSerialisation).  A device
+			// not yet identified by a scan (including during the scan's own connection) is serialised
+			// to be safe.  An explicit SetMessageSerialisation() / serialise_messages setting wins.
+			{
+				const std::string serialNo = serial.substr(0, serial.find_first_of(":"));
+				auto known = pImpl->serialiseBySerial.find(serialNo);
+				const bool autoSerialise = (known == pImpl->serialiseBySerial.end()) ? true : known->second;
+				const int setting = m_serialiseOverride.load();
+				const bool serialise = (setting < 0) ? autoSerialise : (setting != 0);
+				m_serialiseMessages.store(serialise);
+				BOOST_LOG_SEV(lg::get(), sev::info) << "Message serialisation " << (serialise ? "on" : "off") << " for " << serialNo
+					<< ((setting < 0) ? (known == pImpl->serialiseBySerial.end() ? " (device not yet identified)" : " (from controller model and firmware)") : " (set explicitly)");
+			}
 
 			// Connect TCP Client to Server
 			SOCKADDR_IN ServerAddr, InterruptAddr;
