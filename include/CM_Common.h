@@ -280,7 +280,9 @@ namespace iMS {
         int m_lastIntrSeq{ -1 };
         void ResetProtocolState();
         void ProcessRxStreamV2();
-        void RouteFrameV2(const ProtocolV2::Header& hdr, const std::vector<std::uint8_t>& payload);
+        // wire: the received frame as it appeared on the link, with delimiters (for trace logging)
+        void RouteFrameV2(const ProtocolV2::Header& hdr, const std::vector<std::uint8_t>& payload,
+            const std::vector<std::uint8_t>& wire);
         ProtocolV2::ProtocolInfo ReadProtocolInfo(HostReport::Actions action, bool& answered);
 
         void HandleMessage(const std::shared_ptr<Message>& m);

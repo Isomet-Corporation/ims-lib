@@ -94,6 +94,19 @@ namespace ProtocolV2 {
 	const char* DecodeResultName(DecodeResult r);
 	// Decode the bytes between two delimiters.  On BAD_LEN the header is valid (CRC checked).
 	DecodeResult DecodeFrame(const std::uint8_t* enc, std::size_t len, Header& hdr, std::vector<std::uint8_t>& payload);
+	// Decode a complete wire frame including its delimiters (as built by BuildFrame)
+	DecodeResult DecodeWireFrame(const std::vector<std::uint8_t>& wire, Header& hdr, std::vector<std::uint8_t>& payload);
+
+	// --- Diagnostics ------------------------------------------------------------------------
+
+	// Command name, e.g. "CTRLR_REG"; "CMD_0x3F" for unknown values
+	std::string CommandName(std::uint8_t cmd);
+	// One-line, human-readable description of a frame for logs, e.g.
+	//  "SEQ 4660 response ctrlr CTRLR_REG(0x11) read OK addr 0x00000003 len 2: 78 56"
+	//  Payloads longer than maxPayloadBytes are truncated with a count of the bytes not shown.
+	std::string Describe(const Header& hdr, const std::vector<std::uint8_t>& payload, std::size_t maxPayloadBytes = 64);
+	// Bytes as space-separated hex
+	std::string Hex(const std::vector<std::uint8_t>& bytes);
 
 	// --- Mapping between v1 report fields and v2 ---------------------------------------------
 

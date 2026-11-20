@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <iomanip>
 #include <queue>
 #include <sstream>
 
@@ -208,6 +209,113 @@ namespace ProtocolV2 {
 
 		if (payload.size() != hdr.len) return DecodeResult::BAD_LEN;
 		return DecodeResult::OK;
+	}
+
+	DecodeResult DecodeWireFrame(const std::vector<std::uint8_t>& wire, Header& hdr, std::vector<std::uint8_t>& payload)
+	{
+		std::size_t first = 0, last = wire.size();
+		while ((first < last) && (wire[first] == Delimiter)) first++;
+		while ((last > first) && (wire[last - 1] == Delimiter)) last--;
+		return DecodeFrame(wire.data() + first, last - first, hdr, payload);
+	}
+
+	// --- Diagnostics ------------------------------------------------------------------------
+
+	std::string CommandName(std::uint8_t cmd)
+	{
+		switch (cmd) {
+		case 0x00: return "PLL_REF";
+		case 0x01: return "RF_POWER";
+		case 0x02: return "SYNTH_EEPROM";
+		case 0x03: return "ASYNC_DAC";
+		case 0x04: return "EXT_ADC";
+		case 0x05: return "ASYNC_CONTROL";
+		case 0x06: return "LUT_ENTRY";
+		case 0x07: return "SYNTH_REG";
+		case 0x08: return "AOD_TEMP";
+		case 0x09: return "AOD_EEPROM";
+		case 0x0A: return "RFA_ADC12";
+		case 0x0B: return "RFA_ADC34";
+		case 0x0C: return "RFA_TEMP";
+		case 0x0D: return "RFA_EEPROM";
+		case 0x0E: return "RUN_SCRIPT";
+		case 0x0F: return "FAN_CONTROL";
+		case 0x11: return "CTRLR_REG";
+		case 0x12: return "CTRLR_IMAGE";
+		case 0x13: return "CTRLR_SETTINGS";
+		case 0x14: return "CTRLR_IMGDMA";
+		case 0x15: return "CTRLR_IMGIDX";
+		case 0x16: return "CTRLR_SYNDMA";
+		case 0x17: return "CTRLR_SEQQUEUE";
+		case 0x18: return "CTRLR_SEQPLAY";
+		case 0x19: return "CTRLR_INTREN";
+		case 0x20: return "FW_UPGRADE";
+		case 0x21: return "WAVE_SHAPING";
+		case 0x30: return "CTRLR_FW_UPGRADE";
+		}
+		std::ostringstream ss;
+		ss << "CMD_0x" << std::hex << std::uppercase << static_cast<int>(cmd);
+		return ss.str();
+	}
+
+	std::string Hex(const std::vector<std::uint8_t>& bytes)
+	{
+		static const char digits[] = "0123456789abcdef";
+		std::string s;
+		s.reserve(bytes.size() * 3);
+		for (std::size_t i = 0; i < bytes.size(); i++) {
+			if (i) s += ' ';
+			s += digits[bytes[i] >> 4];
+			s += digits[bytes[i] & 0x0F];
+		}
+		return s;
+	}
+
+	std::string Describe(const Header& hdr, const std::vector<std::uint8_t>& payload, std::size_t maxPayloadBytes)
+	{
+		std::ostringstream ss;
+		if (hdr.pver != Version) ss << "PVER " << static_cast<int>(hdr.pver) << " ";
+		ss << "SEQ " << hdr.seq << " ";
+
+		switch (hdr.kind()) {
+		case Kind::REQUEST: ss << "request"; break;
+		case Kind::RESPONSE: ss << "response"; break;
+		case Kind::INTERRUPT: ss << "interrupt"; break;
+		default: ss << "kind?3"; break;
+		}
+		switch (static_cast<std::uint8_t>(hdr.target())) {
+		case 0: ss << " ctrlr"; break;
+		case 1: ss << " synth"; break;
+		default: ss << " target?" << static_cast<int>(hdr.target()); break;
+		}
+		if (hdr.type & 0xF0) ss << " (TYPE 0x" << std::hex << static_cast<int>(hdr.type) << std::dec << ")";
+
+		ss << " " << CommandName(hdr.cmd) << "(0x" << std::hex << std::setw(2) << std::setfill('0')
+			<< static_cast<int>(hdr.cmd) << std::dec << ")";
+		if (hdr.subcmd) ss << " subcmd " << static_cast<int>(hdr.subcmd);
+
+		if (hdr.kind() != Kind::INTERRUPT) ss << ((hdr.flags & FlagRead) ? " read" : " write");
+		if (hdr.kind() == Kind::RESPONSE) ss << " " << StatusName(hdr.status);
+		else if (hdr.status) ss << " (STATUS 0x" << std::hex << static_cast<int>(hdr.status) << std::dec << ")";
+		if (hdr.flags & FlagAlarm) ss << " ALARM";
+		const std::uint8_t otherFlags = hdr.flags & static_cast<std::uint8_t>(~(FlagRead | FlagAlarm));
+		if (otherFlags) ss << " (FLAGS 0x" << std::hex << static_cast<int>(hdr.flags) << std::dec << ")";
+
+		ss << " addr 0x" << std::hex << std::setw(8) << std::setfill('0') << hdr.addr << std::dec;
+		if ((hdr.kind() == Kind::REQUEST && (hdr.flags & FlagRead)) || hdr.rdlen) ss << " rdlen " << hdr.rdlen;
+		ss << " len " << hdr.len;
+
+		if (!payload.empty()) {
+			ss << ": ";
+			if (payload.size() > maxPayloadBytes) {
+				ss << Hex(std::vector<std::uint8_t>(payload.begin(), payload.begin() + maxPayloadBytes))
+					<< " ... (+" << (payload.size() - maxPayloadBytes) << " bytes)";
+			}
+			else {
+				ss << Hex(payload);
+			}
+		}
+		return ss.str();
 	}
 
 	// --- v1 <-> v2 mapping ------------------------------------------------------------------

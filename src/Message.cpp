@@ -174,6 +174,22 @@ namespace iMS
 		return m_seq.load();
 	}
 
+	void Message::setRxTrace(std::string desc, std::vector<std::uint8_t> wire)
+	{
+		m_rxTrace = std::move(desc);
+		m_rxWire = std::move(wire);
+	}
+
+	const std::string& Message::getRxTrace() const
+	{
+		return m_rxTrace;
+	}
+
+	const std::vector<std::uint8_t>& Message::getRxWire() const
+	{
+		return m_rxWire;
+	}
+
 	std::vector<std::uint8_t> Message::RequestPayload() const
 	{
 		return m_rpt.Payload<std::vector<std::uint8_t>>();

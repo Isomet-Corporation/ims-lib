@@ -46,6 +46,25 @@ namespace iMS {
 	{
 		std::stringstream ss;
 
+		// Protocol v2: decode both directions; keep the raw request bytes for comparison with captures
+		if (msg->getSeq() >= 0) {
+			const std::vector<std::uint8_t>& wire = msg->SerialStream();
+			ProtocolV2::Header hdr;
+			std::vector<std::uint8_t> payload;
+			const auto result = ProtocolV2::DecodeWireFrame(wire, hdr, payload);
+			if (result == ProtocolV2::DecodeResult::OK)
+				BOOST_LOG_SEV(lg::get(), sev::trace) << "H->D v2: " << ProtocolV2::Describe(hdr, payload);
+			else
+				BOOST_LOG_SEV(lg::get(), sev::trace) << "H->D v2: (cannot decode: " << ProtocolV2::DecodeResultName(result) << ")";
+			BOOST_LOG_SEV(lg::get(), sev::trace) << "H->D v2 wire: " << ProtocolV2::Hex(wire);
+
+			const std::string& rx = msg->getRxTrace();
+			BOOST_LOG_SEV(lg::get(), sev::trace) << "D->H v2: " << (rx.empty() ? std::string("(no response)") : rx);
+			if (!rx.empty())
+				BOOST_LOG_SEV(lg::get(), sev::trace) << "D->H v2 wire: " << ProtocolV2::Hex(msg->getRxWire());
+			return;
+		}
+
 		if ((msg->getStatus() != Message::Status::INTERRUPT) && (msg->getStatus() != Message::Status::PROCESSED_INTERRUPT)) {
 			ss << "H->D: ";
 			for (auto&& c : msg->SerialStream())
@@ -650,7 +669,12 @@ namespace iMS {
             const auto result = ProtocolV2::DecodeFrame(enc.data(), enc.size(), hdr, payload);
             if (result == ProtocolV2::DecodeResult::OK) {
                 m_glblRx.erase(m_glblRx.begin(), m_glblRx.begin() + chunkEnd);   // keep the closing delimiter
-                RouteFrameV2(hdr, payload);
+                std::vector<std::uint8_t> wire;
+                wire.reserve(enc.size() + 2);
+                wire.push_back(ProtocolV2::Delimiter);
+                wire.insert(wire.end(), enc.begin(), enc.end());
+                wire.push_back(ProtocolV2::Delimiter);
+                RouteFrameV2(hdr, payload, wire);
                 continue;
             }
             if (enc.front() == IntrId) {
@@ -660,8 +684,8 @@ namespace iMS {
 
             std::ostringstream ss;
             ss << "v2 frame discarded (" << ProtocolV2::DecodeResultName(result) << ")";
-            if (result == ProtocolV2::DecodeResult::BAD_LEN) ss << ", SEQ " << hdr.seq;
-            BOOST_LOG_SEV(lg::get(), sev::warning) << ss.str() << ": " << FrameHex(enc);
+            if (result == ProtocolV2::DecodeResult::BAD_LEN) ss << ": " << ProtocolV2::Describe(hdr, payload);
+            BOOST_LOG_SEV(lg::get(), sev::warning) << ss.str() << "; wire: " << FrameHex(enc);
             m_glblRx.erase(m_glblRx.begin(), m_glblRx.begin() + chunkEnd);
         }
 
@@ -675,11 +699,15 @@ namespace iMS {
     // Route a decoded v2 frame.  A response is matched by SEQ alone; the echoed CMD and target are
     // checked for consistency.  The frame is handed to the message as an equivalent v1 frame so
     // that DeviceReport and its callers are unchanged.
-    void CM_Common::RouteFrameV2(const ProtocolV2::Header& hdr, const std::vector<std::uint8_t>& payload)
+    void CM_Common::RouteFrameV2(const ProtocolV2::Header& hdr, const std::vector<std::uint8_t>& payload,
+        const std::vector<std::uint8_t>& wire)
     {
         using namespace ProtocolV2;
+        const std::string desc = Describe(hdr, payload);
 
         if (hdr.kind() == Kind::INTERRUPT) {
+            BOOST_LOG_SEV(lg::get(), sev::trace) << "D->H v2: " << desc;
+            BOOST_LOG_SEV(lg::get(), sev::trace) << "D->H v2 wire: " << Hex(wire);
             if ((m_lastIntrSeq >= 0) && (hdr.seq != ((m_lastIntrSeq + 1) & 0xFFFF))) {
                 BOOST_LOG_SEV(lg::get(), sev::warning) << "Interrupt SEQ " << hdr.seq << " follows " << m_lastIntrSeq
                     << ": " << ((hdr.seq - m_lastIntrSeq - 1) & 0xFFFF) << " interrupt(s) lost";
@@ -690,15 +718,13 @@ namespace iMS {
         }
 
         if (hdr.kind() != Kind::RESPONSE) {
-            BOOST_LOG_SEV(lg::get(), sev::warning) << "v2 frame of unexpected kind " << static_cast<int>(hdr.kind())
-                << " discarded (SEQ " << hdr.seq << ")";
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "v2 frame of unexpected kind discarded: " << desc;
             return;
         }
 
         auto m = FindSeq(hdr.seq);
         if (!m) {
-            BOOST_LOG_SEV(lg::get(), sev::warning) << "v2 response with unknown SEQ " << hdr.seq << " discarded (CMD 0x"
-                << std::hex << static_cast<int>(hdr.cmd) << std::dec << ", status " << StatusName(hdr.status) << ")";
+            BOOST_LOG_SEV(lg::get(), sev::warning) << "v2 response with unknown SEQ discarded: " << desc;
             return;
         }
 
@@ -707,13 +733,13 @@ namespace iMS {
             m_lateWaiting.erase(late);
             ReleaseSeq(hdr.seq);
             BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg Late Response (" << m->getMessageHandle() << ", SEQ " << hdr.seq
-                << "): discarded, " << m->TimeElapsed().count() << "ms after send";
+                << "): discarded, " << m->TimeElapsed().count() << "ms after send: " << desc;
             return;
         }
 
         if (m->isComplete()) {
             BOOST_LOG_SEV(lg::get(), sev::warning) << "Msg (" << m->getMessageHandle() << ", SEQ " << hdr.seq
-                << "): response to a completed message discarded";
+                << "): response to a completed message discarded: " << desc;
             return;
         }
 
@@ -724,7 +750,7 @@ namespace iMS {
             if ((hdr.cmd != CommandFromV1(rf)) || (hdr.target() != TargetFromV1(rf))) {
                 BOOST_LOG_SEV(lg::get(), sev::error) << "Msg (" << m->getMessageHandle() << ", SEQ " << hdr.seq
                     << "): response CMD 0x" << std::hex << static_cast<int>(hdr.cmd) << " target " << static_cast<int>(hdr.target())
-                    << " does not match the request (CMD 0x" << static_cast<int>(CommandFromV1(rf)) << std::dec << "); discarded";
+                    << " does not match the request (CMD 0x" << static_cast<int>(CommandFromV1(rf)) << std::dec << "); discarded: " << desc;
                 return;
             }
         }
@@ -739,6 +765,7 @@ namespace iMS {
         }
 
         ReleaseSeq(hdr.seq);
+        m->setRxTrace(desc, wire);
         m->AddBuffer(ToV1DeviceFrame(hdr, payload));
         HandleMessage(m);
     }

@@ -69,6 +69,12 @@ namespace iMS
 		void setSeq(int seq);
 		int getSeq() const;
 
+		// Protocol v2: decoded description and raw wire bytes of the response as received, for
+		//	trace logging (set and read by the connection's receive thread)
+		void setRxTrace(std::string desc, std::vector<std::uint8_t> wire);
+		const std::string& getRxTrace() const;
+		const std::vector<std::uint8_t>& getRxWire() const;
+
 		// The request payload (as given by the caller, not truncated)
 		std::vector<std::uint8_t> RequestPayload() const;
 		void Parse(const std::uint8_t rxchar);
@@ -105,6 +111,8 @@ namespace iMS
 		std::deque<std::uint8_t> unparsed_buf;
 		std::vector<std::uint8_t> m_wire;
 		std::atomic<int> m_seq{ -1 };
+		std::string m_rxTrace;
+		std::vector<std::uint8_t> m_rxWire;
 
         // Synchronisation
         mutable std::shared_mutex m_waitMutex;
