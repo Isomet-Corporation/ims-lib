@@ -59,6 +59,7 @@ add_executable(ims_unit_tests
     support/CM_TEST.cpp
     test_reports.cpp
     test_cm_common.cpp
+    test_rx_matching.cpp
 )
 
 # On Windows the hardware database and default settings are Win32 resources, looked up in the
@@ -69,6 +70,22 @@ endif()
 
 target_include_directories(ims_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
 target_link_libraries(ims_unit_tests PRIVATE ims_testable GTest::gtest_main)
+
+# ---------------------------------------------------------------------------
+# Code coverage (GCC/Clang): -DIMSLIB_COVERAGE=ON, then run the tests and gcovr.
+# Optimisation is turned off for the instrumented code so lines and branches map to source.
+# ---------------------------------------------------------------------------
+option(IMSLIB_COVERAGE "Instrument the library and tests for code coverage (GCC/Clang)" OFF)
+if(IMSLIB_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "IMSLIB_COVERAGE needs GCC or Clang")
+    endif()
+    foreach(_t ims_testable ims_unit_tests)
+        target_compile_options(${_t} PRIVATE -O0 -g --coverage)
+        target_link_options(${_t} PRIVATE --coverage)
+    endforeach()
+    message(STATUS "Tests: code coverage instrumentation on")
+endif()
 
 # Register each TEST() with ctest.  Discovery runs the executable after building it.
 gtest_discover_tests(ims_unit_tests
