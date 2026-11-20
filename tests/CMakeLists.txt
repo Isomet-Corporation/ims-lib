@@ -75,6 +75,8 @@ target_link_libraries(ims_unit_tests PRIVATE ims_testable GTest::gtest_main)
 # ---------------------------------------------------------------------------
 # Code coverage (GCC/Clang): -DIMSLIB_COVERAGE=ON, then run the tests and gcovr.
 # Optimisation is turned off for the instrumented code so lines and branches map to source.
+# Counters are updated atomically: the connection code runs sender and parser threads at once,
+# and plain counter updates from both can collide, giving counts gcovr rejects as negative.
 # ---------------------------------------------------------------------------
 option(IMSLIB_COVERAGE "Instrument the library and tests for code coverage (GCC/Clang)" OFF)
 if(IMSLIB_COVERAGE)
@@ -82,7 +84,7 @@ if(IMSLIB_COVERAGE)
         message(FATAL_ERROR "IMSLIB_COVERAGE needs GCC or Clang")
     endif()
     foreach(_t ims_testable ims_unit_tests)
-        target_compile_options(${_t} PRIVATE -O0 -g --coverage)
+        target_compile_options(${_t} PRIVATE -O0 -g --coverage -fprofile-update=atomic)
         target_link_options(${_t} PRIVATE --coverage)
     endforeach()
     message(STATUS "Tests: code coverage instrumentation on")
